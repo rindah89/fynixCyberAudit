@@ -33,7 +33,7 @@ class RolePermissionSeeder extends Seeder
 
         // -----------------------------------------------------------------------------------------
         // Create Resource Permissions
-        $entities = ['Standards', 'Controls', 'Implementations', 'Audits', 'AuditItems', 'Programs', 'Vendors', 'Applications', 'Risks', 'Assets', 'Policies', 'DataRequests', 'DataRequestResponses', 'FileAttachments'];
+        $entities = ['Standards', 'Controls', 'Implementations', 'Audits', 'AuditItems', 'Programs', 'Vendors', 'Applications', 'Risks', 'Assets', 'Policies', 'DataRequests', 'DataRequestResponses', 'FileAttachments', 'SurveyorBatches', 'RiskAssessments', 'RemediationProjects', 'RemediationTasks', 'Incidents', 'IncidentPlaybooks'];
         $actions = ['List', 'Create', 'Read', 'Update', 'Delete'];
 
         foreach ($entities as $entity) {
@@ -66,6 +66,19 @@ class RolePermissionSeeder extends Seeder
         // Vendor Management Permissions
         Permission::firstOrCreate(['name' => 'Manage Vendor Management', 'category' => 'Vendors']);
 
+        foreach ([
+            'Manage Surveyor',
+            'Manage Risk Assessments',
+            'Manage Remediation',
+            'Manage Incidents',
+            'Manage Playbooks',
+            'Manage Incident Evidence',
+            'Manage Breach Notifications',
+            'Manage Incident Tasks',
+        ] as $permission) {
+            Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
+        }
+
         // -----------------------------------------------------------------------------------------
         // Assign Permissions to Super Admin
         $superAdmin->givePermissionTo(Permission::all());
@@ -88,6 +101,16 @@ class RolePermissionSeeder extends Seeder
         $securityAdmin->givePermissionTo('Manage Trust Center');
         $securityAdmin->givePermissionTo('Manage Trust Access');
         $securityAdmin->givePermissionTo('Manage Vendor Management');
+        $securityAdmin->givePermissionTo([
+            'Manage Surveyor',
+            'Manage Risk Assessments',
+            'Manage Remediation',
+            'Manage Incidents',
+            'Manage Playbooks',
+            'Manage Incident Evidence',
+            'Manage Breach Notifications',
+            'Manage Incident Tasks',
+        ]);
 
         // Assign specific Permissions to Internal Auditor
         $internalAuditor->givePermissionTo([

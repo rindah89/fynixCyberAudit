@@ -157,6 +157,9 @@ class AppPanelProvider extends PanelProvider
             ->navigationGroups([
                 'Foundations',
                 'Entities',
+                'Apps',
+                'Remediation',
+                'Incidents',
             ])
             ->middleware([
                 EncryptCookies::class,

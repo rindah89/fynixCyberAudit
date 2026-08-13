@@ -2,7 +2,11 @@
 
 namespace App\Services\Ai;
 
+use App\Ai\AiClient;
+use App\Ai\HttpAiClient;
 use App\Enums\AiProvider;
+use App\Enums\QuotaType;
+use App\Services\QuotaService;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Crypt;
@@ -10,7 +14,7 @@ use RuntimeException;
 
 class AiService
 {
-    protected Client $client;
+    protected AiClient $client;
 
     protected AiProvider $provider;
 
@@ -18,10 +22,10 @@ class AiService
 
     protected string $apiKey;
 
-    public function __construct()
+    public function __construct(?AiClient $client = null)
     {
-        $this->client = new Client;
         $this->initializeProvider();
+        $this->client = $client ?? $this->defaultClient();
     }
 
     protected function initializeProvider(): void
@@ -92,7 +96,7 @@ class AiService
 
     public function isConfigured(): bool
     {
-        return filled($this->apiKey);
+        return filled($this->apiKey) || $this->client instanceof \App\Ai\StubAiClient;
     }
 
     /**
@@ -105,43 +109,57 @@ class AiService
      */
     public function chatCompletion(string $systemPrompt, string $userPrompt): array
     {
-        if (! $this->isConfigured()) {
-            throw new RuntimeException('AI provider is not configured. Please set an API key.');
+        return $this->client->complete($systemPrompt, $userPrompt, false);
+    }
+
+    /**
+     * @param  list<string>  $requiredKeys
+     * @return array{content: array<string, mixed>, model: string, usage: array<string, mixed>}
+     */
+    public function chatJson(string $systemPrompt, string $userPrompt, array $requiredKeys = []): array
+    {
+        $this->assertQuota();
+
+        $raw = $this->client->complete($systemPrompt, $userPrompt, true);
+        $decoded = json_decode($raw['content'], true);
+        if (! is_array($decoded)) {
+            throw new RuntimeException('AI returned invalid JSON');
         }
 
-        $payload = [
-            'model' => $this->model,
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => $systemPrompt,
-                ],
-                [
-                    'role' => 'user',
-                    'content' => $userPrompt,
-                ],
-            ],
-        ];
-
-        if ($this->provider === AiProvider::OpenAI) {
-            $payload['store'] = true;
+        foreach ($requiredKeys as $key) {
+            if (! array_key_exists($key, $decoded)) {
+                throw new RuntimeException('AI returned invalid JSON');
+            }
         }
 
-        $response = $this->client->request('POST', $this->provider->getEndpoint(), [
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => "Bearer {$this->apiKey}",
-            ],
-            'json' => $payload,
-        ]);
-
-        $body = $response->getBody();
-        $data = json_decode($body, true);
+        $this->recordUsage($raw['usage'] ?? []);
 
         return [
-            'content' => $data['choices'][0]['message']['content'],
-            'model' => $data['model'] ?? $this->model,
-            'usage' => $data['usage'] ?? [],
+            'content' => $decoded,
+            'model' => $raw['model'] ?? $this->model,
+            'usage' => $raw['usage'] ?? [],
         ];
+    }
+
+    private function assertQuota(): void
+    {
+        QuotaService::check(QuotaType::AI_PROMPT, 1);
+        QuotaService::check(QuotaType::AI_RESPONSE, 1);
+    }
+
+    /** @param array<string, mixed> $usage */
+    private function recordUsage(array $usage): void
+    {
+        QuotaService::record(QuotaType::AI_PROMPT, max(1, (int) ($usage['prompt_tokens'] ?? 1)));
+        QuotaService::record(QuotaType::AI_RESPONSE, max(1, (int) ($usage['completion_tokens'] ?? 1)));
+    }
+
+    private function defaultClient(): AiClient
+    {
+        if (app()->bound(\App\Ai\StubAiClient::class)) {
+            return app(\App\Ai\StubAiClient::class);
+        }
+
+        return new HttpAiClient(new Client, $this->provider, $this->model, $this->apiKey);
     }
 }

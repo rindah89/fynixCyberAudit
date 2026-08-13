@@ -31,6 +31,9 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+Route::post('/suite/events', [\App\Suite\SuiteInboundController::class, 'store']);
+Route::get('/suite/health', [\App\Suite\SuiteInboundController::class, 'health']);
+
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });

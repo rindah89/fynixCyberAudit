@@ -30,6 +30,17 @@ if [ -n "$DB_HOST" ]; then
     fi
 fi
 
+if [ -z "$APP_KEY" ]; then
+    echo "Generating application key..."
+    if [ -f /var/www/html/.env ]; then
+        php artisan key:generate --force
+    else
+        APP_KEY="base64:$(openssl rand -base64 32)"
+        export APP_KEY
+        echo "Generated APP_KEY in process environment."
+    fi
+fi
+
 # Run database migrations
 echo "Running database migrations..."
 php artisan migrate --force
@@ -44,21 +55,12 @@ USER_COUNT=$(php -r "
 if [ "$USER_COUNT" = "0" ]; then
     echo "First run detected - seeding database and creating admin user..."
 
-    # Generate APP_KEY if not set. key:generate needs a .env file, which
-    # Docker builds omit; invent one in the environment instead.
-    if [ -z "$APP_KEY" ]; then
-        echo "Generating application key..."
-        if [ -f /var/www/html/.env ]; then
-            php artisan key:generate --force
-        else
-            APP_KEY="base64:$(openssl rand -base64 32)"
-            export APP_KEY
-            echo "Generated APP_KEY in process environment."
-        fi
-    fi
-
     php artisan db:seed --class=SettingsSeeder --force
-    php artisan fynix:create-user "${ADMIN_EMAIL:-admin@campass.cm}" "${ADMIN_PASSWORD:-admin123}"
+    if [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_PASSWORD" ]; then
+        echo "ADMIN_EMAIL and ADMIN_PASSWORD must be set to create the first user."
+        exit 1
+    fi
+    php artisan fynix:create-user "$ADMIN_EMAIL" "$ADMIN_PASSWORD"
     php artisan db:seed --class=RolePermissionSeeder --force
     php artisan settings:set general.name "${APP_NAME:-Fynix Cyber Audit}"
     php artisan settings:set general.url "${APP_URL:-http://localhost}"

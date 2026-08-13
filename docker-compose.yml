@@ -5,14 +5,14 @@ services:
     image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: fynixcyberaudit
-      MYSQL_USER: fynixcyberaudit
-      MYSQL_PASSWORD: fynixcyberaudit
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_DATABASE:-fynixcyberaudit}
+      MYSQL_USER: ${DB_USERNAME:-fynixcyberaudit}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-fynixcyberaudit}
     volumes:
       - fynixcyberaudit_db:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -25,29 +25,41 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8082:80"
+      - "${APP_PORT:-8082}:80"
     environment:
-      APP_NAME: Fynix Cyber Audit
-      APP_ENV: local
-      APP_DEBUG: "true"
+      APP_NAME: ${APP_NAME:-Fynix Cyber Audit}
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
       APP_KEY: ${APP_KEY:-}
-      APP_URL: http://localhost:8082
+      APP_URL: ${APP_URL:-http://localhost:8082}
 
-      DB_CONNECTION: mysql
-      DB_HOST: db
-      DB_PORT: 3306
-      DB_DATABASE: fynixcyberaudit
-      DB_USERNAME: fynixcyberaudit
-      DB_PASSWORD: fynixcyberaudit
+      DB_CONNECTION: ${DB_CONNECTION:-mysql}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_DATABASE: ${DB_DATABASE:-fynixcyberaudit}
+      DB_USERNAME: ${DB_USERNAME:-fynixcyberaudit}
+      DB_PASSWORD: ${DB_PASSWORD:-fynixcyberaudit}
 
-      ADMIN_EMAIL: admin@campass.cm
-      ADMIN_PASSWORD: "fynixdemo123!"
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
 
-      CACHE_DRIVER: file
-      SESSION_DRIVER: file
-      QUEUE_CONNECTION: sync
+      CACHE_DRIVER: ${CACHE_DRIVER:-file}
+      SESSION_DRIVER: ${SESSION_DRIVER:-file}
+      QUEUE_CONNECTION: ${QUEUE_CONNECTION:-sync}
 
-      MAIL_MAILER: log
+      MAIL_MAILER: ${MAIL_MAILER:-log}
+
+      OIDC_ENABLED: ${OIDC_ENABLED:-false}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      OIDC_AUTHORIZE_ENDPOINT: ${OIDC_AUTHORIZE_ENDPOINT:-}
+      OIDC_TOKEN_ENDPOINT: ${OIDC_TOKEN_ENDPOINT:-}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile groups}
+      OIDC_AUTO_PROVISION: ${OIDC_AUTO_PROVISION:-true}
+      OIDC_ENFORCE_SSO_ONLY: ${OIDC_ENFORCE_SSO_ONLY:-false}
+      OIDC_DEFAULT_ROLE: ${OIDC_DEFAULT_ROLE:-Regular User}
 
 volumes:
   fynixcyberaudit_db:

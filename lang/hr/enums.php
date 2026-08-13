@@ -1,6 +1,13 @@
 <?php
 
 return [
+    'incident_phase' => [
+        'identification' => 'Identifikacija',
+        'containment' => 'Sadržavanje',
+        'eradication' => 'Iskorjenjivanje',
+        'recovery' => 'Oporavak',
+        'lessons_learned' => 'Naučene lekcije',
+    ],
     'workflow_status' => [
         'not_started' => 'Nije Započeto',
         'in_progress' => 'U Tijeku',

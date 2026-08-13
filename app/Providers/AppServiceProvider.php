@@ -220,6 +220,18 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->bind(\App\Suite\PpmClient::class, function ($app) {
+            if ($app->bound(\App\Suite\FakePpmClient::class)) {
+                return $app->make(\App\Suite\FakePpmClient::class);
+            }
+
+            if ($app->environment('testing')) {
+                return new \App\Suite\FakePpmClient;
+            }
+
+            return new \App\Suite\LivePpmClient;
+        });
+
         // Force HTTPS in production environments (must be in register, not boot)
         if (! $this->app->environment('local')) {
             URL::forceScheme('https');

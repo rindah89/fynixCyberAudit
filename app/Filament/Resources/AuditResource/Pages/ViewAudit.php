@@ -5,7 +5,9 @@ namespace App\Filament\Resources\AuditResource\Pages;
 use App\Enums\WorkflowStatus;
 use App\Filament\Resources\AuditResource;
 use App\Filament\Resources\AuditResource\Widgets\TextWidget;
+use App\Jobs\PerformAiAuditJob;
 use App\Models\Audit;
+use App\Support\Enterprise;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -130,6 +132,33 @@ class ViewAudit extends ViewRecord
                     ->action(function (Audit $record, $livewire) {
                         AuditResource::completeAudit($record);
                         $livewire->redirectRoute('filament.app.resources.audits.view', $record);
+                    }),
+                Action::make('perform_ai_audit')
+                    ->label('Perform AI Audit')
+                    ->color('primary')
+                    ->visible(fn () => Enterprise::enabled('ai_audit'))
+                    ->requiresConfirmation()
+                    ->modalHeading('Perform AI Audit')
+                    ->modalDescription('This reviews each control item using implementations and policies only (not file evidence). Expect about one minute per item. A queue worker must be running.')
+                    ->modalSubmitActionLabel('Start AI Audit')
+                    ->disabled(function (Audit $record) {
+                        if ($record->status !== WorkflowStatus::INPROGRESS) {
+                            return true;
+                        }
+
+                        if (auth()->user()?->hasRole('Super Admin')) {
+                            return false;
+                        }
+
+                        return (int) $record->manager_id !== (int) auth()->id();
+                    })
+                    ->action(function (Audit $record) {
+                        PerformAiAuditJob::dispatch($record->id, auth()->id());
+                        Notification::make()
+                            ->title('AI Audit started')
+                            ->body('Control items will be assessed in the background. You will be notified when it finishes.')
+                            ->success()
+                            ->send();
                     }),
 
             ])

@@ -1,6 +1,13 @@
 <?php
 
 return [
+    'incident_phase' => [
+        'identification' => 'Identificación',
+        'containment' => 'Contención',
+        'eradication' => 'Erradicación',
+        'recovery' => 'Recuperación',
+        'lessons_learned' => 'Lecciones aprendidas',
+    ],
     'workflow_status' => [
         'not_started' => 'No Iniciado',
         'in_progress' => 'En Progreso',

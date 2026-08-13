@@ -23,8 +23,8 @@ class AiController extends Controller
     {
         // Check quota before making API call
         try {
-            QuotaService::check(QuotaType::AI_PROMPT);
-            QuotaService::check(QuotaType::AI_RESPONSE);
+            QuotaService::check(QuotaType::AI_PROMPT, 1);
+            QuotaService::check(QuotaType::AI_RESPONSE, 1);
         } catch (QuotaExceededException $e) {
             AppLogger::warning(
                 'ai',
@@ -124,8 +124,8 @@ class AiController extends Controller
     {
         // Check quota before making API call
         try {
-            QuotaService::check(QuotaType::AI_PROMPT);
-            QuotaService::check(QuotaType::AI_RESPONSE);
+            QuotaService::check(QuotaType::AI_PROMPT, 1);
+            QuotaService::check(QuotaType::AI_RESPONSE, 1);
         } catch (QuotaExceededException $e) {
             AppLogger::warning(
                 'ai',

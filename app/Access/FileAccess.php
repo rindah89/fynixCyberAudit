@@ -2,7 +2,9 @@
 
 namespace App\Access;
 
+use App\Models\AiJob;
 use App\Models\FileAttachment;
+use App\Models\IncidentEvidence;
 use App\Models\SurveyAttachment;
 use App\Models\TrustCenterDocument;
 use App\Models\User;
@@ -44,6 +46,22 @@ class FileAccess
 
         if ($trustDocument = TrustCenterDocument::query()->where('file_path', $path)->first()) {
             if ($this->canDownloadTrustDocument($actor, $trustDocument)) {
+                return;
+            }
+
+            abort(403, 'You do not have access to this file.');
+        }
+
+        if ($evidence = IncidentEvidence::query()->where('path', $path)->first()) {
+            if ($actor instanceof User && $actor->can('Manage Incident Evidence')) {
+                return;
+            }
+
+            abort(403, 'You do not have access to this file.');
+        }
+
+        if ($job = AiJob::query()->where('result_path', $path)->first()) {
+            if ($actor instanceof User && ((int) $job->created_by === (int) $actor->id || $actor->can('Manage Surveyor'))) {
                 return;
             }
 
