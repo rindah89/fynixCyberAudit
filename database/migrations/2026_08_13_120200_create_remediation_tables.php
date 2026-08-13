@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('remediation_projects', function (Blueprint $table) {
+        if (! Schema::hasTable('remediation_projects')) {
+            Schema::create('remediation_projects', function (Blueprint $table) {
             $table->id();
             $table->string('code')->unique();
             $table->string('name');
@@ -18,18 +19,22 @@ return new class extends Migration
             $table->date('start_date')->nullable();
             $table->date('due_date')->nullable();
             $table->timestamps();
-        });
+            });
+        }
 
-        Schema::create('remediation_project_members', function (Blueprint $table) {
+        if (! Schema::hasTable('remediation_project_members')) {
+            Schema::create('remediation_project_members', function (Blueprint $table) {
             $table->id();
             $table->foreignId('remediation_project_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('role')->default('member');
             $table->timestamps();
             $table->unique(['remediation_project_id', 'user_id']);
-        });
+            });
+        }
 
-        Schema::create('remediation_tasks', function (Blueprint $table) {
+        if (! Schema::hasTable('remediation_tasks')) {
+            Schema::create('remediation_tasks', function (Blueprint $table) {
             $table->id();
             $table->foreignId('remediation_project_id')->constrained()->cascadeOnDelete();
             $table->string('number');
@@ -44,7 +49,8 @@ return new class extends Migration
             $table->foreignId('audit_item_id')->nullable()->constrained('audit_items')->nullOnDelete();
             $table->timestamps();
             $table->unique('number');
-        });
+            });
+        }
     }
 
     public function down(): void
