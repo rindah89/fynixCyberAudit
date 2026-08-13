@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('suite_entity_links', function (Blueprint $table) {
+        if (! Schema::hasTable('suite_entity_links')) {
+            Schema::create('suite_entity_links', function (Blueprint $table) {
             $table->id();
             $table->string('local_type');
             $table->unsignedBigInteger('local_id');
@@ -22,16 +23,19 @@ return new class extends Migration
             $table->timestamps();
             $table->unique(['local_type', 'local_id', 'system', 'entity_type', 'entity_id', 'relation'], 'suite_links_unique');
             $table->index(['system', 'entity_type', 'entity_id']);
-        });
+            });
+        }
 
-        Schema::create('suite_inbound_deliveries', function (Blueprint $table) {
+        if (! Schema::hasTable('suite_inbound_deliveries')) {
+            Schema::create('suite_inbound_deliveries', function (Blueprint $table) {
             $table->id();
             $table->string('delivery_id')->unique();
             $table->string('event_type');
             $table->string('source');
             $table->string('outcome');
             $table->timestamps();
-        });
+            });
+        }
     }
 
     public function down(): void
