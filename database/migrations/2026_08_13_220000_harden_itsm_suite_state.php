@@ -8,21 +8,29 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('suite_entity_links', function (Blueprint $table) {
-            $table->string('work_kind')->nullable()->after('relation');
-            $table->timestampTz('remote_closed_at')->nullable()->after('remote_status');
-        });
+        if (! Schema::hasColumn('suite_entity_links', 'work_kind')) {
+            Schema::table('suite_entity_links', function (Blueprint $table) {
+                $table->string('work_kind')->nullable()->after('relation');
+            });
+        }
+        if (! Schema::hasColumn('suite_entity_links', 'remote_closed_at')) {
+            Schema::table('suite_entity_links', function (Blueprint $table) {
+                $table->timestampTz('remote_closed_at')->nullable()->after('remote_status');
+            });
+        }
 
-        Schema::create('suite_inbound_high_water', function (Blueprint $table) {
-            $table->id();
-            $table->uuid('local_tenant_id');
-            $table->string('source');
-            $table->string('entity_type');
-            $table->string('entity_id');
-            $table->timestampTz('occurred_at');
-            $table->timestamps();
-            $table->unique(['local_tenant_id', 'source', 'entity_type', 'entity_id'], 'suite_high_water_unique');
-        });
+        if (! Schema::hasTable('suite_inbound_high_water')) {
+            Schema::create('suite_inbound_high_water', function (Blueprint $table) {
+                $table->id();
+                $table->uuid('local_tenant_id');
+                $table->string('source');
+                $table->string('entity_type');
+                $table->string('entity_id');
+                $table->timestampTz('occurred_at');
+                $table->timestamps();
+                $table->unique(['local_tenant_id', 'source', 'entity_type', 'entity_id'], 'suite_high_water_unique');
+            });
+        }
     }
 
     public function down(): void
