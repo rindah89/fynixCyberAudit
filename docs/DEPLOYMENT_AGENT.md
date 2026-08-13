@@ -39,6 +39,8 @@ Suite integrations use signed Fynix v2 events and dedicated service credentials.
 
 ## Versioning, backup, and rollback
 
+The production recovery objectives are: database RPO **1 hour**; files and configuration RPO **24 hours**; a verified recovery point before every deployment; individual-application RTO **2 hours**; and full-suite or on-premises recovery RTO **4 hours**. Backup schedules, monitoring, retention, restore drills, and deployment gates must demonstrate these limits rather than merely document them.
+
 - The immutable production version is the full Git SHA release in the private bucket. Human releases use non-moving annotated SemVer tags (`vMAJOR.MINOR.PATCH`) pointing to a successfully deployed SHA.
 - Before migrations and daily, create a consistent MySQL dump plus copies of persistent uploaded evidence and the production `.env`/application key. Encrypt backups off-host; retain at least 7 daily, 4 weekly, and 12 monthly recovery points unless policy is stricter.
 - Roll back code by deploying the prior SHA artifact through its `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`. Laravel migrations must be additive/backward-compatible; never drop suite audit/link state in a routine rollback.
