@@ -2,6 +2,7 @@
 
 namespace App\Filament\Vendor\Resources;
 
+use App\Access\VendorAccess;
 use App\Enums\SurveyStatus;
 use App\Filament\Vendor\Resources\SurveyResource\Pages\ListSurveys;
 use App\Filament\Vendor\Resources\SurveyResource\Pages\RespondToSurvey;
@@ -37,12 +38,13 @@ class SurveyResource extends Resource
     {
         $vendorUser = Auth::guard('vendor')->user();
 
-        // Show surveys where the user is the respondent OR surveys for their vendor
-        return parent::getEloquentQuery()
-            ->where(function (Builder $query) use ($vendorUser) {
-                $query->where('respondent_email', $vendorUser?->email)
-                    ->orWhere('vendor_id', $vendorUser?->vendor_id);
-            })
+        $query = parent::getEloquentQuery();
+
+        if ($vendorUser) {
+            $query = app(VendorAccess::class)->applySurveyScope($query, $vendorUser);
+        }
+
+        return $query
             ->whereIn('status', [
                 SurveyStatus::SENT,
                 SurveyStatus::IN_PROGRESS,

@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\MCP\OAuthRegisterController;
 use App\Http\Middleware\McpEnabled;
-use App\Mcp\Servers\OpenGrcServer;
+use App\Mcp\Servers\FynixCyberAuditServer;
 use Illuminate\Support\Facades\Route;
 use Laravel\Mcp\Facades\Mcp;
 
@@ -12,7 +12,7 @@ use Laravel\Mcp\Facades\Mcp;
 |--------------------------------------------------------------------------
 |
 | This file defines the MCP (Model Context Protocol) server endpoints.
-| These routes allow AI clients to interact with OpenGRC via HTTP.
+| These routes allow AI clients to interact with Fynix Cyber Audit via HTTP.
 |
 | OAuth Endpoints:
 |   - /.well-known/oauth-protected-resource/{path?} - Resource metadata
@@ -22,7 +22,7 @@ use Laravel\Mcp\Facades\Mcp;
 |   - /oauth/token - Token endpoint (via Passport)
 |
 | MCP Endpoint:
-|   - POST /mcp/opengrc - MCP server (requires OAuth token with mcp:use scope)
+|   - POST /mcp/fynixcyberaudit - MCP server (requires OAuth token with mcp:use scope)
 |
 */
 
@@ -55,6 +55,6 @@ Route::middleware([McpEnabled::class])->group(function () {
 // HTTP MCP endpoint - requires OAuth token via Passport
 // Enable/disable via Settings > AI Settings > MCP Server
 Route::middleware([McpEnabled::class])->group(function () {
-    Mcp::web('/mcp/opengrc', OpenGrcServer::class)
+    Mcp::web('/mcp/fynixcyberaudit', FynixCyberAuditServer::class)
         ->middleware(['auth:api', 'throttle:mcp']);
 });

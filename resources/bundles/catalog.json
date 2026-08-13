@@ -1,0 +1,65 @@
+[
+    {
+        "code": "TSC-2017",
+        "name": "Trust Services Criteria 2017",
+        "version": "2017",
+        "authority": "AICPA",
+        "description": "SOC 2 Trust Services Criteria shipped with Fynix Cyber Audit.",
+        "type": "Standard",
+        "file": "TSC-2017.json"
+    },
+    {
+        "code": "HIPAA-Security",
+        "name": "HIPAA Security Rule",
+        "version": "Current",
+        "authority": "HHS",
+        "description": "HIPAA Security Rule controls shipped with Fynix Cyber Audit.",
+        "type": "Standard",
+        "seeder": "Database\\Seeders\\HipaaSeeder"
+    },
+    {
+        "code": "800-171r2",
+        "name": "NIST SP 800-171 Rev 2",
+        "version": "2",
+        "authority": "NIST",
+        "description": "Protecting CUI in nonfederal systems. Local pack.",
+        "type": "Standard",
+        "seeder": "Database\\Seeders\\SP800171r2Seeder"
+    },
+    {
+        "code": "800-171r3",
+        "name": "NIST SP 800-171 Rev 3",
+        "version": "3",
+        "authority": "NIST",
+        "description": "NIST SP 800-171 Revision 3. Local pack.",
+        "type": "Standard",
+        "seeder": "Database\\Seeders\\SP800171r3Seeder"
+    },
+    {
+        "code": "800-53-Low",
+        "name": "NIST SP 800-53 Low Baseline",
+        "version": "5",
+        "authority": "NIST",
+        "description": "Low-impact 800-53 baseline. Local pack.",
+        "type": "Standard",
+        "seeder": "Database\\Seeders\\SP80053LowSeeder"
+    },
+    {
+        "code": "CMMC-2-L2",
+        "name": "CMMC Level 2",
+        "version": "2",
+        "authority": "DoD",
+        "description": "CMMC 2.0 Level 2. Local pack.",
+        "type": "Standard",
+        "seeder": "Database\\Seeders\\CMMC2L2Seeder"
+    },
+    {
+        "code": "CIS-CSC",
+        "name": "CIS Critical Security Controls",
+        "version": "8",
+        "authority": "CIS",
+        "description": "CIS Controls implementation groups. Local pack.",
+        "type": "Standard",
+        "seeder": "Database\\Seeders\\CISCSCSeeder"
+    }
+]

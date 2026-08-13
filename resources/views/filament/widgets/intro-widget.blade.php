@@ -1,26 +1,16 @@
 <x-filament-widgets::widget>
     <x-filament::section>
-        <h1 class="text-2xl font-semibold">Welcome to OpenGRC</h1>
-        OpenGRC is a fast, free, lightweight, and opinionated cyber GRC tools for managing and auditing standards,
-        controls, implementations of those controls. This version is a work in progress and is not yet ready for use
-        in a production environment.
-        <br><br>
-        <h2 class="text-xl font-semibold ">Getting Started</h2>
-        <div class="p-3">
-            <ol class="list-decimal list-inside">
-                <li class="pl-2"><strong>Create a new standard - </strong>Multiple sample standards have been created
-                    for you, but you can freely add more Standards.<br></li>
-
-                <li class="pl-2"><strong>Create controls for your standard - </strong>This has been done for the default
-                    standards, but you can add more controls as you like.<br>
-                </li>
-                <li class="pl-2"><strong>Create your implementations - </strong>On each control, you can add
-                    "implementations" to describe how you implement that control. For example: A control may require
-                    EDR. In your implementation you
-                    may talk about how you implement that with Windows Defender.<br></li>
-                <li class="pl-2"><strong>Perform an Audit - </strong>Now that you have your data in the system, you can
-                    now perform an audit to determine effectiveness of your implementations!<br></li>
-            </ol>
-        </div>
+        <h1 class="ppm-welcome__title" style="font-size: var(--text-h1); line-height: var(--text-h1-lh);">Welcome to Fynix Cyber Audit</h1>
+        <p style="color: var(--gray-700); margin-top: 8px;">
+            Fynix Cyber Audit is a fast, lightweight, and opinionated cyber GRC tool for managing and auditing standards,
+            controls, and implementations of those controls.
+        </p>
+        <h2 class="ppm-card__title" style="margin-top: 20px;">Getting started</h2>
+        <ol class="list-decimal list-inside mt-3 space-y-2" style="color: var(--gray-700);">
+            <li><strong>Create a new standard</strong> — sample standards are ready, and you can add more.</li>
+            <li><strong>Create controls for your standard</strong> — already done for the defaults; add more as needed.</li>
+            <li><strong>Create your implementations</strong> — describe how you actually implement each control.</li>
+            <li><strong>Perform an audit</strong> — determine the effectiveness of those implementations.</li>
+        </ol>
     </x-filament::section>
 </x-filament-widgets::widget>

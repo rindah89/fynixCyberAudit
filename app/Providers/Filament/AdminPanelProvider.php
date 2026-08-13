@@ -12,7 +12,8 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
+use App\Support\FynixPalette;
+use Filament\Enums\ThemeMode;
 use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
@@ -48,17 +49,18 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->loginRouteSlug('login')
-            ->colors([
-                'primary' => Color::Slate,
-            ])
-            ->brandName(name: 'OpenGRC Admin')
-            ->viteTheme('resources/css/filament/app/theme.css')
+            ->colors(FynixPalette::filamentColors())
+            ->brandName(name: 'Fynix Cyber Audit Admin')
             ->brandLogo(fn () => view('filament.admin.logo'))
+            ->favicon(asset('img/logo_icon.png'))
+            ->brandLogoHeight('2rem')
             ->globalSearch(true)
             ->databaseNotifications()
             ->databaseNotificationsPolling('30s')
             ->readOnlyRelationManagersOnResourceViewPagesByDefault(false)
             ->viteTheme('resources/css/filament/app/theme.css')
+            ->defaultThemeMode(ThemeMode::Light)
+            ->darkMode(false)
             ->sidebarCollapsibleOnDesktop()
             ->spa()
             ->discoverResources(in: app_path('Filament/Admin/Resources'), for: 'App\\Filament\\Admin\\Resources')
@@ -120,7 +122,7 @@ class AdminPanelProvider extends PanelProvider
                 fn () => view('components.session-expiration-handler')
             )
             ->navigationItems([
-                NavigationItem::make('Back to OpenGRC')
+                NavigationItem::make('Back to Fynix Cyber Audit')
                     ->url('/app', shouldOpenInNewTab: false)
                     ->icon('heroicon-o-arrow-left'),
             ]);

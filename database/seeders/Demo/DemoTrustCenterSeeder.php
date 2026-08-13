@@ -27,7 +27,7 @@ class DemoTrustCenterSeeder extends Seeder
             [
                 'slug' => 'welcome',
                 'title' => 'Welcome to Our Trust Center',
-                'content' => 'At OpenGRC, security and privacy are foundational to everything we do. Our Trust Center provides transparency into our security practices, compliance certifications, and data protection measures.',
+                'content' => 'At Fynix Cyber Audit, security and privacy are foundational to everything we do. Our Trust Center provides transparency into our security practices, compliance certifications, and data protection measures.',
                 'icon' => 'heroicon-o-shield-check',
                 'sort_order' => 1,
             ],

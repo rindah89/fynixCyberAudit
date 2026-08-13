@@ -2,7 +2,6 @@
 
 use App\Livewire\PasswordResetPage;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Storage;
 use Laravel\Socialite\Facades\Socialite;
 
 // Health check endpoint for load balancers and Docker health checks
@@ -24,7 +23,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/app/reset-password', PasswordResetPage::class)->name('password-reset-page');
 
     Route::get('/app/priv-storage/{filepath}', function ($filepath) {
-        return Storage::disk('private')->download($filepath);
+        $fileAccess = app(\App\Access\FileAccess::class);
+
+        return $fileAccess->streamAuthorized(request()->user(), 'private', $filepath);
     })->where('filepath', '.*')->name('priv-storage');
 
     // Media proxy route for serving private S3/cloud storage files
@@ -38,7 +39,11 @@ Route::middleware(['auth'])->group(function () {
 
 });
 
-// Add Socialite routes
+// Central OIDC (Fynix HQ) — same standards as PPM: state CSRF, sub-first linking
+Route::get('auth/sso/login', [\App\Http\Controllers\Auth\SsoController::class, 'login'])->name('auth.sso.login');
+Route::get('auth/sso/callback', [\App\Http\Controllers\Auth\SsoController::class, 'callback'])->name('auth.sso.callback');
+
+// Provider-specific Socialite adapters still land in IdentityService
 Route::get('auth/{provider}/redirect', '\App\Http\Controllers\Auth\AuthController@redirectToProvider')->name('socialite.redirect');
 Route::get('auth/{provider}/callback', '\App\Http\Controllers\Auth\AuthController@handleProviderCallback')->name('socialite.callback');
 
@@ -68,7 +73,8 @@ Route::get('/portal/survey/{survey}/respond', [\App\Http\Controllers\Vendor\Vend
 
 // Vendor Survey Access Page (login/register flow - no auth required)
 Route::get('/portal/survey-access', \App\Filament\Vendor\Pages\Auth\SurveyAccess::class)
-    ->name('filament.vendor.pages.survey-access');
+    ->name('filament.vendor.pages.survey-access')
+    ->middleware('signed');
 
 // Vendor Document Download Route (requires vendor auth)
 Route::middleware(['auth:vendor'])->group(function () {

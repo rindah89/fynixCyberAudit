@@ -8,7 +8,8 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
+use App\Support\FynixPalette;
+use Filament\Enums\ThemeMode;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -23,10 +24,14 @@ class TrustCenterPanelProvider extends PanelProvider
         return $panel
             ->id('trustcenter')
             ->path('trust')
-            ->colors([
-                'primary' => Color::Blue,
-            ])
+            ->colors(FynixPalette::filamentColors())
             ->brandName($this->getTrustCenterName())
+            ->brandLogo(fn () => view('filament.admin.logo'))
+            ->favicon(asset('img/logo_icon.png'))
+            ->brandLogoHeight('2rem')
+            ->viteTheme('resources/css/filament/app/theme.css')
+            ->defaultThemeMode(ThemeMode::Light)
+            ->darkMode(false)
             ->spa()
             ->discoverResources(in: app_path('Filament/TrustCenter/Resources'), for: 'App\\Filament\\TrustCenter\\Resources')
             ->discoverPages(in: app_path('Filament/TrustCenter/Pages'), for: 'App\\Filament\\TrustCenter\\Pages')

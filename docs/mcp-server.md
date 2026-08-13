@@ -1,6 +1,6 @@
-# OpenGRC MCP Server
+# Fynix Cyber Audit MCP Server
 
-OpenGRC provides a Model Context Protocol (MCP) server over HTTP that allows AI clients (like Claude Code) to interact with OpenGRC programmatically.
+Fynix Cyber Audit provides a Model Context Protocol (MCP) server over HTTP that allows AI clients (like Claude Code) to interact with Fynix Cyber Audit programmatically.
 
 ## Features
 
@@ -37,7 +37,7 @@ All CRUD tools support these entity types via the `type` parameter:
 ## Endpoint
 
 ```
-POST /mcp/opengrc
+POST /mcp/fynixcyberaudit
 ```
 
 The endpoint requires OAuth 2.1 authentication via Bearer token (Laravel Passport).
@@ -96,7 +96,7 @@ php artisan passport:keys
 
 ### 2. Enable the MCP Server
 
-1. Log in to OpenGRC as an administrator
+1. Log in to Fynix Cyber Audit as an administrator
 2. Navigate to **Admin** > **Settings** > **AI Settings**
 3. Toggle **Enable MCP Server** to on
 4. Click **Save**
@@ -117,9 +117,9 @@ Claude Code supports OAuth 2.1 authentication natively. Add the following to you
 ```json
 {
   "mcpServers": {
-    "opengrc": {
+    "fynixcyberaudit": {
       "type": "http",
-      "url": "http://127.0.0.1:8000/mcp/opengrc"
+      "url": "http://127.0.0.1:8000/mcp/fynixcyberaudit"
     }
   }
 }
@@ -129,9 +129,9 @@ Claude Code supports OAuth 2.1 authentication natively. Add the following to you
 ```json
 {
   "mcpServers": {
-    "opengrc": {
+    "fynixcyberaudit": {
       "type": "http",
-      "url": "https://your-opengrc-domain.com/mcp/opengrc"
+      "url": "https://your-fynixcyberaudit-domain.com/mcp/fynixcyberaudit"
     }
   }
 }
@@ -146,7 +146,7 @@ When you first connect, Claude Code will:
 ### 5. Test the Connection
 
 In Claude Code, try commands like:
-- "List all policies in OpenGRC"
+- "List all policies in Fynix Cyber Audit"
 - "Show me the available compliance standards"
 - "Create a Security Awareness Policy"
 - "List all vendors"
@@ -203,25 +203,25 @@ Once you have a token:
 
 ```bash
 # Initialize the connection
-curl -X POST http://127.0.0.1:8000/mcp/opengrc \
+curl -X POST http://127.0.0.1:8000/mcp/fynixcyberaudit \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}}'
 
 # List available tools
-curl -X POST http://127.0.0.1:8000/mcp/opengrc \
+curl -X POST http://127.0.0.1:8000/mcp/fynixcyberaudit \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}'
 
 # List policies
-curl -X POST http://127.0.0.1:8000/mcp/opengrc \
+curl -X POST http://127.0.0.1:8000/mcp/fynixcyberaudit \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "tools/call", "id": 3, "params": {"name": "ListEntities", "arguments": {"type": "policy"}}}'
 
 # Get a specific standard
-curl -X POST http://127.0.0.1:8000/mcp/opengrc \
+curl -X POST http://127.0.0.1:8000/mcp/fynixcyberaudit \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc": "2.0", "method": "tools/call", "id": 4, "params": {"name": "GetEntity", "arguments": {"type": "standard", "id": 1}}}'

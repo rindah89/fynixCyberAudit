@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Bundle;
 use App\Models\Standard;
+use App\Support\LocalBundleCatalog;
 use Exception;
 use Filament\Notifications\Notification;
-use Http;
-use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Artisan;
 use Storage;
 
 class BundleController extends Controller
@@ -27,144 +27,70 @@ class BundleController extends Controller
 
     public static function retrieve(): void
     {
-        $repo = setting('general.repo', 'https://repo.opengrc.com');
+        $entries = LocalBundleCatalog::entries();
 
-        try {
-            $response = Http::withHeaders([
-                'Cache-Control' => 'no-cache, no-store, must-revalidate',
-                'Pragma' => 'no-cache',
-                'Expires' => '0',
-            ])->get($repo)->throw();
-            $bundles = json_decode($response->body());
-
-            foreach ($bundles as $bundle) {
-                Bundle::updateOrCreate(
-                    ['code' => $bundle->code],
-                    [
-                        'code' => $bundle->code,
-                        'name' => $bundle->name,
-                        'version' => $bundle->version,
-                        'authority' => $bundle->authority,
-                        'description' => $bundle->description,
-                        'repo_url' => $bundle->url,
-                        'type' => $bundle->type ?? 'Standard',
-                    ]
-                );
-            }
-
-        } catch (RequestException $e) {
-            // Catch exceptions such as 4xx/5xx HTTP status codes or connection issues
+        if ($entries === []) {
             Notification::make()
-                ->title('Error Updating Repository')
-                ->body($e->getMessage())
+                ->title('No local bundles')
+                ->body('No packs were found in resources/bundles/catalog.json.')
                 ->color('danger')
                 ->send();
-        } catch (Exception $e) {
-            // Catch any other potential exceptions
-            Notification::make()
-                ->title('Error Updating Repository')
-                ->body($e->getMessage())
-                ->color('danger')
-                ->send();
+
+            return;
+        }
+
+        foreach ($entries as $bundle) {
+            Bundle::updateOrCreate(
+                ['code' => $bundle['code']],
+                [
+                    'code' => $bundle['code'],
+                    'name' => $bundle['name'],
+                    'version' => $bundle['version'] ?? '',
+                    'authority' => $bundle['authority'] ?? '',
+                    'description' => $bundle['description'] ?? '',
+                    'repo_url' => 'local://'.$bundle['code'],
+                    'type' => $bundle['type'] ?? 'Standard',
+                ]
+            );
         }
 
         Notification::make()
-            ->title('Repository Updated')
-            ->body('Latest Repository content has been retrieved successfully!')
+            ->title('Local catalog loaded')
+            ->body('Bundles were refreshed from the packs shipped with Fynix Cyber Audit.')
             ->send();
     }
 
     public static function importBundle(Bundle $bundle): void
     {
-        \Log::info('Importing bundle: '.$bundle->code);
+        \Log::info('Importing local bundle: '.$bundle->code);
 
         try {
-            $response = Http::get($bundle->repo_url)->throw();
-
-            // GitHub raw URLs return application/octet-stream, so we need to force decode
-            // Clean invalid UTF-8 sequences that might break JSON parsing
-            $body = mb_convert_encoding($response->body(), 'UTF-8', 'UTF-8');
-            $bundle_content = json_decode($body, true);
-
-            // Debug: Check if JSON parsing failed
-            if ($bundle_content === null) {
-                \Log::error('JSON decode failed', [
-                    'url' => $bundle->repo_url,
-                    'status' => $response->status(),
-                    'content_type' => $response->header('Content-Type'),
-                    'body_preview' => substr($response->body(), 0, 500),
-                ]);
-                throw new Exception('Failed to decode JSON response from: '.$bundle->repo_url);
+            $entry = LocalBundleCatalog::find($bundle->code);
+            if ($entry === null) {
+                throw new Exception('This pack is not in the local catalog.');
             }
 
-            // Validate required fields exist
-            if (! isset($bundle_content['code']) || ! isset($bundle_content['controls'])) {
-                \Log::error('Invalid bundle structure', [
-                    'url' => $bundle->repo_url,
-                    'keys' => array_keys($bundle_content),
+            if (! empty($entry['file'])) {
+                self::importFromLocalJson($bundle, LocalBundleCatalog::pathFor($entry['file']));
+            } elseif (! empty($entry['seeder'])) {
+                Artisan::call('db:seed', [
+                    '--class' => $entry['seeder'],
+                    '--force' => true,
                 ]);
-                throw new Exception('Bundle JSON is missing required fields (code or controls)');
-            }
-
-            $standard = Standard::updateOrCreate(
-                ['code' => $bundle->code],
-                [
-                    'code' => $bundle_content['code'],
-                    'name' => $bundle_content['name'],
-                    'authority' => $bundle_content['authority'],
-                    'description' => $bundle_content['description'],
-                ]
-            );
-
-            \Log::info('Importing bundle: '.$bundle->code);
-
-            foreach ($bundle_content['controls'] as $control) {
-
-                $standard->controls()->updateOrCreate(
-                    ['code' => $control['code']],
-                    [
-
-                        'title' => $control['title'],
-                        'code' => $control['code'],
-                        'description' => $control['description'],
-                        'discussion' => $control['discussion'] ?? null,
-                        'test' => $control['test'] ?? null,
-                        'type' => $control['type'],
-                        'category' => $control['category'],
-                        'enforcement' => $control['enforcement'],
-                    ]
-                );
+            } else {
+                throw new Exception('Catalog entry has no file or seeder.');
             }
 
             $bundle->update(['status' => 'imported']);
-
-        } catch (RequestException $e) {
-            // Catch exceptions such as 4xx/5xx HTTP status codes or connection issues
-            \Log::error('Bundle download failed', [
-                'bundle' => $bundle->code,
-                'url' => $bundle->repo_url,
-                'error' => $e->getMessage(),
-            ]);
-
-            Notification::make()
-                ->title('Bundle Import Failed')
-                ->body('Download failed: '.$e->getMessage())
-                ->color('danger')
-                ->send();
-
-            return;
         } catch (Exception $e) {
-            // Catch any other potential exceptions
             \Log::error('Bundle import error', [
                 'bundle' => $bundle->code,
-                'url' => $bundle->repo_url,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
 
             Notification::make()
                 ->title('Bundle Import Failed')
-                ->body('An unexpected error occurred: '.$e->getMessage())
+                ->body($e->getMessage())
                 ->color('danger')
                 ->send();
 
@@ -172,9 +98,46 @@ class BundleController extends Controller
         }
 
         Notification::make()
-            ->title('Repository Updated')
-            ->body('Latest Repository content has been retrieved successfully!')
+            ->title('Bundle imported')
+            ->body($bundle->code.' was imported from the local catalog.')
             ->send();
+    }
 
+    private static function importFromLocalJson(Bundle $bundle, string $path): void
+    {
+        if (! is_file($path)) {
+            throw new Exception('Local bundle file is missing: '.$path);
+        }
+
+        $bundle_content = json_decode((string) file_get_contents($path), true);
+        if (! is_array($bundle_content) || ! isset($bundle_content['code'], $bundle_content['controls'])) {
+            throw new Exception('Bundle JSON is missing required fields (code or controls)');
+        }
+
+        $standard = Standard::updateOrCreate(
+            ['code' => $bundle_content['code']],
+            [
+                'code' => $bundle_content['code'],
+                'name' => $bundle_content['name'],
+                'authority' => $bundle_content['authority'],
+                'description' => $bundle_content['description'],
+            ]
+        );
+
+        foreach ($bundle_content['controls'] as $control) {
+            $standard->controls()->updateOrCreate(
+                ['code' => $control['code']],
+                [
+                    'title' => $control['title'],
+                    'code' => $control['code'],
+                    'description' => $control['description'],
+                    'discussion' => $control['discussion'] ?? null,
+                    'test' => $control['test'] ?? null,
+                    'type' => $control['type'],
+                    'category' => $control['category'],
+                    'enforcement' => $control['enforcement'],
+                ]
+            );
+        }
     }
 }

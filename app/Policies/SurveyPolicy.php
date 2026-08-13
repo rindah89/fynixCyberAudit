@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Access\VendorAccess;
 use App\Models\Survey;
 use App\Models\VendorUser;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -25,8 +26,7 @@ class SurveyPolicy
     {
         // VendorUsers can view surveys assigned to their vendor OR where they are the respondent
         if ($user instanceof VendorUser) {
-            return $survey->vendor_id === $user->vendor_id
-                || $survey->respondent_email === $user->email;
+            return app(VendorAccess::class)->mayOpenSurvey($user, $survey);
         }
 
         return $user->can('Read '.Str::plural(class_basename($this->model)));
@@ -46,8 +46,7 @@ class SurveyPolicy
     {
         // VendorUsers can update (respond to) surveys assigned to their vendor OR where they are the respondent
         if ($user instanceof VendorUser) {
-            return $survey->vendor_id === $user->vendor_id
-                || $survey->respondent_email === $user->email;
+            return app(VendorAccess::class)->mayOpenSurvey($user, $survey);
         }
 
         return $user->can('Update '.Str::plural(class_basename($this->model)));

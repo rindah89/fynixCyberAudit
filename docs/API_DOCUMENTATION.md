@@ -1,8 +1,8 @@
-# OpenGRC API Documentation
+# Fynix Cyber Audit API Documentation
 
 ## Overview
 
-The OpenGRC API provides RESTful endpoints for managing all resources in the GRC system. All endpoints require authentication via Laravel Sanctum tokens and respect the permission system based on user roles.
+The Fynix Cyber Audit API provides RESTful endpoints for managing all resources in the GRC system. All endpoints require authentication via Laravel Sanctum tokens and respect the permission system based on user roles.
 
 ## Authentication
 
@@ -10,7 +10,7 @@ The OpenGRC API provides RESTful endpoints for managing all resources in the GRC
 
 Users can generate API tokens from the Filament admin panel using the built-in Sanctum token management (Filament Breezy).
 
-1. Log in to the OpenGRC web interface
+1. Log in to the Fynix Cyber Audit web interface
 2. Navigate to your profile settings
 3. Generate a new API token
 4. Copy the token (it will only be shown once)
@@ -509,4 +509,4 @@ curl -X POST "https://your-domain.com/api/controls/7/restore" \
 
 ## Support
 
-For issues or questions about the API, please create an issue on the OpenGRC GitHub repository.
+For issues or questions about the API, please create an issue on the Fynix Cyber Audit GitHub repository.

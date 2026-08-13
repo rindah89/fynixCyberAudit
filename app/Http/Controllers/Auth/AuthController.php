@@ -3,61 +3,45 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\User;
-use Auth;
-use Illuminate\Support\Facades\Log;
+use App\Identity\IdentityException;
+use App\Identity\IdentityService;
+use App\Identity\OidcIdentity;
+use Illuminate\Support\Facades\Auth;
 use Laravel\Socialite\Facades\Socialite;
-use Spatie\Permission\Models\Role;
-use Str;
 
 class AuthController extends Controller
 {
-    public function redirectToProvider($provider)
+    public function redirectToProvider(string $provider)
     {
         return Socialite::driver($provider)->redirect();
     }
 
-    public function handleProviderCallback($provider)
+    public function handleProviderCallback(string $provider, IdentityService $identity)
     {
-
         $socialiteUser = Socialite::driver($provider)->user();
+        $raw = is_array($socialiteUser->user ?? null) ? $socialiteUser->user : [];
 
-        // Check if auto-provisioning is enabled for the provider
-        $autoProvision = setting("auth.{$provider}.auto_provision", false);
+        $oidcIdentity = new OidcIdentity(
+            subject: (string) $socialiteUser->getId(),
+            email: (string) $socialiteUser->getEmail(),
+            issuer: (string) ($raw['iss'] ?? $provider),
+            emailVerified: (bool) ($raw['email_verified'] ?? false),
+            groups: is_array($raw['groups'] ?? null) ? array_map('strval', $raw['groups']) : [],
+            name: $socialiteUser->getName(),
+        );
 
-        // Find existing user
-        $user = User::where('email', $socialiteUser->getEmail())->first();
-
-        if (! $user && ! $autoProvision) {
-            // User doesn't exist and auto-provisioning is disabled
-            abort(401, 'No account exists for this email address and auto-provisioning is disabled.');
+        try {
+            $result = $identity->complete($oidcIdentity);
+        } catch (IdentityException $exception) {
+            return redirect()
+                ->route('filament.app.auth.login')
+                ->with('oidc_error', $exception->getMessage());
         }
 
-        if (! $user && $autoProvision) {
-            // Create new user since auto-provisioning is enabled
-            $user = User::create([
-                'name' => $socialiteUser->getName(),
-                'email' => $socialiteUser->getEmail(),
-                'password' => bcrypt(Str::random(16)),
-                'email_verified_at' => now(),
-                'password_reset_required' => false,
-            ]);
+        Auth::login($result->user);
+        $result->user->updateLastActivity();
+        session()->regenerate();
 
-            // Assign the configured role if specified
-            $roleId = setting("auth.{$provider}.role");
-            if ($roleId) {
-                $role = Role::find($roleId);
-                if ($role) {
-                    $user->assignRole($role);
-                }
-            }
-        }
-
-        // Log the user in
-        Auth::login($user);
-        $user->updateLastActivity();
-
-        // Redirect to the dashboard
         return redirect()->to('/app');
     }
 }

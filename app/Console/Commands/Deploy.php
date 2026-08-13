@@ -14,17 +14,17 @@ class Deploy extends Command
      *
      * @var string
      */
-    protected $signature = 'opengrc:deploy
+    protected $signature = 'fynix:deploy
                             {--db-driver=mysql : Database driver (mysql, pgsql, or sqlite)}
                             {--db-host=127.0.0.1 : Database host}
                             {--db-port= : Database port (3306 for MySQL, 5432 for PostgreSQL)}
-                            {--db-name=opengrc : Database name}
+                            {--db-name=fynixcyberaudit : Database name}
                             {--db-user= : Database username}
                             {--db-password= : Database password}
                             {--admin-email=admin@example.com : Admin user email address}
                             {--admin-password= : Admin user password}
-                            {--site-name=OpenGRC : Site name}
-                            {--site-url=https://opengrc.test : Site URL}
+                            {--site-name=Fynix Cyber Audit : Site name}
+                            {--site-url=https://fynixcyberaudit.test : Site URL}
                             {--app-key= : Application key (will generate if not provided)}
                             {--s3 : Enable S3 storage configuration}
                             {--s3-bucket= : S3 bucket name}
@@ -52,7 +52,7 @@ class Deploy extends Command
      *
      * @var string
      */
-    protected $description = 'Deploy OpenGRC with command line configuration for production environments';
+    protected $description = 'Deploy Fynix Cyber Audit with command line configuration for production environments';
 
     /**
      * Execute the console command.
@@ -74,7 +74,7 @@ class Deploy extends Command
 
         // Confirm deployment
         if (! $this->option('accept')) {
-            if (! $this->confirm('Proceed with OpenGRC deployment?', true)) {
+            if (! $this->confirm('Proceed with Fynix Cyber Audit deployment?', true)) {
                 $this->error('Deployment cancelled.');
 
                 return;
@@ -99,7 +99,7 @@ class Deploy extends Command
     {
         $this->info('');
         $this->info('╔══════════════════════════════════════════════════════════════════╗');
-        $this->info('║                    OpenGRC Deployment Tool                      ║');
+        $this->info('║                 Fynix Cyber Audit Deployment Tool                ║');
         $this->info('║                                                                  ║');
         $this->info('║  Automated deployment for production environments               ║');
         $this->info('╚══════════════════════════════════════════════════════════════════╝');
@@ -547,7 +547,7 @@ class Deploy extends Command
             if (! $isUpdate) {
                 // Create admin user
                 $this->info('[INFO] Creating admin user...');
-                $this->call('opengrc:create-user', [
+                $this->call('fynix:create-user', [
                     'email' => $config['admin_email'],
                     'password' => $config['admin_password'],
                 ]);
@@ -731,7 +731,7 @@ class Deploy extends Command
     {
         $this->info('');
         $this->info('[SUCCESS] ════════════════════════════════════════════════════════════════');
-        $this->info('[SUCCESS]  OpenGRC has been successfully deployed!');
+        $this->info('[SUCCESS]  Fynix Cyber Audit has been successfully deployed!');
         $this->info('[SUCCESS] ════════════════════════════════════════════════════════════════');
         $this->info('');
         $this->info('[INFO] Next Steps:');
@@ -741,7 +741,7 @@ class Deploy extends Command
         $this->info('   • Review and adjust file permissions as needed');
         $this->info('   • Set up monitoring and log rotation');
         $this->info('');
-        $this->info('[INFO] Access your OpenGRC installation at: '.$this->option('site-url'));
+        $this->info('[INFO] Access your Fynix Cyber Audit installation at: '.$this->option('site-url'));
         $this->info('[INFO] Login with: '.$this->option('admin-email'));
         $this->info('');
     }

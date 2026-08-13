@@ -11,6 +11,22 @@ class Bundle extends Model
 {
     use HasFactory, LogsActivity;
 
+    /**
+     * @var list<string>
+     */
+    protected $fillable = [
+        'code',
+        'name',
+        'version',
+        'description',
+        'authority',
+        'source_url',
+        'image',
+        'repo_url',
+        'type',
+        'status',
+    ];
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

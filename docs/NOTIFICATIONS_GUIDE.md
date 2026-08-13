@@ -1,10 +1,10 @@
 # Notifications Guide
 
-This guide explains how to use the notification system in OpenGRC.
+This guide explains how to use the notification system in Fynix Cyber Audit.
 
 ## Overview
 
-OpenGRC now has two types of notifications:
+Fynix Cyber Audit now has two types of notifications:
 
 1. **Filament Toast Notifications** - Temporary, session-based notifications using `Notification::make()`
 2. **Database Notifications** - Persistent notifications stored in the database with a bell icon in the topbar

@@ -18,6 +18,18 @@ class DataRequestResponse extends Model implements Commentable
 {
     use HasComments, HasFactory, LogsActivity;
 
+    /**
+     * @var list<string>
+     */
+    protected $fillable = [
+        'data_request_id',
+        'requester_id',
+        'requestee_id',
+        'due_at',
+        'status',
+        'response',
+    ];
+
     protected $casts = [
         'status' => ResponseStatus::class,
         'due_at' => 'datetime',

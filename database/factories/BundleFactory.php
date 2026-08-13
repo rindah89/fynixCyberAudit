@@ -23,9 +23,10 @@ class BundleFactory extends Factory
             'description' => $this->faker->paragraph,
             'authority' => $this->faker->name,
             'source_url' => $this->faker->url,
-            'filename' => $this->faker->slug.'.zip',
             'image' => $this->faker->slug.'.jpg',
+            'repo_url' => $this->faker->url,
             'type' => 'Standard',
+            'status' => 'Published',
         ];
     }
 }

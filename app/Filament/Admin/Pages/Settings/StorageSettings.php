@@ -607,8 +607,8 @@ class StorageSettings extends BaseSettings
 
         // Skip the existence check and go directly to read/write test
         // This is more reliable than checking bucket existence
-        $testFileName = 'opengrc-connection-test-'.uniqid().'.txt';
-        $testContent = 'OpenGRC S3 connection test - '.date('Y-m-d H:i:s');
+        $testFileName = 'fynixcyberaudit-connection-test-'.uniqid().'.txt';
+        $testContent = 'Fynix Cyber Audit S3 connection test - '.date('Y-m-d H:i:s');
 
         try {
             Log::info("Starting S3 read/write test with file: {$testFileName}");
@@ -663,8 +663,8 @@ class StorageSettings extends BaseSettings
         $disk = Storage::disk('digitalocean');
 
         // Test: Write, read, and delete a test file
-        $testFileName = 'opengrc-connection-test-'.uniqid().'.txt';
-        $testContent = 'OpenGRC DigitalOcean Spaces connection test - '.date('Y-m-d H:i:s');
+        $testFileName = 'fynixcyberaudit-connection-test-'.uniqid().'.txt';
+        $testContent = 'Fynix Cyber Audit DigitalOcean Spaces connection test - '.date('Y-m-d H:i:s');
 
         try {
             Log::info('Starting DigitalOcean Spaces test', [
@@ -1008,8 +1008,8 @@ class StorageSettings extends BaseSettings
             config(['filesystems.disks.s3' => $testConfig]);
 
             // Generate a unique test file name
-            $testFileName = 'opengrc-connection-test-'.uniqid().'.txt';
-            $testContent = 'OpenGRC S3 connection test - '.now();
+            $testFileName = 'fynixcyberaudit-connection-test-'.uniqid().'.txt';
+            $testContent = 'Fynix Cyber Audit S3 connection test - '.now();
 
             Log::info('Starting S3 test', [
                 'file' => $testFileName,
@@ -1132,8 +1132,8 @@ class StorageSettings extends BaseSettings
             config(['filesystems.disks.digitalocean' => $testConfig]);
 
             // Generate a unique test file name
-            $testFileName = 'opengrc-connection-test-'.uniqid().'.txt';
-            $testContent = 'OpenGRC DigitalOcean Spaces connection test - '.now();
+            $testFileName = 'fynixcyberaudit-connection-test-'.uniqid().'.txt';
+            $testContent = 'Fynix Cyber Audit DigitalOcean Spaces connection test - '.now();
 
             Log::info('Starting DigitalOcean Spaces test', [
                 'file' => $testFileName,

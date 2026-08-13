@@ -24,7 +24,7 @@ class EvidenceRequestMail extends Mailable
     {
         $this->email = $email;
         $this->name = $name;
-        $this->url = setting('general.url');
+        $this->url = setting('general.url') ?: config('app.url');
     }
 
     /**
@@ -32,7 +32,8 @@ class EvidenceRequestMail extends Mailable
      */
     public function build()
     {
-        $viewString = setting('mail.templates.evidence_request_body');
+        $viewString = setting('mail.templates.evidence_request_body')
+            ?: 'Hello {{ $name }}, an evidence request has been assigned to you.';
 
         $renderedView = Blade::render($viewString, [
             'url' => $this->url,
@@ -40,9 +41,12 @@ class EvidenceRequestMail extends Mailable
             'email' => $this->email,
         ]);
 
-        return $this->from(setting('mail.from'))
+        $from = setting('mail.from') ?: config('mail.from.address');
+        $subject = setting('mail.templates.evidence_request_subject') ?: 'Evidence Request';
+
+        return $this->from($from)
             ->to($this->email)
-            ->subject(setting('mail.templates.evidence_request_subject'))
+            ->subject($subject)
             ->html($renderedView);
     }
 }

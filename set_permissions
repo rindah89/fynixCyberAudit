@@ -54,4 +54,4 @@ sudo chmod 770 install.sh update.sh set_permissions generate-sbom.php artisan
 echo "Setting correct permissions for vendor binaries..."
 sudo chmod 770 install.sh vendor/bin/*
 
-echo "Done. Ownership is $CURRENT_USER:$WEB_USER and OpenGRC permissions are set."
+echo "Done. Ownership is $CURRENT_USER:$WEB_USER and Fynix Cyber Audit permissions are set."

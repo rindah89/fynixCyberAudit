@@ -13,7 +13,8 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
+use App\Support\FynixPalette;
+use Filament\Enums\ThemeMode;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -35,10 +36,14 @@ class VendorPanelProvider extends PanelProvider
             ->passwordReset()
             ->emailVerification()
             ->profile()
-            ->colors([
-                'primary' => Color::Teal,
-            ])
+            ->colors(FynixPalette::filamentColors())
             ->brandName($this->getPortalName())
+            ->brandLogo(fn () => view('filament.admin.logo'))
+            ->favicon(asset('img/logo_icon.png'))
+            ->brandLogoHeight('2rem')
+            ->viteTheme('resources/css/filament/app/theme.css')
+            ->defaultThemeMode(ThemeMode::Light)
+            ->darkMode(false)
             ->spa()
             ->discoverResources(in: app_path('Filament/Vendor/Resources'), for: 'App\\Filament\\Vendor\\Resources')
             ->discoverPages(in: app_path('Filament/Vendor/Pages'), for: 'App\\Filament\\Vendor\\Pages')

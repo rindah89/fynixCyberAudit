@@ -97,7 +97,7 @@ class ImportIrl extends Page implements HasForms
                                                                 the specific records, evidence, and data that auditors require to conduct an effective audit. If you have received an 
                                                                 IRL from your auditor, you can upload it here to create or update data requests for this audit. Make sure your IRL 
                                                                 uses the template provided to ensure a successful import.</p>
-                                                                <p class='mt-3'><a class='underline text-grcblue-400' href='$template_url'>IRL Template Download</a></p>")),
+                                                                <p class='mt-3'><a class='ppm-action-link' href='$template_url'>IRL Template Download</a></p>")),
                             FileUpload::make('irl_file')
                                 ->required()
                                 ->label('IRL File')

@@ -30,7 +30,7 @@ echo -e "   ╚═════╝ ╚═╝     ╚══════╝╚═�
 
 echo ""
 echo -e "################################################################"
-echo -e "##                  WELCOME TO OPENGRC                        ##"
+echo -e "##              WELCOME TO FYNIX CYBER AUDIT                 ##"
 echo -e "################################################################"
 echo ""
 echo -e "\033[5m\033[31mWarning: This installer will overwrite your current install. If"
@@ -77,4 +77,4 @@ fi
 echo "Installing Composer Dependencies..."
   composer update
 
-php artisan opengrc:install
+php artisan fynix:install

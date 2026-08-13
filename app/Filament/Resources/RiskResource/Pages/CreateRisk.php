@@ -250,7 +250,7 @@ class CreateRisk extends CreateRecord
                             Placeholder::make('implementations')
                                 ->hiddenLabel(true)
                                 ->columnSpanFull()
-                                ->content('If you already have implementatons in OpenGRC
+                                ->content('If you already have implementatons in Fynix Cyber Audit
                                 that you use to control this risk, you can link them here. You
                                 can relate these later if you need to.'),
                             Select::make('implementations')
@@ -268,7 +268,7 @@ class CreateRisk extends CreateRecord
                             Placeholder::make('assets')
                                 ->hiddenLabel(true)
                                 ->columnSpanFull()
-                                ->content('If this risk relates to specific assets in OpenGRC,
+                                ->content('If this risk relates to specific assets in Fynix Cyber Audit,
                                 you can link them here. You can relate these later if you need to.'),
                             Select::make('assets')
                                 ->label('Related Assets')

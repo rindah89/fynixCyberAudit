@@ -198,14 +198,14 @@ class AiSettings extends BaseSettings
                                     ]),
                                 Section::make('MCP Server')
                                     ->description(new HtmlString(
-                                        'Model Context Protocol (MCP) allows AI assistants like Claude to interact with OpenGRC data. '.
-                                        '<a href="https://docs.opengrc.com/mcp-server/" target="_blank" class="text-primary-600 hover:underline">Learn more</a>'
+                                        'Model Context Protocol (MCP) allows AI assistants like Claude to interact with Fynix Cyber Audit data. '.
+                                        '<a href="https://github.com/rindah89/fynixCyberAudit/blob/main/docs/mcp-server.md" target="_blank" class="text-primary-600 hover:underline">Learn more</a>'
                                     ))
                                     ->schema([
                                         Toggle::make('mcp.enabled')
                                             ->label('Enable MCP Server')
                                             ->helperText(fn () => $this->passportKeysConfigured()
-                                                ? 'When enabled, authenticated API clients can access OpenGRC via the MCP protocol using OAuth 2.1'
+                                                ? 'When enabled, authenticated API clients can access Fynix Cyber Audit via the MCP protocol using OAuth 2.1'
                                                 : new HtmlString('<span class="text-danger-600 dark:text-danger-400">Passport encryption keys are not configured. Run <code class="bg-gray-100 dark:bg-gray-800 px-1 rounded">php artisan passport:keys</code> to generate them.</span>'))
                                             ->disabled(fn () => ! $this->passportKeysConfigured())
                                             ->dehydrateStateUsing(function ($state) {
@@ -236,7 +236,7 @@ class AiSettings extends BaseSettings
                                             ->content(fn () => new HtmlString('<code class="text-sm bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">'.url('/oauth/register').'</code>')),
                                         Placeholder::make('mcp_endpoint')
                                             ->label('MCP Endpoint')
-                                            ->content(fn () => new HtmlString('<code class="text-sm bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">'.url('/mcp/opengrc').'</code>')),
+                                            ->content(fn () => new HtmlString('<code class="text-sm bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">'.url('/mcp/fynixcyberaudit').'</code>')),
                                     ]),
                             ]),
                         Tab::make('Quota Usage')

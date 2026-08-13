@@ -105,11 +105,11 @@ class ChecklistController extends BaseApiController
      */
     public function show(Request $request, int $id): JsonResponse
     {
-        $this->authorize('view', Survey::class);
-
         $checklist = Survey::checklists()
             ->with($this->showRelations)
             ->findOrFail($id);
+
+        $this->authorize('view', $checklist);
 
         return response()->json([
             'data' => $checklist,

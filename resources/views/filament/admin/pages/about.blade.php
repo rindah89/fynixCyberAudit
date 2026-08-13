@@ -14,7 +14,7 @@
                 <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Application Name</dt>
-                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">OpenGRC</dd>
+                        <dd class="mt-1 text-sm text-gray-900 dark:text-white">Fynix Cyber Audit</dd>
                     </div>
                     <div>
                         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Version</dt>
@@ -41,7 +41,7 @@
                     <div>
                         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Latest Tag</dt>
                         <dd class="mt-1 text-sm text-gray-900 dark:text-white">
-                            <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20 dark:bg-green-400/10 dark:text-green-400 dark:ring-green-400/20">
+                            <span class="ppm-chip ppm-chip--green">
                                 {{ $version['tag'] }}
                             </span>
                         </dd>
@@ -60,7 +60,7 @@
                 <div class="mt-6">
                     <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Description</dt>
                     <dd class="mt-1 text-sm text-gray-900 dark:text-white">
-                        OpenGRC is a cyber Governance, Risk, and Compliance (GRC) web application built for small businesses and teams. 
+                        Fynix Cyber Audit is a cyber Governance, Risk, and Compliance (GRC) web application built for small businesses and teams. 
                         It provides tools for security program management, compliance framework imports, audits, and reporting.
                     </dd>
                 </div>
@@ -83,10 +83,10 @@
             <div class="fi-section-content p-6">
                 <div class="mb-4">
                     <div class="flex items-center gap-2 mb-3">
-                        <span class="inline-flex items-center rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10 dark:bg-blue-400/10 dark:text-blue-400 dark:ring-blue-400/20">
+                        <span class="ppm-chip ppm-chip--blue">
                             {{ $license['short_type'] }}
                         </span>
-                        <a href="{{ $license['url'] }}" target="_blank" class="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                        <a href="{{ $license['url'] }}" target="_blank" class="ppm-action-link">
                             View Full License →
                         </a>
                     </div>

@@ -1,22 +1,22 @@
-<table class="w-full text-sm text-gray-800">
-    <tr class="bg-green-200 border-b border-gray-200 dark:border-gray-600 py-1">
-        <td class="px-4">Very Low</td>
-        <td class="px-4">Minimal damage</td>
+<table class="ppm-legend">
+    <tr class="risk-cell-green-soft">
+        <td>Very Low</td>
+        <td>Minimal damage</td>
     </tr>
-    <tr class="bg-grcblue-200 border-b border-gray-200 dark:border-gray-600 py-1">
-        <td class="px-4">Low</td>
-        <td class="px-4">Low levels of damage</td>
+    <tr class="risk-cell-blue-soft">
+        <td>Low</td>
+        <td>Low levels of damage</td>
     </tr>
-    <tr class="bg-yellow-200 border-b border-gray-200 dark:border-gray-600 py-1">
-        <td class="px-4">Moderate</td>
-        <td class="px-4">Some damage expected</td>
+    <tr class="risk-cell-yellow-soft">
+        <td>Moderate</td>
+        <td>Some damage expected</td>
     </tr>
-    <tr class="bg-orange-200 border-b border-gray-200 dark:border-gray-600 py-1">
-        <td class="px-4">High</td>
-        <td class="px-4">High levels of damage</td>
+    <tr class="risk-cell-amber-soft">
+        <td>High</td>
+        <td>High levels of damage</td>
     </tr>
-    <tr class="bg-red-200 border-b border-gray-200 dark:border-gray-600 py-1">
-        <td class="px-4">Very High</td>
-        <td class="px-4">Catastrophic Damage</td>
+    <tr class="risk-cell-red-soft">
+        <td>Very High</td>
+        <td>Catastrophic Damage</td>
     </tr>
 </table>

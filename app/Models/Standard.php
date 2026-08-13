@@ -47,6 +47,19 @@ class Standard extends Model
     use HasFactory, HasMcpSupport, HasTaxonomy, LogsActivity, SoftDeletes;
 
     /**
+     * @var list<string>
+     */
+    protected $fillable = [
+        'name',
+        'title',
+        'description',
+        'code',
+        'authority',
+        'reference_url',
+        'status',
+    ];
+
+    /**
      * The attributes that should be cast.
      *
      * @var array<string, string>

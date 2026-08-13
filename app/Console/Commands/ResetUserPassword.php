@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Hash;
 use Str;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-#[AsCommand(name: 'opengrc:reset-password')]
+#[AsCommand(name: 'fynix:reset-password')]
 class ResetUserPassword extends Command
 {
     /**
@@ -16,7 +16,7 @@ class ResetUserPassword extends Command
      *
      * @var string
      */
-    protected $signature = 'opengrc:reset-password {email : The email of the user} {--generate : Generate a random password}';
+    protected $signature = 'fynix:reset-password {email : The email of the user} {--generate : Generate a random password}';
 
     /**
      * The console command description.

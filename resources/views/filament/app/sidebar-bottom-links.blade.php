@@ -11,7 +11,7 @@
         ],
         [
             'label' => 'Help',
-            'url' => 'https://docs.opengrc.com',
+            'url' => 'https://github.com/rindah89/fynixCyberAudit',
             'icon' => 'heroicon-o-question-mark-circle',
             'external' => true,
             'permissions' => null,

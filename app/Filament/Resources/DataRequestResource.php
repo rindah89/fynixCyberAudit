@@ -8,7 +8,7 @@ use App\Filament\Resources\DataRequestResource\Pages\CreateDataRequest;
 use App\Filament\Resources\DataRequestResource\Pages\EditDataRequest;
 use App\Filament\Resources\DataRequestResource\Pages\ListDataRequests;
 use App\Filament\Resources\DataRequestResource\Pages\ViewDataRequest;
-use App\Mail\EvidenceRequestMail;
+
 use App\Models\Audit;
 use App\Models\DataRequest;
 use App\Models\User;
@@ -34,7 +34,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Mail;
+
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 
@@ -167,13 +167,7 @@ class DataRequestResource extends Resource
 
     public static function createResponses(DataRequest $record, ?string $dueDate = null): void
     {
-        $record->responses()->create([
-            'requester_id' => $record->created_by_id,
-            'requestee_id' => $record->assigned_to_id,
-            'data_request_id' => $record->id,
-            'due_at' => $dueDate,
-            'status' => ResponseStatus::PENDING,
-        ]);
+        app(\App\Access\DataRequestFulfillment::class)->open($record, $dueDate);
     }
 
     public static function getEditForm(Schema $schema): Schema
@@ -383,23 +377,20 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    // Update the response
-                    $response->requestee_id = $data['new_assignee_id'];
-                    $response->save();
+                    try {
+                        app(\App\Access\DataRequestFulfillment::class)->reassign(
+                            $response,
+                            $newAssignee,
+                            (bool) ($data['send_notification'] ?? false),
+                        );
+                    } catch (Exception $e) {
+                        Notification::make()
+                            ->title('Warning')
+                            ->body('Request reassigned but email notification failed to send.')
+                            ->warning()
+                            ->send();
 
-                    // Send email notification if checkbox is checked
-                    if ($data['send_notification'] && $newAssignee->email) {
-                        try {
-                            Mail::send(new EvidenceRequestMail($newAssignee->email, $newAssignee->name));
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('Warning')
-                                ->body('Request reassigned but email notification failed to send.')
-                                ->warning()
-                                ->send();
-
-                            return;
-                        }
+                        return;
                     }
 
                     Notification::make()
@@ -436,8 +427,7 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    $response->status = ResponseStatus::ACCEPTED;
-                    $response->save();
+                    app(\App\Access\DataRequestFulfillment::class)->accept($response);
 
                     Notification::make()
                         ->title('Success')
@@ -466,8 +456,7 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    $response->status = ResponseStatus::REJECTED;
-                    $response->save();
+                    app(\App\Access\DataRequestFulfillment::class)->reject($response);
 
                     Notification::make()
                         ->title('Success')
@@ -519,24 +508,20 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    // Update the response and set status to Pending
-                    $response->requestee_id = $data['new_assignee_id'];
-                    $response->status = ResponseStatus::PENDING;
-                    $response->save();
+                    try {
+                        app(\App\Access\DataRequestFulfillment::class)->reassign(
+                            $response,
+                            $newAssignee,
+                            (bool) ($data['send_notification'] ?? false),
+                        );
+                    } catch (Exception $e) {
+                        Notification::make()
+                            ->title('Warning')
+                            ->body('Request reassigned but email notification failed to send.')
+                            ->warning()
+                            ->send();
 
-                    // Send email notification if checkbox is checked
-                    if ($data['send_notification'] && $newAssignee->email) {
-                        try {
-                            Mail::send(new EvidenceRequestMail($newAssignee->email, $newAssignee->name));
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('Warning')
-                                ->body('Request reassigned but email notification failed to send.')
-                                ->warning()
-                                ->send();
-
-                            return;
-                        }
+                        return;
                     }
 
                     Notification::make()
@@ -575,9 +560,7 @@ class DataRequestResource extends Resource
                             return;
                         }
 
-                        // Update the due date
-                        $response->due_at = $data['new_due_date'];
-                        $response->save();
+                        app(\App\Access\DataRequestFulfillment::class)->changeDueDate($response, $data['new_due_date']);
 
                         Notification::make()
                             ->title('Success')
@@ -616,8 +599,7 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    $response->status = ResponseStatus::ACCEPTED;
-                    $response->save();
+                    app(\App\Access\DataRequestFulfillment::class)->accept($response);
 
                     Notification::make()
                         ->title('Success')
@@ -646,8 +628,7 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    $response->status = ResponseStatus::REJECTED;
-                    $response->save();
+                    app(\App\Access\DataRequestFulfillment::class)->reject($response);
 
                     Notification::make()
                         ->title('Success')
@@ -699,24 +680,20 @@ class DataRequestResource extends Resource
                         return;
                     }
 
-                    // Update the response and set status to Pending
-                    $response->requestee_id = $data['new_assignee_id'];
-                    $response->status = ResponseStatus::PENDING;
-                    $response->save();
+                    try {
+                        app(\App\Access\DataRequestFulfillment::class)->reassign(
+                            $response,
+                            $newAssignee,
+                            (bool) ($data['send_notification'] ?? false),
+                        );
+                    } catch (Exception $e) {
+                        Notification::make()
+                            ->title('Warning')
+                            ->body('Request reassigned but email notification failed to send.')
+                            ->warning()
+                            ->send();
 
-                    // Send email notification if checkbox is checked
-                    if ($data['send_notification'] && $newAssignee->email) {
-                        try {
-                            Mail::send(new EvidenceRequestMail($newAssignee->email, $newAssignee->name));
-                        } catch (Exception $e) {
-                            Notification::make()
-                                ->title('Warning')
-                                ->body('Request reassigned but email notification failed to send.')
-                                ->warning()
-                                ->send();
-
-                            return;
-                        }
+                        return;
                     }
 
                     Notification::make()
@@ -755,9 +732,7 @@ class DataRequestResource extends Resource
                             return;
                         }
 
-                        // Update the due date
-                        $response->due_at = $data['new_due_date'];
-                        $response->save();
+                        app(\App\Access\DataRequestFulfillment::class)->changeDueDate($response, $data['new_due_date']);
 
                         Notification::make()
                             ->title('Success')

@@ -1,6 +1,6 @@
-# OpenGRC Local Development Guide
+# Fynix Cyber Audit Local Development Guide
 
-This guide will help you set up OpenGRC for local development on macOS, Linux, or Windows (WSL).
+This guide will help you set up Fynix Cyber Audit for local development on macOS, Linux, or Windows (WSL).
 
 ## Prerequisites
 
@@ -50,15 +50,15 @@ For the impatient, here's the minimal setup. The installer uses **SQLite** by de
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/LeeMangold/OpenGRC.git
-cd OpenGRC
+git clone https://github.com/rindah89/fynixCyberAudit.git
+cd fynixCyberAudit
 
 # 2. Install dependencies
 composer install
 npm install
 
 # 3. Run the automated installer
-php artisan opengrc:install --unattended
+php artisan fynix:install --unattended
 
 # 4. Start the development server
 php artisan serve
@@ -72,7 +72,7 @@ Then open http://localhost:8000 in your browser.
 
 For interactive installation with custom settings, omit `--unattended`:
 ```bash
-php artisan opengrc:install
+php artisan fynix:install
 ```
 
 ## Detailed Setup
@@ -80,8 +80,8 @@ php artisan opengrc:install
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/LeeMangold/OpenGRC.git
-cd OpenGRC
+git clone https://github.com/rindah89/fynixCyberAudit.git
+cd fynixCyberAudit
 ```
 
 ### Step 2: Install PHP Dependencies
@@ -100,16 +100,16 @@ npm install
 
 ### Step 4: Run the Installer
 
-OpenGRC includes an installation wizard that handles environment setup, database creation, migrations, and initial seeding:
+Fynix Cyber Audit includes an installation wizard that handles environment setup, database creation, migrations, and initial seeding:
 
 **Interactive mode** (recommended for custom configuration):
 ```bash
-php artisan opengrc:install
+php artisan fynix:install
 ```
 
 **Unattended mode** (uses defaults - SQLite, admin@example.com/password):
 ```bash
-php artisan opengrc:install --unattended
+php artisan fynix:install --unattended
 ```
 
 The installer will:
@@ -160,7 +160,7 @@ If you prefer MySQL, keep the default `.env` settings and update with your datab
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=opengrc
+DB_DATABASE=fynixcyberaudit
 DB_USERNAME=root
 DB_PASSWORD=your_password
 ```
@@ -168,14 +168,14 @@ DB_PASSWORD=your_password
 Then create the database in MySQL:
 
 ```sql
-CREATE DATABASE opengrc CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE fynixcyberaudit CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 #### Run Migrations and Seeders
 
 ```bash
 # Create SQLite file (if using SQLite)
-touch database/opengrc.sqlite
+touch database/fynixcyberaudit.sqlite
 
 # Run migrations
 php artisan migrate
@@ -185,12 +185,12 @@ php artisan db:seed --class=SettingsSeeder
 php artisan db:seed --class=RolePermissionSeeder
 
 # Create admin user
-php artisan opengrc:create-user admin@example.com password
+php artisan fynix:create-user admin@example.com password
 ```
 
 #### Available Seeders
 
-OpenGRC includes several seeders for compliance frameworks:
+Fynix Cyber Audit includes several seeders for compliance frameworks:
 
 | Seeder | Description |
 |--------|-------------|
@@ -323,7 +323,7 @@ After running the installer, you can log in with:
 
 To create additional users:
 ```bash
-php artisan opengrc:create-user email@example.com yourpassword
+php artisan fynix:create-user email@example.com yourpassword
 ```
 
 ## Troubleshooting
@@ -339,8 +339,8 @@ php artisan key:generate
 
 Ensure the database file exists and is writable:
 ```bash
-touch database/opengrc.sqlite
-chmod 664 database/opengrc.sqlite
+touch database/fynixcyberaudit.sqlite
+chmod 664 database/fynixcyberaudit.sqlite
 ```
 
 ### Permission issues (Linux servers)
@@ -383,7 +383,7 @@ php artisan storage:link
 
 ### VS Code Extensions
 
-Recommended extensions for OpenGRC development:
+Recommended extensions for Fynix Cyber Audit development:
 - PHP Intelephense
 - Laravel Blade Snippets
 - Tailwind CSS IntelliSense
@@ -398,7 +398,7 @@ Enable the Laravel plugin and configure:
 
 ## Additional Resources
 
-- [OpenGRC Documentation](https://docs.opengrc.com)
+- [Fynix Cyber Audit Documentation](https://github.com/rindah89/fynixCyberAudit)
 - [Laravel Documentation](https://laravel.com/docs)
 - [Filament Documentation](https://filamentphp.com/docs)
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs)

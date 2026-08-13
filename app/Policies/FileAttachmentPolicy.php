@@ -2,12 +2,10 @@
 
 namespace App\Policies;
 
-use App\Models\Audit;
-use App\Models\AuditItem;
+use App\Access\FileAccess;
 use App\Models\FileAttachment;
 use App\Models\User;
 use Illuminate\Support\Str;
-use Livewire;
 
 class FileAttachmentPolicy
 {
@@ -20,7 +18,8 @@ class FileAttachmentPolicy
 
     public function view(User $user, FileAttachment $attachment): bool
     {
-        return $user->can('Read '.Str::plural(class_basename($this->model)));
+        return $user->can('Read '.Str::plural(class_basename($this->model)))
+            && app(FileAccess::class)->canDownloadFileAttachment($user, $attachment);
     }
 
     public function create(User $user): bool
@@ -30,53 +29,13 @@ class FileAttachmentPolicy
 
     public function update(User $user, FileAttachment $attachment): bool
     {
-        return $user->can('Update '.Str::plural(class_basename($this->model))) && ($this->isOwner() || $this->isMember());
+        return $user->can('Update '.Str::plural(class_basename($this->model)))
+            && app(FileAccess::class)->canDownloadFileAttachment($user, $attachment);
     }
 
     public function delete(User $user, FileAttachment $attachment): bool
     {
-        return $user->can('Delete '.Str::plural(class_basename($this->model))) && ($this->isOwner() || $this->isMember());
-    }
-
-    private function isOwner(): bool
-    {
-        $type = explode('/', Livewire::originalPath())[1];
-        $audit_id = null;
-
-        if ($type === 'audits') {
-            $audit_id = explode('/', Livewire::originalPath())[2] ?? null;
-        } elseif ($type == 'audit-items') {
-            $audit_item_id = explode('/', Livewire::originalPath())[2] ?? null;
-            $audit_id = AuditItem::find($audit_item_id)->audit_id;
-        }
-
-        if (! $audit_id) {
-            return false;
-        }
-
-        $audit = Audit::find($audit_id);
-
-        return $audit && $audit->manager_id === auth()->id();
-    }
-
-    private function isMember(): bool
-    {
-        $type = explode('/', Livewire::originalPath())[1];
-        $audit_id = null;
-
-        if ($type === 'audits') {
-            $audit_id = explode('/', Livewire::originalPath())[2] ?? null;
-        } elseif ($type == 'audit-items') {
-            $audit_item_id = explode('/', Livewire::originalPath())[2] ?? null;
-            $audit_id = AuditItem::find($audit_item_id)->audit_id;
-        }
-
-        if (! $audit_id) {
-            return false;
-        }
-
-        $audit = Audit::find($audit_id);
-
-        return $audit && $audit->members->contains(auth()->id());
+        return $user->can('Delete '.Str::plural(class_basename($this->model)))
+            && app(FileAccess::class)->canDownloadFileAttachment($user, $attachment);
     }
 }

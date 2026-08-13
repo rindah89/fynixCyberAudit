@@ -1,2 +1,30 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/manrope';
+@import '@fontsource-variable/jetbrains-mono';
+@import './tokens.css';
+@import './components.css';
 @import './filament/role-permission-matrix.css';
+
+@source '../views/**/*.blade.php';
+
+@theme {
+    --font-sans: "Manrope Variable", "Manrope", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+    font-family: var(--font-sans);
+    background-color: var(--gray-50);
+    color: var(--gray-900);
+}
+
+[x-cloak] {
+    display: none !important;
+}
+
+code,
+pre,
+.font-mono {
+    font-family: var(--font-mono);
+}

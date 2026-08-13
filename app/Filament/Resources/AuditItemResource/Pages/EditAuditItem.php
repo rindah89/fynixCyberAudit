@@ -7,9 +7,7 @@ use App\Enums\Effectiveness;
 use App\Enums\ResponseStatus;
 use App\Enums\WorkflowStatus;
 use App\Filament\Resources\AuditItemResource;
-use App\Filament\Resources\DataRequestResource;
 use App\Http\Controllers\HelperController;
-use App\Mail\EvidenceRequestMail;
 use App\Models\AuditItem;
 use App\Models\DataRequest;
 use App\Models\User;
@@ -28,7 +26,7 @@ use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Facades\Mail;
+
 use Illuminate\Support\HtmlString;
 
 class EditAuditItem extends EditRecord
@@ -70,15 +68,13 @@ class EditAuditItem extends EditRecord
                         $dataRequest->save();
                     }
 
+                    $fulfillment = app(\App\Access\DataRequestFulfillment::class);
+
                     if ($data['send_email']) {
                         $user = User::find($dataRequest->assigned_to_id);
-                        $data += [
-                            'email' => $user->email,
-                            'name' => $user->name,
-                        ];
 
                         try {
-                            Mail::to($data['email'])->send(new EvidenceRequestMail($data['email'], $data['name']));
+                            $fulfillment->notify($user);
                         } catch (Exception $e) {
                             Notification::make()
                                 ->title('Failed to send email')
@@ -87,7 +83,7 @@ class EditAuditItem extends EditRecord
                         }
                     }
 
-                    DataRequestResource::createResponses($dataRequest, $data['due_at']);
+                    $fulfillment->open($dataRequest, $data['due_at']);
 
                 })
                 ->after(function () {

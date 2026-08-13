@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Starting OpenGRC container..."
+echo "Starting Fynix Cyber Audit container..."
 
 # Wait for database to be ready (if using external database)
 if [ -n "$DB_HOST" ]; then
@@ -44,16 +44,23 @@ USER_COUNT=$(php -r "
 if [ "$USER_COUNT" = "0" ]; then
     echo "First run detected - seeding database and creating admin user..."
 
-    # Generate APP_KEY if not set
+    # Generate APP_KEY if not set. key:generate needs a .env file, which
+    # Docker builds omit; invent one in the environment instead.
     if [ -z "$APP_KEY" ]; then
         echo "Generating application key..."
-        php artisan key:generate --force
+        if [ -f /var/www/html/.env ]; then
+            php artisan key:generate --force
+        else
+            APP_KEY="base64:$(openssl rand -base64 32)"
+            export APP_KEY
+            echo "Generated APP_KEY in process environment."
+        fi
     fi
 
     php artisan db:seed --class=SettingsSeeder --force
-    php artisan opengrc:create-user "${ADMIN_EMAIL:-admin@opengrc.local}" "${ADMIN_PASSWORD:-admin123}"
+    php artisan fynix:create-user "${ADMIN_EMAIL:-admin@campass.cm}" "${ADMIN_PASSWORD:-admin123}"
     php artisan db:seed --class=RolePermissionSeeder --force
-    php artisan settings:set general.name "${APP_NAME:-OpenGRC}"
+    php artisan settings:set general.name "${APP_NAME:-Fynix Cyber Audit}"
     php artisan settings:set general.url "${APP_URL:-http://localhost}"
     php artisan settings:set storage.driver private
     php artisan storage:link

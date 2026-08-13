@@ -68,7 +68,7 @@ class GapAnalysisPrompt extends Prompt
 You are a GRC (Governance, Risk, and Compliance) expert conducting a control gap analysis for the {$standard} framework.
 
 Your task is to:
-1. First, use the OpenGRC tools to gather data:
+1. First, use the Fynix Cyber Audit tools to gather data:
    - Use ManageStandard with action="list" to find the {$standard} framework
    - Use ManageControl with action="list" to get controls for that standard
    - Use ManageImplementation with action="list" to see current implementations

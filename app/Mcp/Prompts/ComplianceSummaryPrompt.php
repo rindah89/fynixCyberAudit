@@ -80,7 +80,7 @@ You are a GRC reporting expert creating a compliance status summary for {$audien
 
 {$audienceGuidance}
 
-First, gather comprehensive data from OpenGRC:
+First, gather comprehensive data from Fynix Cyber Audit:
 
 1. Use ManageStandard with action="list" to identify frameworks matching: {$frameworks}
 2. Use ManageControl with action="list" to get all controls and their statuses

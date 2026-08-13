@@ -2,6 +2,7 @@
 
 namespace App\Filament\Vendor\Resources\SurveyResource\Pages;
 
+use App\Access\VendorAccess;
 use App\Enums\QuestionType;
 use App\Enums\SurveyStatus;
 use App\Filament\Vendor\Resources\SurveyResource;
@@ -45,12 +46,9 @@ class RespondToSurvey extends Page implements HasForms
         // Use Filament's record resolution method instead of direct find
         $this->record = $this->resolveRecord($record);
 
-        // Verify vendor access - user must be the respondent OR belong to the vendor
         $vendorUser = Auth::guard('vendor')->user();
-        $isRespondent = $this->record->respondent_email === $vendorUser?->email;
-        $isVendorMember = $this->record->vendor_id === $vendorUser?->vendor_id;
 
-        if (! $isRespondent && ! $isVendorMember) {
+        if (! app(VendorAccess::class)->mayOpenSurvey($vendorUser, $this->record)) {
             abort(403);
         }
 

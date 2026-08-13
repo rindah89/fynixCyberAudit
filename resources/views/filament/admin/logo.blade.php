@@ -1,5 +1,15 @@
-<img class="-mt-3 me-4 w-11 " src="{{ asset('img/logo-128-128.png') }}" alt="Logo">
-<a class="fi-logo flex text-2xl font-bold leading-5 tracking-tight text-gray-950 dark:text-white"
-   href="{{route('filament.app.pages.dashboard')}}">
-    {{ setting('general.name') }}
+@php
+    $home = filament()->getCurrentPanel()?->getUrl() ?? url('/');
+@endphp
+<a class="fi-logo flex items-center gap-2" href="{{ $home }}">
+    <img
+        class="h-8 w-auto dark:hidden"
+        src="{{ asset('img/fynix_logo_dark.png') }}"
+        alt="{{ setting('general.name', 'Fynix Cyber Audit') }}"
+    >
+    <img
+        class="hidden h-8 w-auto dark:block"
+        src="{{ asset('img/fynix_logo_white.png') }}"
+        alt="{{ setting('general.name', 'Fynix Cyber Audit') }}"
+    >
 </a>

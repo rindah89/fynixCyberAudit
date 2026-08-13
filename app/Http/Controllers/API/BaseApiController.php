@@ -137,22 +137,15 @@ abstract class BaseApiController extends Controller
      */
     public function show(Request $request, int $id): JsonResponse
     {
-        $this->authorize('view', $this->modelClass);
-
         $query = $this->modelClass::query();
 
-        // Eager load relationships
         if (! empty($this->showRelations)) {
             $query->with($this->showRelations);
         }
 
-        // Allow loading additional relationships via query param
-        if ($request->has('with')) {
-            $with = explode(',', $request->input('with'));
-            $query->with($with);
-        }
-
         $resource = $query->findOrFail($id);
+
+        $this->authorize('view', $resource);
 
         return response()->json([
             'data' => $resource,
@@ -238,7 +231,7 @@ abstract class BaseApiController extends Controller
      */
     protected function validateStore(Request $request): array
     {
-        return $request->all();
+        return $request->validate([]);
     }
 
     /**
@@ -247,6 +240,6 @@ abstract class BaseApiController extends Controller
      */
     protected function validateUpdate(Request $request, Model $resource): array
     {
-        return $request->all();
+        return $request->validate([]);
     }
 }

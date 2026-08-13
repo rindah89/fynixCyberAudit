@@ -1,14 +1,16 @@
+name: fynixcyberaudit
+
 services:
   db:
     image: mysql:8.0
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: opengrc
-      MYSQL_USER: opengrc_user
-      MYSQL_PASSWORD: opengrc_password
+      MYSQL_DATABASE: fynixcyberaudit
+      MYSQL_USER: fynixcyberaudit
+      MYSQL_PASSWORD: fynixcyberaudit
     volumes:
-      - opengrc_db:/var/lib/mysql
+      - fynixcyberaudit_db:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
       interval: 5s
@@ -16,29 +18,30 @@ services:
       retries: 20
 
   app:
-    image: opengrc
+    build: .
+    image: fynixcyberaudit
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "8082:80"
     environment:
-      APP_NAME: OpenGRC
+      APP_NAME: Fynix Cyber Audit
       APP_ENV: local
       APP_DEBUG: "true"
       APP_KEY: ${APP_KEY:-}
-      APP_URL: http://localhost:8080
+      APP_URL: http://localhost:8082
 
       DB_CONNECTION: mysql
       DB_HOST: db
       DB_PORT: 3306
-      DB_DATABASE: opengrc
-      DB_USERNAME: opengrc_user
-      DB_PASSWORD: opengrc_password
+      DB_DATABASE: fynixcyberaudit
+      DB_USERNAME: fynixcyberaudit
+      DB_PASSWORD: fynixcyberaudit
 
-      ADMIN_EMAIL: admin@opengrc.local
-      ADMIN_PASSWORD: admin123
+      ADMIN_EMAIL: admin@campass.cm
+      ADMIN_PASSWORD: "fynixdemo123!"
 
       CACHE_DRIVER: file
       SESSION_DRIVER: file
@@ -47,4 +50,4 @@ services:
       MAIL_MAILER: log
 
 volumes:
-  opengrc_db:
+  fynixcyberaudit_db:

@@ -41,6 +41,12 @@ class User extends Authenticatable implements Commenter, FilamentUser
         'text',
         'email',
         'password',
+        'email_verified_at',
+        'password_reset_required',
+        'is_sso',
+        'is_break_glass',
+        'sso_subject',
+        'sso_issuer',
     ];
 
     /**
@@ -71,6 +77,9 @@ class User extends Authenticatable implements Commenter, FilamentUser
         'email_verified_at' => 'datetime',
         'last_activity' => 'datetime',
         'password' => 'hashed',
+        'password_reset_required' => 'boolean',
+        'is_sso' => 'boolean',
+        'is_break_glass' => 'boolean',
     ];
 
     /**

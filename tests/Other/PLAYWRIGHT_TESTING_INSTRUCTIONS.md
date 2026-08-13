@@ -1,8 +1,8 @@
-# OpenGRC Comprehensive Playwright MCP Testing
+# Fynix Cyber Audit Comprehensive Playwright MCP Testing
 
 Use playwright-mcp
 
-**Base URL:** `https://opengrc.test`
+**Base URL:** `https://fynixcyberaudit.test`
 IGNORE BROWSER SSL ERRORS
 
 Do not attempt to fix any errors. Only bug finding and reporting
@@ -60,7 +60,7 @@ Collect all bug reports, run console check, compile report
 ## Login Procedure (All Agents)
 
 ```
-1. browser_navigate: https://opengrc.test/app/login
+1. browser_navigate: https://fynixcyberaudit.test/app/login
 2. browser_snapshot
 3. Fill email field
 4. Fill password field

@@ -43,6 +43,65 @@ class AuthenticationSettings extends BaseSettings
     {
         return $schema
             ->components([
+                Section::make('Fynix HQ (central OIDC)')
+                    ->description('Primary sign-in for FynixHQ. Matches PPM: authorization-code, CSRF state, iss/aud/sub checks, subject-first account linking. Local passwords remain break-glass only.')
+                    ->columnSpanFull()
+                    ->schema([
+                        Toggle::make('auth.oidc.enabled')
+                            ->label('Enable central OIDC')
+                            ->default(false)
+                            ->live(),
+                        Grid::make(2)
+                            ->schema([
+                                TextInput::make('auth.oidc.issuer')
+                                    ->label('Issuer')
+                                    ->placeholder('https://login.microsoftonline.com/{tenant}/v2.0')
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled'))
+                                    ->required(fn ($get) => $get('auth.oidc.enabled')),
+                                TextInput::make('auth.oidc.client_id')
+                                    ->label('Client ID')
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled'))
+                                    ->required(fn ($get) => $get('auth.oidc.enabled')),
+                                TextInput::make('auth.oidc.client_secret')
+                                    ->label('Client Secret')
+                                    ->password()
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled'))
+                                    ->placeholder(fn () => filled(setting('auth.oidc.client_secret')) ? '••••••••' : null)
+                                    ->dehydrateStateUsing(function ($state) {
+                                        if (! filled($state)) {
+                                            return setting('auth.oidc.client_secret');
+                                        }
+
+                                        return Crypt::encryptString($state);
+                                    })
+                                    ->afterStateHydrated(function (TextInput $component, $state) {
+                                        $component->state(null);
+                                    }),
+                                Placeholder::make('auth.oidc.redirect_display')
+                                    ->label('Redirect URI')
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled'))
+                                    ->content(rtrim((string) config('app.url'), '/').'/auth/sso/callback'),
+                                TextInput::make('auth.oidc.authorize_endpoint')
+                                    ->label('Authorize endpoint (optional)')
+                                    ->helperText('Leave blank to discover from the issuer.')
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled')),
+                                TextInput::make('auth.oidc.token_endpoint')
+                                    ->label('Token endpoint (optional)')
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled')),
+                                Toggle::make('auth.oidc.auto_provision')
+                                    ->label('Auto-provision new users')
+                                    ->default(true)
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled')),
+                                Toggle::make('auth.oidc.enforce_sso_only')
+                                    ->label('Require OIDC (except break-glass accounts)')
+                                    ->default(false)
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled')),
+                                Select::make('auth.oidc.default_role')
+                                    ->label('Default role for new SSO users')
+                                    ->options(Role::query()->pluck('name', 'name'))
+                                    ->visible(fn ($get) => $get('auth.oidc.enabled') && $get('auth.oidc.auto_provision')),
+                            ]),
+                    ]),
                 // Azure Authentication
                 Section::make('Azure Authentication')
                     ->columnSpanFull()

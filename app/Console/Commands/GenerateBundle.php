@@ -12,7 +12,7 @@ class GenerateBundle extends Command
      *
      * @var string
      */
-    protected $signature = 'opengrc:generate-bundle {code}';
+    protected $signature = 'fynix:generate-bundle {code}';
 
     /**
      * The console command description.

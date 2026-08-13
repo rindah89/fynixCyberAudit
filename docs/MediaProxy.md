@@ -2,7 +2,7 @@
 
 ## Overview
 
-OpenGRC implements a Laravel-based media proxy to serve private cloud storage files (S3, DigitalOcean Spaces) through the application rather than directly from cloud storage. This enables browser-based rich text editors to display images from private storage without CORS issues or requiring public bucket policies.
+Fynix Cyber Audit implements a Laravel-based media proxy to serve private cloud storage files (S3, DigitalOcean Spaces) through the application rather than directly from cloud storage. This enables browser-based rich text editors to display images from private storage without CORS issues or requiring public bucket policies.
 
 ## Problem Statement
 

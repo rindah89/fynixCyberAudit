@@ -24,7 +24,7 @@ use Laravel\Mcp\Server\Tool;
  * and entity type from the class name (e.g., ManageVendorTool → vendor).
  * Subclasses can override for customization.
  *
- * Authorization is enforced using OpenGRC's permission system (Spatie Laravel Permission).
+ * Authorization is enforced using Fynix Cyber Audit's permission system (Spatie Laravel Permission).
  * Each action requires the corresponding permission (e.g., "List Policies", "Create Controls").
  */
 abstract class BaseManageEntityTool extends Tool

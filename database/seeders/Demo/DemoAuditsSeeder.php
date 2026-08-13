@@ -21,7 +21,7 @@ class DemoAuditsSeeder extends Seeder
         // Create main demo audit
         $mainAudit = Audit::create([
             'title' => 'Annual Security Standards Audit 2024',
-            'description' => 'Comprehensive annual audit of security controls against OpenGRC-1.0 standards.',
+            'description' => 'Comprehensive annual audit of security controls against the imported Fynix Cyber Audit standards pack.',
             'start_date' => now()->subMonths(2),
             'end_date' => now()->subWeek(),
             'audit_type' => 'standards',

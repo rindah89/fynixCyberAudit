@@ -214,22 +214,7 @@
                                             $actualLikelihood = $likelihoodIndex + 1; // Convert to 1-5 scale
                                             // Use weight 200 for empty cells, 500 for cells with risks
                                             $colorWeight = $count > 0 ? 500 : 200;
-                                            $colorClass = RiskLevel::getColor($actualLikelihood, $actualImpact, $colorWeight);
-                                            $colorClass = str_replace('bg-', '', $colorClass);
-                                            $bgColor = match($colorClass) {
-                                                'red-500' => '#dc3545',
-                                                'orange-500' => '#fd7e14',
-                                                'yellow-500' => '#ffc107',
-                                                'grcblue-500' => '#17a2b8',
-                                                'green-500' => '#28a745',
-                                                'red-200' => '#f5c2c7',
-                                                'orange-200' => '#ffe5d0',
-                                                'yellow-200' => '#fff3cd',
-                                                'grcblue-200' => '#bee5eb',
-                                                'green-200' => '#d1e7dd',
-                                                default => '#f2f2f2',
-                                            };
-                                            $textColor = in_array($colorClass, ['yellow-500', 'yellow-200']) ? '#000' : '#fff';
+                                            [$bgColor, $textColor] = RiskLevel::getHeatmapHex($actualLikelihood, $actualImpact, $colorWeight);
                                         @endphp
                                         <td style="background-color: {{ $bgColor }}; color: {{ $textColor }};">
                                             {{ $count > 0 ? $count : '' }}
@@ -279,22 +264,7 @@
                                             $actualLikelihood = $likelihoodIndex + 1; // Convert to 1-5 scale
                                             // Use weight 200 for empty cells, 500 for cells with risks
                                             $colorWeight = $count > 0 ? 500 : 200;
-                                            $colorClass = RiskLevel::getColor($actualLikelihood, $actualImpact, $colorWeight);
-                                            $colorClass = str_replace('bg-', '', $colorClass);
-                                            $bgColor = match($colorClass) {
-                                                'red-500' => '#dc3545',
-                                                'orange-500' => '#fd7e14',
-                                                'yellow-500' => '#ffc107',
-                                                'grcblue-500' => '#17a2b8',
-                                                'green-500' => '#28a745',
-                                                'red-200' => '#f5c2c7',
-                                                'orange-200' => '#ffe5d0',
-                                                'yellow-200' => '#fff3cd',
-                                                'grcblue-200' => '#bee5eb',
-                                                'green-200' => '#d1e7dd',
-                                                default => '#f2f2f2',
-                                            };
-                                            $textColor = in_array($colorClass, ['yellow-500', 'yellow-200']) ? '#000' : '#fff';
+                                            [$bgColor, $textColor] = RiskLevel::getHeatmapHex($actualLikelihood, $actualImpact, $colorWeight);
                                         @endphp
                                         <td style="background-color: {{ $bgColor }}; color: {{ $textColor }};">
                                             {{ $count > 0 ? $count : '' }}
@@ -327,29 +297,8 @@
                 @foreach($risks as $risk)
                     @php
                         // Get heatmap colors for the cells
-                        $inherentColorClass = RiskLevel::getColor($risk->inherent_likelihood, $risk->inherent_impact, 500);
-                        $inherentColorClass = str_replace('bg-', '', $inherentColorClass);
-                        $inherentBgColor = match($inherentColorClass) {
-                            'red-500' => '#dc3545',
-                            'orange-500' => '#fd7e14',
-                            'yellow-500' => '#ffc107',
-                            'grcblue-500' => '#17a2b8',
-                            'green-500' => '#28a745',
-                            default => '#f2f2f2',
-                        };
-                        $inherentTextColor = in_array($inherentColorClass, ['yellow-500']) ? '#000' : '#fff';
-
-                        $residualColorClass = RiskLevel::getColor($risk->residual_likelihood, $risk->residual_impact, 500);
-                        $residualColorClass = str_replace('bg-', '', $residualColorClass);
-                        $residualBgColor = match($residualColorClass) {
-                            'red-500' => '#dc3545',
-                            'orange-500' => '#fd7e14',
-                            'yellow-500' => '#ffc107',
-                            'grcblue-500' => '#17a2b8',
-                            'green-500' => '#28a745',
-                            default => '#f2f2f2',
-                        };
-                        $residualTextColor = in_array($residualColorClass, ['yellow-500']) ? '#000' : '#fff';
+                        [$inherentBgColor, $inherentTextColor] = RiskLevel::getHeatmapHex($risk->inherent_likelihood, $risk->inherent_impact, 500);
+                        [$residualBgColor, $residualTextColor] = RiskLevel::getHeatmapHex($risk->residual_likelihood, $risk->residual_impact, 500);
 
                         // Calculate risk scores for labels
                         $inherentScore = round(($risk->inherent_likelihood + $risk->inherent_impact) / 2);

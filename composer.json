@@ -98,7 +98,7 @@
             "@php artisan key:generate --ansi"
         ],
         "docker-build": [
-            "docker build -t opengrc ."
+            "docker build -t fynixcyberaudit ."
         ]
     },
     "extra": {

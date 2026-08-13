@@ -7,7 +7,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Symfony\Component\Console\Attribute\AsCommand;
 
-#[AsCommand(name: 'opengrc:create-user')]
+#[AsCommand(name: 'fynix:create-user')]
 class CreateUser extends Command
 {
     /**
@@ -15,7 +15,7 @@ class CreateUser extends Command
      *
      * @var string
      */
-    protected $signature = 'opengrc:create-user {email? : The email of the user} {password? : The password of the user}';
+    protected $signature = 'fynix:create-user {email? : The email of the user} {password? : The password of the user}';
 
     /**
      * The console command description.

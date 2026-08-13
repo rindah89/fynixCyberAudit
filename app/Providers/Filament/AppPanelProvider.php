@@ -12,7 +12,8 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
+use App\Support\FynixPalette;
+use Filament\Enums\ThemeMode;
 use Filament\View\PanelsRenderHook;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -56,35 +57,35 @@ class AppPanelProvider extends PanelProvider
                     $socialProviders[] = Provider::make('okta')
                         ->label('Okta')
                         ->icon('heroicon-o-lock-closed')
-                        ->color(Color::Slate);
+                        ->color(FynixPalette::primary());
                 }
 
                 if (setting('auth.microsoft.enabled')) {
                     $socialProviders[] = Provider::make('microsoft')
                         ->label('Microsoft')
                         ->icon('heroicon-o-window')
-                        ->color(Color::Slate);
+                        ->color(FynixPalette::primary());
                 }
 
                 if (setting('auth.azure.enabled')) {
                     $socialProviders[] = Provider::make('azure')
                         ->label('Azure AD')
                         ->icon('heroicon-o-cloud')
-                        ->color(Color::Slate);
+                        ->color(FynixPalette::primary());
                 }
 
                 if (setting('auth.google.enabled')) {
                     $socialProviders[] = Provider::make('google')
                         ->label('Google')
                         ->icon('heroicon-o-globe-alt')
-                        ->color(Color::Slate);
+                        ->color(FynixPalette::primary());
                 }
 
                 if (setting('auth.auth0.enabled')) {
                     $socialProviders[] = Provider::make('auth0')
                         ->label('Auth0')
                         ->icon('heroicon-o-lock-closed')
-                        ->color(Color::Slate);
+                        ->color(FynixPalette::primary());
                 }
 
             } catch (Exception $e) {
@@ -99,16 +100,18 @@ class AppPanelProvider extends PanelProvider
             ->path('app')
             ->login(Login::class)
             ->loginRouteSlug('login')
-            ->colors([
-                'primary' => Color::Slate,
-            ])
-            ->brandName('OpenGRC')
+            ->colors(FynixPalette::filamentColors())
+            ->brandName('Fynix Cyber Audit')
             ->brandLogo(fn () => view('filament.admin.logo'))
+            ->favicon(asset('img/logo_icon.png'))
+            ->brandLogoHeight('2rem')
             ->globalSearch(true)
             ->databaseNotifications()
             ->databaseNotificationsPolling('30s')
             ->readOnlyRelationManagersOnResourceViewPagesByDefault(false)
             ->viteTheme('resources/css/filament/app/theme.css')
+            ->defaultThemeMode(ThemeMode::Light)
+            ->darkMode(false)
             ->sidebarCollapsibleOnDesktop()
             ->spa()
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
@@ -138,6 +141,10 @@ class AppPanelProvider extends PanelProvider
             ->renderHook(
                 PanelsRenderHook::BODY_END,
                 fn () => Blade::render("@livewire('multi-window-inactivity-guard')")
+            )
+            ->renderHook(
+                PanelsRenderHook::AUTH_LOGIN_FORM_BEFORE,
+                fn () => view('filament.pages.auth.sso-button')
             )
             ->renderHook(
                 PanelsRenderHook::BODY_END,

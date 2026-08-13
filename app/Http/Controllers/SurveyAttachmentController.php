@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Access\FileAccess;
 use App\Models\SurveyAttachment;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SurveyAttachmentController extends Controller
@@ -12,16 +12,12 @@ class SurveyAttachmentController extends Controller
     /**
      * Download a survey attachment (authenticated users only).
      */
-    public function download(Request $request, SurveyAttachment $attachment): StreamedResponse
+    public function download(Request $request, SurveyAttachment $attachment, FileAccess $fileAccess): StreamedResponse
     {
-        // Verify the file exists
-        $disk = $attachment->getStorageDisk();
+        $fileAccess->authorizeSurveyAttachment($request->user(), $attachment);
 
-        if (! Storage::disk($disk)->exists($attachment->file_path)) {
-            abort(404, 'File not found');
-        }
-
-        return Storage::disk($disk)->download(
+        return $fileAccess->stream(
+            $attachment->getStorageDisk(),
             $attachment->file_path,
             $attachment->file_name
         );

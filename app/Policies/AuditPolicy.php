@@ -15,7 +15,7 @@ class AuditPolicy
         return $user->can('List '.Str::plural(class_basename($this->model)));
     }
 
-    public function view(User $user): bool
+    public function view(User $user, Audit $audit): bool
     {
         return $user->can('Read '.Str::plural(class_basename($this->model)));
     }

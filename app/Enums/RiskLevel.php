@@ -93,22 +93,41 @@ enum RiskLevel: int implements HasLabel
     }
 
     /**
-     * Get the Tailwind background color class for a risk based on likelihood and impact.
-     *
-     * Note: These classes are referenced to prevent Tailwind from purging them:
-     * bg-grcblue-200 bg-red-200 bg-orange-200 bg-yellow-200 bg-green-200
-     * bg-grcblue-500 bg-red-500 bg-orange-500 bg-yellow-500 bg-green-500
+     * CSS class for a risk heatmap cell. Soft = empty cell wash; strong = occupied.
      */
     public static function getColor(int $likelihood, int $impact, int $weight = 200): string
     {
         $score = $likelihood * $impact;
+        $tone = $weight >= 500 ? 'strong' : 'soft';
 
-        return match (true) {
-            $score >= 18 => "bg-red-{$weight}",      // Very High risk
-            $score >= 13 => "bg-orange-{$weight}",   // High risk
-            $score >= 9 => "bg-yellow-{$weight}",    // Moderate risk
-            $score >= 5 => "bg-grcblue-{$weight}",   // Low risk
-            default => "bg-green-{$weight}",         // Very Low risk
+        $level = match (true) {
+            $score >= 18 => 'red',
+            $score >= 13 => 'amber',
+            $score >= 9 => 'yellow',
+            $score >= 5 => 'blue',
+            default => 'green',
+        };
+
+        return "risk-cell-{$level}-{$tone}";
+    }
+
+    /**
+     * @return array{0: string, 1: string} [background, text]
+     */
+    public static function getHeatmapHex(int $likelihood, int $impact, int $weight = 200): array
+    {
+        return match (self::getColor($likelihood, $impact, $weight)) {
+            'risk-cell-red-strong' => ['#d13817', '#ffffff'],
+            'risk-cell-amber-strong' => ['#b96a00', '#ffffff'],
+            'risk-cell-yellow-strong' => ['#ffd9a0', '#0a0a0a'],
+            'risk-cell-blue-strong' => ['#2563eb', '#ffffff'],
+            'risk-cell-green-strong' => ['#17a94c', '#ffffff'],
+            'risk-cell-red-soft' => ['#fdece7', '#d13817'],
+            'risk-cell-amber-soft' => ['#fff4e0', '#b96a00'],
+            'risk-cell-yellow-soft' => ['#fff8e6', '#b96a00'],
+            'risk-cell-blue-soft' => ['#ebf1fe', '#2563eb'],
+            'risk-cell-green-soft' => ['#e9fef0', '#17a94c'],
+            default => ['#efefed', '#8a8a88'],
         };
     }
 }

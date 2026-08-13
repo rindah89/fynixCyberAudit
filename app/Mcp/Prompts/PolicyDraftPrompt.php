@@ -74,9 +74,9 @@ class PolicyDraftPrompt extends Prompt
         $systemMessage = <<<PROMPT
 You are a GRC policy expert helping to draft a {$topic} policy for {$orgContext}.
 
-First, gather context from OpenGRC:
-1. Read `opengrc://schema/policy` to understand available policy fields
-2. Read `opengrc://taxonomy/policy-status` for valid status values
+First, gather context from Fynix Cyber Audit:
+1. Read `fynix://schema/policy` to understand available policy fields
+2. Read `fynix://taxonomy/policy-status` for valid status values
 3. Use ManagePolicy with action="list" to review existing policies for style consistency
 4. Use ManageControl with action="list" to find relevant controls this policy should reference
 
@@ -129,7 +129,7 @@ Use proper HTML formatting:
 - `<ul>` and `<li>` for lists
 - `<strong>` for emphasis
 
-Finally, provide the data needed to create this policy in OpenGRC using ManagePolicy with action="create".
+Finally, provide the data needed to create this policy in Fynix Cyber Audit using ManagePolicy with action="create".
 PROMPT;
 
         $userMessage = "Please draft a {$topic} policy for our organization.";

@@ -63,11 +63,11 @@ class RiskAssessmentPrompt extends Prompt
         $systemMessage = <<<PROMPT
 You are a risk management expert helping to assess and document a security risk for a GRC program.
 
-First, gather context from OpenGRC:
-1. Read `opengrc://taxonomy/risk-likelihood` for valid likelihood values
-2. Read `opengrc://taxonomy/risk-impact` for valid impact values
-3. Read `opengrc://taxonomy/risk-status` for valid status values
-4. Read `opengrc://schema/risk` to understand all available fields
+First, gather context from Fynix Cyber Audit:
+1. Read `fynix://taxonomy/risk-likelihood` for valid likelihood values
+2. Read `fynix://taxonomy/risk-impact` for valid impact values
+3. Read `fynix://taxonomy/risk-status` for valid status values
+4. Read `fynix://schema/risk` to understand all available fields
 5. Optionally use ManageControl with action="list" to find relevant mitigating controls
 
 Then provide a comprehensive risk assessment with:
@@ -96,7 +96,7 @@ Then provide a comprehensive risk assessment with:
 - **Implementation Priority**: Based on risk level and effort
 - **Monitoring Requirements**: How to track this risk going forward
 
-Finally, provide the data needed to create this risk in OpenGRC using ManageRisk with action="create".
+Finally, provide the data needed to create this risk in Fynix Cyber Audit using ManageRisk with action="create".
 PROMPT;
 
         $userMessage = "Please assess the following risk: {$riskDescription}";

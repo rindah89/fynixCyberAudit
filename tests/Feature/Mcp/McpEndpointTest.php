@@ -46,7 +46,7 @@ class McpEndpointTest extends TestCase
 
         setting(['mcp.enabled' => false]);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
@@ -73,7 +73,7 @@ class McpEndpointTest extends TestCase
         $user = User::factory()->create();
         Passport::actingAs($user, ['mcp:use']);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
@@ -94,7 +94,7 @@ class McpEndpointTest extends TestCase
 
         // Without auth - should get 401 (unauthorized), not 503 (disabled)
         // This prevents leaking MCP status to unauthenticated users
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
@@ -108,7 +108,7 @@ class McpEndpointTest extends TestCase
      */
     public function test_mcp_endpoint_requires_authentication(): void
     {
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/call',
@@ -135,7 +135,7 @@ class McpEndpointTest extends TestCase
         // Create a standard to list
         Standard::factory()->create();
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
@@ -152,7 +152,7 @@ class McpEndpointTest extends TestCase
         $user = User::factory()->create();
         Passport::actingAs($user, ['mcp:use']);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
@@ -185,7 +185,7 @@ class McpEndpointTest extends TestCase
         $user = $this->createAdminUser();
         Passport::actingAs($user, ['mcp:use']);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/call',
@@ -228,7 +228,7 @@ class McpEndpointTest extends TestCase
             'code' => 'TEST-001',
         ]);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/call',
@@ -262,7 +262,7 @@ class McpEndpointTest extends TestCase
             'code' => 'DEL-001',
         ]);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/call',
@@ -287,7 +287,7 @@ class McpEndpointTest extends TestCase
         $user = User::factory()->create();
         Passport::actingAs($user, ['mcp:use']);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'invalid' => 'request',
         ]);
 
@@ -303,7 +303,7 @@ class McpEndpointTest extends TestCase
         $user = User::factory()->create();
         Passport::actingAs($user, ['mcp:use']);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'initialize',
@@ -318,7 +318,7 @@ class McpEndpointTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $response->assertJsonPath('result.serverInfo.name', 'OpenGRC MCP Server');
+        $response->assertJsonPath('result.serverInfo.name', 'Fynix Cyber Audit MCP Server');
         $response->assertJsonPath('result.serverInfo.version', '3.0.0');
     }
 
@@ -332,7 +332,7 @@ class McpEndpointTest extends TestCase
 
         // Make requests up to the limit - should not trigger rate limiting
         // Rate limit is 120 per minute, we'll just verify the middleware is applied
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'tools/list',
@@ -349,7 +349,7 @@ class McpEndpointTest extends TestCase
     public function test_mcp_endpoint_rejects_invalid_token(): void
     {
         $response = $this->withHeader('Authorization', 'Bearer invalid-token')
-            ->postJson('/mcp/opengrc', [
+            ->postJson('/mcp/fynixcyberaudit', [
                 'jsonrpc' => '2.0',
                 'id' => 1,
                 'method' => 'tools/list',
@@ -373,7 +373,7 @@ class McpEndpointTest extends TestCase
         Passport::actingAs($user, ['mcp:use']);
 
         // Get server instructions via initialize
-        $initResponse = $this->postJson('/mcp/opengrc', [
+        $initResponse = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'initialize',
@@ -388,7 +388,7 @@ class McpEndpointTest extends TestCase
         ]);
 
         // Get tools list
-        $toolsResponse = $this->postJson('/mcp/opengrc', [
+        $toolsResponse = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 2,
             'method' => 'tools/list',
@@ -451,7 +451,7 @@ class McpEndpointTest extends TestCase
         $user = User::factory()->create();
         Passport::actingAs($user, ['mcp:use']);
 
-        $response = $this->postJson('/mcp/opengrc', [
+        $response = $this->postJson('/mcp/fynixcyberaudit', [
             'jsonrpc' => '2.0',
             'id' => 42,
             'method' => 'tools/list',
@@ -495,7 +495,7 @@ class McpEndpointTest extends TestCase
     {
         setting(['mcp.enabled' => true]);
 
-        $response = $this->getJson('/.well-known/oauth-protected-resource/mcp/opengrc');
+        $response = $this->getJson('/.well-known/oauth-protected-resource/mcp/fynixcyberaudit');
 
         $response->assertStatus(200);
         $response->assertJsonPath('scopes_supported', ['mcp:use']);

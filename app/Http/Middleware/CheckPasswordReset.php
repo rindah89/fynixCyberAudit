@@ -27,7 +27,7 @@ class CheckPasswordReset
         // If the user is logged in and password reset is required, redirect to the password reset page
         /** @var User $user */
         $user = Auth::user();
-        if (Auth::check() && $user->password_reset_required) {
+        if (Auth::check() && $user->password_reset_required && ! $user->is_sso) {
             return redirect()->route('password-reset-page');
         }
 

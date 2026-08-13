@@ -16,14 +16,14 @@ class Install extends Command
      *
      * @var string
      */
-    protected $signature = 'opengrc:install {--unattended : Run the installer non-interactively}';
+    protected $signature = 'fynix:install {--unattended : Run the installer non-interactively}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Install OpenGRC';
+    protected $description = 'Install Fynix Cyber Audit';
 
     /**
      * Execute the console command.
@@ -41,7 +41,7 @@ class Install extends Command
 
             // Use SQLite as the database.
             $db_driver = 'sqlite';
-            $db_database = database_path('opengrc.sqlite');
+            $db_database = database_path('fynixcyberaudit.sqlite');
             $db_host = '';
             $db_port = '';
             $db_username = '';
@@ -52,8 +52,8 @@ class Install extends Command
             $password = 'password';
 
             // Set default site settings.
-            $site_name = 'OpenGRC';
-            $site_url = 'https://opengrc.test';
+            $site_name = 'Fynix Cyber Audit';
+            $site_url = 'https://localhost';
         } else {
             // Interactive mode: prompt for database driver.
             $db_driver = select(
@@ -66,17 +66,17 @@ class Install extends Command
             if ($db_driver === 'mysql') {
                 $db_host = $this->ask('Enter the database host', '127.0.0.1');
                 $db_port = $this->ask('Enter the database port', '3306');
-                $db_database = $this->ask('Enter the database name', 'opengrc');
+                $db_database = $this->ask('Enter the database name', 'fynixcyberaudit');
                 $db_username = $this->ask('Enter the database username', 'root');
                 $db_password = $this->secret('Enter the database password');
             } elseif ($db_driver === 'pgsql') {
                 $db_host = $this->ask('Enter the database host', '127.0.0.1');
                 $db_port = $this->ask('Enter the database port', '5432');
-                $db_database = $this->ask('Enter the database name', 'opengrc');
+                $db_database = $this->ask('Enter the database name', 'fynixcyberaudit');
                 $db_username = $this->ask('Enter the database username', 'postgres');
                 $db_password = $this->secret('Enter the database password');
             } elseif ($db_driver === 'sqlite') {
-                $db_database = database_path('opengrc.sqlite');
+                $db_database = database_path('fynixcyberaudit.sqlite');
                 $db_host = '';
                 $db_port = '';
                 $db_username = '';
@@ -99,13 +99,13 @@ class Install extends Command
             // Prompt for Site settings.
             $site_name = text(
                 label: 'Enter the Site Name',
-                default: 'OpenGRC',
+                default: 'Fynix Cyber Audit',
                 required: true,
                 hint: 'This will be displayed in the header of the site'
             );
             $site_url = text(
                 label: 'Enter the Site URL',
-                default: 'https://opengrc.test',
+                default: 'https://fynixcyberaudit.test',
                 required: true,
                 hint: 'This will be used in emails and other places'
             );
@@ -157,7 +157,7 @@ class Install extends Command
         $this->call('migrate', ['--force']);
 
         // Create the admin user.
-        $this->call('opengrc:create-user', [
+        $this->call('fynix:create-user', [
             'email' => $email,
             'password' => $password,
         ]);
@@ -207,14 +207,14 @@ class Install extends Command
             exec('sudo chmod 777 vendor/bin/*');
             exec('sudo chmod 777 storage -R');
             exec('sudo chmod 777 database');
-            exec('sudo chmod 777 database/opengrc.sqlite');
+            exec('sudo chmod 777 database/fynixcyberaudit.sqlite');
             exec('sudo chmod 777 node_modules/.bin/*');
         }
 
         $this->warn('Change the file system permissions for least privilege based on your own system.');
 
         $this->info('########################################');
-        $this->info('OpenGRC has been installed successfully!');
+        $this->info('Fynix Cyber Audit has been installed successfully!');
         $this->info('########################################');
     }
 

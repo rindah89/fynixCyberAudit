@@ -116,9 +116,9 @@ class DemoImplementationsSeeder extends Seeder
             ]);
         }
 
-        // Link OpenGRC controls to implementations (first 12 implementations for first 12 controls)
-        $openGrcControls = array_filter($this->context->controls, fn ($c) => ! in_array($c, $this->context->tscControls, true));
-        foreach (array_values($openGrcControls) as $index => $control) {
+        // Link imported controls to implementations (first 12 implementations for first 12 controls)
+        $primaryControls = array_filter($this->context->controls, fn ($c) => ! in_array($c, $this->context->tscControls, true));
+        foreach (array_values($primaryControls) as $index => $control) {
             if (isset($this->context->implementations[$index])) {
                 $control->implementations()->attach($this->context->implementations[$index]->id);
             }

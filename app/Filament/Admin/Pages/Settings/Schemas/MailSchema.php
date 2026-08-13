@@ -230,9 +230,9 @@ class MailSchema
 
     protected static function sendEmail(): void
     {
-        Mail::mailer('smtp')->raw('This is a test email from OpenGRC. If you receive this, your mail configuration is working correctly.', function (Message $message) {
+        Mail::mailer('smtp')->raw('This is a test email from Fynix Cyber Audit. If you receive this, your mail configuration is working correctly.', function (Message $message) {
             $message->to(auth()->user()->email)
-                ->subject('OpenGRC Mail Configuration Test');
+                ->subject('Fynix Cyber Audit Mail Configuration Test');
         });
     }
 

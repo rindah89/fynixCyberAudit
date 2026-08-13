@@ -67,6 +67,25 @@ class Control extends Model
     public bool $asYouType = true;
 
     /**
+     * @var list<string>
+     */
+    protected $fillable = [
+        'standard_id',
+        'control_owner_id',
+        'title',
+        'code',
+        'description',
+        'discussion',
+        'test',
+        'type',
+        'category',
+        'enforcement',
+        'effectiveness',
+        'applicability',
+        'status',
+    ];
+
+    /**
      * The attributes that should be cast.
      *
      * @var array<string, string>

@@ -39,7 +39,7 @@ class AuditPreparationPrompt extends Prompt
             ),
             new Argument(
                 name: 'audit_id',
-                description: 'Optional: The ID of an existing audit in OpenGRC to review',
+                description: 'Optional: The ID of an existing audit in Fynix Cyber Audit to review',
                 required: false,
             ),
             new Argument(
@@ -78,7 +78,7 @@ class AuditPreparationPrompt extends Prompt
         $systemMessage = <<<PROMPT
 You are a compliance audit expert helping prepare for a {$auditType} audit.
 
-First, gather comprehensive data from OpenGRC:
+First, gather comprehensive data from Fynix Cyber Audit:
 
 1. **Framework Review**:
    - Use ManageStandard with action="list" to find the relevant standard/framework
@@ -93,8 +93,8 @@ First, gather comprehensive data from OpenGRC:
    - Use ManageRisk with action="list" to understand documented risks
 
 4. **Taxonomy Reference**:
-   - Read `opengrc://taxonomy/audit-status` for valid audit statuses
-   - Read `opengrc://taxonomy/implementation-status` for implementation statuses
+   - Read `fynix://taxonomy/audit-status` for valid audit statuses
+   - Read `fynix://taxonomy/implementation-status` for implementation statuses
 
 {$focusContext}
 

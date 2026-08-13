@@ -36,23 +36,23 @@
         }
 
         .complete, .effective, .applicable{
-            background-color: #d4edda;
-            color: #155724;
+            background-color: #e9fef0;
+            color: #17a94c;
         }
 
         .noteffective {
-            background-color: #f8d7da;
-            color: #721c24;
+            background-color: #fdece7;
+            color: #d13817;
         }
 
         .partiallyeffective, .inprogress {
-            background-color: #fff3cd;
-            color: #856404;
+            background-color: #fff4e0;
+            color: #b96a00;
         }
 
         .unknown, .notapplicable, .nottested {
-            background-color: #f8d7da;
-            color: #721c24;
+            background-color: #efefed;
+            color: #8a8a88;
         }
 
         #header { position: fixed; left: 0px; top: -75px; right: 0px; height: 35px; text-align: center; }

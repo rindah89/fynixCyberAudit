@@ -37,11 +37,9 @@ class AuditController extends BaseApiController
      */
     public function show(Request $request, int $id): JsonResponse
     {
-        $this->authorize('Read '.$this->resourceName);
-
         $query = $this->modelClass::query();
 
-        // Support the legacy with_details parameter
+        // Support the legacy with_details parameter (server-defined relations only)
         if ($request->query('with_details')) {
             $query->with([
                 'auditItems.auditable',
@@ -54,13 +52,9 @@ class AuditController extends BaseApiController
             $query->with($this->showRelations);
         }
 
-        // Allow loading additional relationships via query param
-        if ($request->has('with')) {
-            $with = explode(',', $request->input('with'));
-            $query->with($with);
-        }
-
         $resource = $query->findOrFail($id);
+
+        $this->authorize('view', $resource);
 
         return response()->json([
             'data' => $resource,

@@ -27,14 +27,14 @@ class ViewAudit extends ViewRecord
             case WorkflowStatus::NOTSTARTED:
                 $message = 'This audit has not yet been started. The audit manager can use the workflow actions above to set the state
                 of this audit.';
-                $bgcolor = 'grcblue';
-                $fgcolor = 'white';
+                $bgcolor = 'info';
+                $fgcolor = 'ink';
                 $icon = 'heroicon-m-information-circle';
                 break;
             case WorkflowStatus::COMPLETED:
                 $message = 'This audit has been marked as complete. An administrator will need to reopen the audit if necessary.';
-                $bgcolor = 'grcblue';
-                $fgcolor = 'white';
+                $bgcolor = 'success';
+                $fgcolor = 'ink';
                 $icon = 'heroicon-m-exclamation-circle';
                 break;
             default:

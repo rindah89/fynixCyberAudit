@@ -2,6 +2,7 @@
 
 namespace App\Filament\Vendor\Pages\Auth;
 
+use App\Access\VendorAccess;
 use App\Models\Survey;
 use App\Models\VendorUser;
 use DanHarrin\LivewireRateLimiting\Exceptions\TooManyRequestsException;
@@ -49,10 +50,8 @@ class SurveyAccess extends SimplePage implements HasForms
 
     public function mount(): void
     {
-        // Set the vendor panel context
         Filament::setCurrentPanel(Filament::getPanel('vendor'));
 
-        // Load the survey
         if ($this->survey) {
             $this->surveyRecord = Survey::with('vendor')->find($this->survey);
         }
@@ -61,19 +60,18 @@ class SurveyAccess extends SimplePage implements HasForms
             abort(404, 'Survey not found.');
         }
 
-        // Check if already logged in as vendor
+        $vendorAccess = app(VendorAccess::class);
+        $vendorAccess->establishClaimFromRequest(request(), $this->surveyRecord);
+
         if (Auth::guard('vendor')->check()) {
             $vendorUser = Auth::guard('vendor')->user();
 
-            // Verify user can access this survey (belongs to vendor OR is the respondent)
-            if ($vendorUser->vendor_id === $this->surveyRecord->vendor_id
-                || $vendorUser->email === $this->surveyRecord->respondent_email) {
+            if ($vendorAccess->mayOpenSurvey($vendorUser, $this->surveyRecord)) {
                 $this->redirectToSurvey();
 
                 return;
             }
 
-            // User doesn't have access to this survey - log them out
             Auth::guard('vendor')->logout();
         }
 
@@ -242,9 +240,9 @@ class SurveyAccess extends SimplePage implements HasForms
             return;
         }
 
-        // Verify user can access this survey (belongs to vendor OR is the respondent)
-        if ($user->vendor_id !== $this->surveyRecord->vendor_id
-            && $user->email !== $this->surveyRecord->respondent_email) {
+        try {
+            app(VendorAccess::class)->login($user, $this->surveyRecord);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
             Notification::make()
                 ->title('Access denied')
                 ->body('You do not have permission to access this survey.')
@@ -254,7 +252,7 @@ class SurveyAccess extends SimplePage implements HasForms
             return;
         }
 
-        $this->loginUser($user);
+        $this->redirectToSurvey();
     }
 
     public function register(): void
@@ -307,14 +305,22 @@ class SurveyAccess extends SimplePage implements HasForms
             return;
         }
 
-        // Create the vendor user
-        $user = VendorUser::create([
-            'vendor_id' => $this->surveyRecord->vendor_id,
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-            'email_verified_at' => now(),
-        ]);
+        try {
+            $user = app(VendorAccess::class)->register(
+                $this->surveyRecord,
+                $data['name'],
+                $data['email'],
+                $data['password'],
+            );
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+            Notification::make()
+                ->title('Unable to create account')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
 
         Notification::make()
             ->title('Account created')
@@ -339,10 +345,21 @@ class SurveyAccess extends SimplePage implements HasForms
             return;
         }
 
-        // Update password
-        $this->existingUser->update([
-            'password' => Hash::make($data['password']),
-        ]);
+        try {
+            app(VendorAccess::class)->setPassword(
+                $this->surveyRecord,
+                $this->existingUser,
+                $data['password'],
+            );
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+            Notification::make()
+                ->title('Error')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
 
         Notification::make()
             ->title('Password set')
@@ -355,11 +372,7 @@ class SurveyAccess extends SimplePage implements HasForms
 
     protected function loginUser(VendorUser $user): void
     {
-        Auth::guard('vendor')->login($user);
-
-        $user->update(['last_login_at' => now()]);
-
-        session()->regenerate();
+        app(VendorAccess::class)->login($user, $this->surveyRecord);
 
         $this->redirectToSurvey();
     }

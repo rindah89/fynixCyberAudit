@@ -12,22 +12,22 @@
 }
 
 .role-permission-matrix th {
-    background-color: var(--primary-50);
+    background-color: var(--mint-50);
     font-weight: 600;
     font-size: 0.875rem;
     line-height: 1.25rem;
 }
 
 .role-permission-matrix tr:hover {
-    background-color: rgb(var(--gray-50));
+    background-color: var(--gray-50);
 }
 
 .role-permission-matrix tr.category-header {
-    background-color: rgb(var(--gray-50));
+    background-color: var(--gray-50);
 }
 
 .role-permission-matrix tr.category-header:hover {
-    background-color: rgb(var(--gray-50));
+    background-color: var(--gray-50);
 }
 
 .role-permission-matrix .permission-row td:first-child {

@@ -25,12 +25,12 @@ use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Tool;
 
-class OpenGrcServer extends Server
+class FynixCyberAuditServer extends Server
 {
     /**
      * The MCP server's name.
      */
-    protected string $name = 'OpenGRC MCP Server';
+    protected string $name = 'Fynix Cyber Audit MCP Server';
 
     /**
      * The MCP server's version.
@@ -41,7 +41,7 @@ class OpenGrcServer extends Server
      * The MCP server's instructions for the LLM.
      */
     protected string $instructions = <<<'MARKDOWN'
-        # OpenGRC MCP Server
+        # Fynix Cyber Audit MCP Server
 
         GRC platform tools. All Manage* tools support: list, get, create, update, delete actions.
 

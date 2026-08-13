@@ -7,9 +7,9 @@ use App\Models\User;
 use BezhanSalleh\LanguageSwitch\LanguageSwitch;
 use BladeUI\Icons\Factory as IconFactory;
 use Exception;
+use App\Support\FynixPalette;
 use Filament\Support\Facades\FilamentColor;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Gate;
@@ -29,16 +29,13 @@ class AppServiceProvider extends ServiceProvider
         // Override the package's SessionGuard component with our custom one
         Livewire::component('filament-inactivity-guard::session-guard', CustomSessionGuard::class);
 
-        // Disable mass assignment protection
-        Model::unguard();
-
         // Only skip the install check if running the installer command or actual PHPUnit tests
         $isInstaller = false;
         if ($this->app->runningInConsole()) {
             $argv = $_SERVER['argv'] ?? [];
             if (isset($argv[1]) && (
-                $argv[1] === 'opengrc:install'
-            || $argv[1] === 'opengrc:deploy'
+                $argv[1] === 'fynix:install'
+            || $argv[1] === 'fynix:deploy'
             || $argv[1] === 'package:discover'
             || $argv[1] === 'filament:upgrade'
             || $argv[1] === 'vendor:publish'
@@ -55,7 +52,7 @@ class AppServiceProvider extends ServiceProvider
             || $argv[1] === 'key:generate'
             || $argv[1] === 'storage:link'
             || $argv[1] === 'db:seed'
-            || $argv[1] === 'opengrc:create-user'
+            || $argv[1] === 'fynix:create-user'
             || $argv[1] === 'settings:set'
             )) {
                 $isInstaller = true;
@@ -70,8 +67,8 @@ class AppServiceProvider extends ServiceProvider
         if (! $isInstaller) {
             if (Schema::hasTable('settings')) {
 
-                Config::set('app.name', setting('general.name', 'OpenGRC'));
-                Config::set('app.url', setting('general.url', 'https://opengrc.test'));
+                Config::set('app.name', setting('general.name', 'Fynix Cyber Audit'));
+                Config::set('app.url', setting('general.url', 'https://fynixcyberaudit.test'));
 
                 // Only override the .env mail config once SMTP settings have been
                 // saved in-app; a fresh install must not boot the mailer with a
@@ -169,8 +166,8 @@ class AppServiceProvider extends ServiceProvider
             } else {
                 // if table "settings" does not exist
                 // Error that app was not installed properly
-                abort(500, 'OpenGRC was not installed properly. Please review the
-                installation guide at https://docs.opengrc.com to install the app.');
+                abort(500, 'Fynix Cyber Audit was not installed properly. Please review the
+                installation guide to install the app.');
             }
         }
 
@@ -192,33 +189,7 @@ class AppServiceProvider extends ServiceProvider
             return $table->paginationPageOptions([10, 25, 50, 100]);
         });
 
-        FilamentColor::register([
-            'bg-grcblue' => [
-                50 => '#eaf3f7',
-                100 => '#d4e7ef',
-                200 => '#a9cfe0',
-                300 => '#7eb7d1',
-                400 => '#1375a0',
-                500 => '#106689',
-                600 => '#0d5773',
-                700 => '#0a485d',
-                800 => '#374151',
-                900 => '#212a3a',
-            ],
-            'danger' => [
-                50 => '254, 242, 242',
-                100 => '254, 226, 226',
-                200 => '254, 202, 202',
-                300 => '252, 165, 165',
-                400 => '248, 113, 113',
-                500 => '239, 68, 68',
-                600 => '220, 38, 38',
-                700 => '185, 28, 28',
-                800 => '153, 27, 27',
-                900 => '127, 29, 29',
-                950 => '69, 10, 10',
-            ],
-        ]);
+        FilamentColor::register(FynixPalette::filamentColors());
 
     }
 
@@ -227,6 +198,28 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(\App\Identity\OidcConfig::class, fn () => \App\Identity\OidcConfig::resolve());
+
+        $this->app->bind(\App\Identity\OidcClient::class, function ($app) {
+            if ($app->bound(\App\Identity\StubOidcClient::class)) {
+                return $app->make(\App\Identity\StubOidcClient::class);
+            }
+
+            $config = $app->make(\App\Identity\OidcConfig::class);
+            if (! $config->isReady()) {
+                return new \App\Identity\StubOidcClient;
+            }
+
+            return \App\Identity\RealOidcClient::fromConfig($config);
+        });
+
+        $this->app->bind(\App\Identity\IdentityService::class, function ($app) {
+            return new \App\Identity\IdentityService(
+                $app->make(\App\Identity\OidcClient::class),
+                $app->make(\App\Identity\OidcConfig::class),
+            );
+        });
+
         // Force HTTPS in production environments (must be in register, not boot)
         if (! $this->app->environment('local')) {
             URL::forceScheme('https');

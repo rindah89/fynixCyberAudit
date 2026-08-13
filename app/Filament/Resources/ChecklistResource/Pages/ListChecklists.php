@@ -35,7 +35,7 @@ class ListChecklists extends ListRecords
                 ->icon('heroicon-o-question-mark-circle')
                 ->iconButton()
                 ->color('gray')
-                ->url('https://docs.opengrc.com/features/checklists/')
+                ->url('https://github.com/rindah89/fynixCyberAudit/features/checklists/')
                 ->openUrlInNewTab(),
         ];
     }

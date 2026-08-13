@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\DataRequestResponseResource\Pages;
 
-use App\Enums\ResponseStatus;
 use App\Filament\Resources\DataRequestResponseResource;
 use App\Models\DataRequestResponse;
 use Filament\Actions\Action;
@@ -64,8 +63,7 @@ class EditDataRequestResponse extends EditRecord
 
         // Only change status to RESPONDED if submitting
         if ($this->shouldSubmit) {
-            $record->status = ResponseStatus::RESPONDED;
-            $record->save();
+            $record = app(\App\Access\DataRequestFulfillment::class)->respond($record);
         }
 
         return $record;

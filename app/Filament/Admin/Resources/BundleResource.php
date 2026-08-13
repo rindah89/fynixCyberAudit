@@ -114,8 +114,8 @@ class BundleResource extends Resource
                     ->requiresConfirmation()
                     ->modalContent(function () {
                         return new HtmlString('
-                                <div>This action will import the selected bundle into your OpenGRC. If you already have
-                                content in OpenGRC with the same codes, this will overwrite that data.</div>');
+                                <div>This action will import the selected bundle into Fynix Cyber Audit. If you already have
+                                content in Fynix Cyber Audit with the same codes, this will overwrite that data.</div>');
                     })
                     ->visible(fn () => auth()->check() && auth()->user()->can('Manage Bundles'))
                     ->modalHeading('Bundle Import')
@@ -130,14 +130,14 @@ class BundleResource extends Resource
             ])
             ->headerActions([
                 Action::make('fetch')
-                    ->label('Fetch Bundles Updates')
+                    ->label('Load local packs')
                     ->button()
                     ->visible(fn () => auth()->check() && auth()->user()->can('Manage Bundles'))
                     ->modalContent(function () {
                         return new HtmlString('
-                                <div>This action will fetch the latest bundles from the OpenGRC repository and add them to your OpenGRC.</div>');
+                                <div>This action reloads the content packs shipped with Fynix Cyber Audit. Nothing is downloaded from a remote repository.</div>');
                     })
-                    ->modalHeading('Fetch Bundles')
+                    ->modalHeading('Load local packs')
                     ->modalIconColor('danger')
                     ->action(function () {
                         BundleController::retrieve();
@@ -155,7 +155,7 @@ class BundleResource extends Resource
                     ->label('Type'),
             ])
             ->emptyStateHeading(new HtmlString('No Bundles Imported'))
-            ->emptyStateDescription(new HtmlString('Try fetching the latest bundles from the OpenGRC repository by clicking "Fetch Bundle Updates" above.'));
+            ->emptyStateDescription(new HtmlString('Load the packs shipped with Fynix Cyber Audit by clicking “Fetch Bundles Updates” above.'));
 
     }
 

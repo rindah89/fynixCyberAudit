@@ -4,7 +4,7 @@
             "command": "wsl.exe",
             "args": [
                 "/usr/bin/php8.3",
-                "/var/www/html/sites/OpenGRC/artisan",
+                "/var/www/html/sites/fynixCyberAudit/artisan",
                 "boost:mcp"
             ]
         }
