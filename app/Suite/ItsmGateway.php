@@ -26,7 +26,9 @@ class ItsmGateway
         $existing = SuiteEntityLink::query()->where('local_type', $localType)->where('local_id', $localId)->where('system', 'itsm')->where('entity_type', 'ticket')->first();
         if ($existing) return $existing;
 
-        $ticket = $this->client->createTicket([
+        $matches = $this->client->findTickets(['grc_entity_type' => $entityType, 'grc_entity_id' => (string) $localId]);
+        $ticket = data_get($matches, 'data.0');
+        if (! is_array($ticket)) $ticket = $this->client->createTicket([
             'subject' => $subject,
             'requester_email' => config('suite.itsm.requester_email'),
             'requester_name' => 'Cyber Audit Integration',
@@ -39,14 +41,14 @@ class ItsmGateway
             'grc_entity_id' => (string) $localId,
             'grc_entity_url' => $entityUrl,
         ]);
-        $id = (int) ($ticket['id'] ?? 0);
+        $id = (int) ($ticket['id'] ?? data_get($ticket, 'data.id', 0));
         if ($id < 1) throw new InvalidArgumentException('ITSM did not return a ticket id.');
         if (filled($note)) $this->client->createNote($id, (string) $note);
 
         return SuiteEntityLink::query()->create([
             'local_type' => $localType, 'local_id' => $localId, 'system' => 'itsm',
             'entity_type' => 'ticket', 'entity_id' => (string) $id, 'relation' => 'remediation',
-            'remote_status' => data_get($ticket, 'status.name', 'open'),
+            'remote_status' => data_get($ticket, 'status.name', data_get($ticket, 'data.status.name', 'open')),
             'remote_url' => rtrim((string) config('suite.itsm.public_url'), '/').'/tickets/?ticket_id='.$id,
         ]);
     }
