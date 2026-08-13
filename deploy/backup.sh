@@ -22,4 +22,8 @@ test -n "$secret_ref" || { echo 'FYNIX_SECRET_BACKUP_REF is required (versioned 
 printf '%s\n' "$secret_ref" > "$work/secret-backup-ref"
 tar -C "$work" -czf "$archive" database.sql storage-app git-revision secret-backup-ref
 (cd "$output_dir" && sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256")
+if [[ -n "${FYNIX_BACKUP_S3_URI:-}" ]]; then
+  aws s3 cp "$archive" "${FYNIX_BACKUP_S3_URI%/}/$(basename "$archive")" --sse AES256 --only-show-errors
+  aws s3 cp "$archive.sha256" "${FYNIX_BACKUP_S3_URI%/}/$(basename "$archive").sha256" --sse AES256 --only-show-errors
+fi
 printf '%s\n' "$archive"
