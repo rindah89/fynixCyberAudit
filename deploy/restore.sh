@@ -17,7 +17,7 @@ cd "$deploy_dir"
 docker compose -p fynixcyberaudit --env-file .env stop app
 docker compose -p fynixcyberaudit --env-file .env exec -T db sh -c \
   'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < "$work/database.sql"
-docker compose -p fynixcyberaudit --env-file .env start app
 docker compose -p fynixcyberaudit --env-file .env cp "$work/storage-app/." app:/var/www/html/storage/app/
+docker compose -p fynixcyberaudit --env-file .env start app
 docker compose -p fynixcyberaudit --env-file .env exec -T app php artisan migrate:status
 docker compose -p fynixcyberaudit --env-file .env exec -T app php artisan fynix:suite-preflight
