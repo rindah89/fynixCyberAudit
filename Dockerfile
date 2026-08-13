@@ -170,7 +170,9 @@ EXPOSE 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=5 \
-    CMD curl -f http://localhost/ || exit 1
+    CMD host="$(php -r 'echo parse_url(getenv("APP_URL"), PHP_URL_HOST) ?: "localhost";')" \
+        && curl -fsS -H "Host: ${host}" http://127.0.0.1/ > /dev/null \
+        || exit 1
 
 # Copy and set up entrypoint script
 COPY docker-entrypoint.sh /var/www/html/docker-entrypoint.sh
