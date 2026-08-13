@@ -13,7 +13,9 @@ This runbook activates one Cyber Audit installation against one Fynix ITSM compa
 
 ```bash
 cd /opt/fynix-suite/itsm
-docker compose exec itsm-app vendor/bin/phinx migrate
+# Use the deployment's privileged migration/bootstrap identity. The runtime
+# application account intentionally has no ALTER privilege.
+docker compose -f docker-compose.prod.yml run --rm bootstrap php vendor/bin/phinx migrate -c phinx.php
 ```
 
 Create the analyst `svc-grc-sync` first, then the portal user `grc-integration@example.invalid`. Record their distinct numeric IDs. Record the numeric company, Cyber Audit origin, ticket type, department, and priority IDs.
@@ -47,6 +49,8 @@ SUITE_ITSM_PUBLIC_URL=https://itsm.example.com
 SUITE_GRC_PUBLIC_URL=https://cyberaudit.example.com
 SUITE_ITSM_WEBHOOK_ID=<new UUID v4>
 SUITE_ITSM_WEBHOOK_SECRET=<new random 32-byte secret>
+SUITE_LOCAL_TENANT_ID=<stable UUID v4 for this Cyber Audit installation>
+SUITE_ITSM_REMOTE_TENANT_ID=<ITSM publisher tenant UUID>
 ```
 
 Then converge the application:

@@ -3,6 +3,8 @@
 namespace App\Suite;
 
 use App\Models\SuiteInboundDelivery;
+use App\Models\SuiteInboundHighWater;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,11 +38,28 @@ class SuiteInboundController
             return response()->json(['outcome' => 'duplicate ignored']);
         }
 
-        if ($source === 'itsm' && (! config('suite.itsm.enabled') || $headers['x-fynix-webhook-id'] !== (string) config('suite.itsm.webhook_id'))) {
+        if ($source === 'itsm' && (! config('suite.itsm.enabled') || $headers['x-fynix-webhook-id'] !== (string) config('suite.itsm.webhook_id') || (string) ($envelope['tenant_id'] ?? '') !== (string) config('suite.itsm.remote_tenant_id'))) {
             return response()->json(['outcome' => 'binding disabled'], 503);
         }
 
-        $outcome = $source === 'itsm' ? $itsmGateway->applyEvent($envelope) : $ppmGateway->applyPpmEvent($envelope);
+        if ($source === 'itsm') {
+            $occurredAt = CarbonImmutable::parse((string) ($envelope['occurred_at'] ?? ''))->utc();
+            $identity = [
+                'local_tenant_id' => (string) config('suite.itsm.local_tenant_id'),
+                'source' => 'itsm',
+                'entity_type' => (string) ($envelope['entity_type'] ?? ''),
+                'entity_id' => (string) ($envelope['entity_id'] ?? ''),
+            ];
+            $watermark = SuiteInboundHighWater::query()->where($identity)->first();
+            if ($watermark && $occurredAt->lessThanOrEqualTo($watermark->occurred_at)) {
+                $outcome = 'stale';
+            } else {
+                $outcome = $itsmGateway->applyEvent($envelope);
+                SuiteInboundHighWater::query()->updateOrCreate($identity, ['occurred_at' => $occurredAt]);
+            }
+        } else {
+            $outcome = $ppmGateway->applyPpmEvent($envelope);
+        }
 
         SuiteInboundDelivery::query()->create([
             'delivery_id' => $deliveryId,

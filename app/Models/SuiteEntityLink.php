@@ -14,13 +14,16 @@ class SuiteEntityLink extends Model
         'entity_type',
         'entity_id',
         'relation',
+        'work_kind',
         'remote_status',
+        'remote_closed_at',
         'remote_url',
         'meta',
     ];
 
     protected $casts = [
         'meta' => 'array',
+        'remote_closed_at' => 'immutable_datetime',
     ];
 
     public function local(): MorphTo

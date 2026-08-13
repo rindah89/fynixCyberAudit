@@ -2,11 +2,12 @@
 
 namespace App\Suite;
 
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
 class LiveItsmClient implements ItsmClient
 {
-    private function client()
+    private function client(): PendingRequest
     {
         return Http::baseUrl(rtrim((string) config('suite.itsm.base_url'), '/').'/api/v1')
             ->withToken((string) config('suite.itsm.token'))

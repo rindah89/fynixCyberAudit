@@ -18,6 +18,8 @@ return [
         'grc_public_url' => env('SUITE_GRC_PUBLIC_URL', env('FYNIX_GRC_PUBLIC_URL', env('APP_URL'))),
         'webhook_id' => env('SUITE_ITSM_WEBHOOK_ID'),
         'webhook_secret' => env('SUITE_ITSM_WEBHOOK_SECRET'),
+        'local_tenant_id' => env('SUITE_LOCAL_TENANT_ID'),
+        'remote_tenant_id' => env('SUITE_ITSM_REMOTE_TENANT_ID'),
         'replay_tolerance' => (int) env('SUITE_ITSM_REPLAY_TOLERANCE', 21600),
     ],
     'ppm' => [
