@@ -37,9 +37,18 @@ The target on-prem architecture is the same contract: Linux + Docker Compose, pe
 
 Suite integrations use signed Fynix v2 events and dedicated service credentials. Authorization is the receiver's effective RBAC; do not assume a token's descriptive scope field is enforced. Do not share databases or application tokens. Changes to an event contract require compatible receivers before publishers are enabled. CyberAudit ↔ ITSM activation details live in CyberAudit's `docs/deployment/grc-itsm-one-dc.md`.
 
+## Versioning, backup, and rollback
+
+- The immutable production version is the full Git SHA release in the private bucket. Human releases use non-moving annotated SemVer tags (`vMAJOR.MINOR.PATCH`) pointing to a successfully deployed SHA.
+- Before migrations and daily, create a consistent MySQL dump plus copies of persistent uploaded evidence and the production `.env`/application key. Encrypt backups off-host; retain at least 7 daily, 4 weekly, and 12 monthly recovery points unless policy is stricter.
+- Roll back code by deploying the prior SHA artifact through its `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`. Laravel migrations must be additive/backward-compatible; never drop suite audit/link state in a routine rollback.
+- CyberAudit currently has no repository backup/restore wrapper. Use consistent database and volume snapshots, record their IDs in the handoff, stop writers before restore, then verify migrations, `fynix:suite-preflight`, `/api/suite/ready`, evidence access, and an authenticated audit read.
+- Perform and record a restore drill at least quarterly. Portable backup/restore wrappers remain an on-prem hardening item.
+
+
 ## Required handoff
 
-Record the deployed commit, workflow URL/result, migration result, health result, rollback artifact, and any configuration keys added (names only, never values). If deployment did not complete, say so explicitly.
+Record the deployed commit, workflow URL/result, migration result, health result, backup/snapshot identifier, tested rollback artifact, and any configuration keys added (names only, never values). If deployment did not complete, say so explicitly.
 
 ## This repository
 
