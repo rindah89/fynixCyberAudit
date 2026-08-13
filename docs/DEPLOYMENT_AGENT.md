@@ -35,7 +35,7 @@ The target on-prem architecture is the same contract: Linux + Docker Compose, pe
 
 ## Cross-application safety
 
-Suite integrations use signed Fynix v2 events and scoped service credentials. Do not share databases or application tokens. Changes to an event contract require compatible receivers before publishers are enabled. CyberAudit ↔ ITSM activation details live in CyberAudit's `docs/deployment/grc-itsm-one-dc.md`.
+Suite integrations use signed Fynix v2 events and dedicated service credentials. Authorization is the receiver's effective RBAC; do not assume a token's descriptive scope field is enforced. Do not share databases or application tokens. Changes to an event contract require compatible receivers before publishers are enabled. CyberAudit ↔ ITSM activation details live in CyberAudit's `docs/deployment/grc-itsm-one-dc.md`.
 
 ## Required handoff
 
@@ -46,4 +46,3 @@ Record the deployed commit, workflow URL/result, migration result, health result
 The workflow builds the Laravel production image, creates an immutable source release, and runs `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`.
 
 Production route: `https://cyberaudit.fynixhq.com/`. Integration readiness: `https://cyberaudit.fynixhq.com/api/suite/ready`. Run `php artisan migrate --force` and `php artisan fynix:suite-preflight` in the deployed app. The one-DC ITSM integration procedure is `docs/deployment/grc-itsm-one-dc.md`.
-
