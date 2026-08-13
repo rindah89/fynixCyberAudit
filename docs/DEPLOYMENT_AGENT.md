@@ -42,8 +42,8 @@ Suite integrations use signed Fynix v2 events and dedicated service credentials.
 - The immutable production version is the full Git SHA release in the private bucket. Human releases use non-moving annotated SemVer tags (`vMAJOR.MINOR.PATCH`) pointing to a successfully deployed SHA.
 - Before migrations and daily, create a consistent MySQL dump plus copies of persistent uploaded evidence and the production `.env`/application key. Encrypt backups off-host; retain at least 7 daily, 4 weekly, and 12 monthly recovery points unless policy is stricter.
 - Roll back code by deploying the prior SHA artifact through its `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`. Laravel migrations must be additive/backward-compatible; never drop suite audit/link state in a routine rollback.
-- CyberAudit currently has no repository backup/restore wrapper. Use consistent database and volume snapshots, record their IDs in the handoff, stop writers before restore, then verify migrations, `fynix:suite-preflight`, `/api/suite/ready`, evidence access, and an authenticated audit read.
-- Perform and record a restore drill at least quarterly. Portable backup/restore wrappers remain an on-prem hardening item.
+- Use `deploy/backup.sh` and `deploy/restore.sh` for a consistent MySQL plus application-storage recovery set. Provider snapshots may supplement it. After restore, verify migrations, `fynix:suite-preflight`, `/api/suite/ready`, evidence access, and an authenticated audit read.
+- Use `deploy/rollback.sh <extracted-release> <deploy-dir> <sha>` for a previous immutable release. Perform and record a restore drill at least quarterly.
 
 
 ## Required handoff

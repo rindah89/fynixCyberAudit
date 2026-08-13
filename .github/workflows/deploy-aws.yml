@@ -20,6 +20,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, fynix-suite]
     steps:
       - uses: actions/checkout@v4
+      - name: Validate tracked shell scripts
+        run: git ls-files '*.sh' | while IFS= read -r script; do bash -n "$script"; done
+      - name: Test deployment recovery guards
+        run: bash tests/deployment_scripts_test.sh
       - name: Build production image
         run: docker build -t "fynix-cyberaudit-ci:$GITHUB_SHA" .
       - name: Package immutable source release
