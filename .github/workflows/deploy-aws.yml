@@ -36,6 +36,7 @@ jobs:
           snapshot_id=$(aws ec2 create-snapshot --volume-id "$VOLUME_ID" --description "Fynix CyberAudit pre-deployment recovery point $GITHUB_SHA" --tag-specifications "ResourceType=snapshot,Tags=[{Key=RecoveryClass,Value=predeploy},{Key=Application,Value=cyberaudit},{Key=GitSHA,Value=$GITHUB_SHA}]" --query SnapshotId --output text)
           test -n "$snapshot_id"
           echo "Created immutable recovery point $snapshot_id before deployment"
+          for old in $(aws ec2 describe-snapshots --owner-ids self --filters Name=tag:RecoveryClass,Values=predeploy Name=tag:Application,Values=cyberaudit Name=status,Values=completed --query 'reverse(sort_by(Snapshots,&StartTime))[7:].SnapshotId' --output text); do aws ec2 delete-snapshot --snapshot-id "$old"; done
       - name: Upload and deploy through Systems Manager
         run: |
           aws s3 cp "/tmp/fynix-cyberaudit-$GITHUB_SHA.tar.gz" "s3://$RELEASE_BUCKET/cyberaudit/$GITHUB_SHA.tar.gz"
