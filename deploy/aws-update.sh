@@ -8,7 +8,6 @@ set -a
 # shellcheck disable=SC1091
 source "$target/.env"
 set +a
-"$source_dir/deploy/backup.sh" "$target"
 mkdir -p "$target"
 rsync -a --delete --exclude='.env' --exclude='.git-revision' --exclude='node_modules' "$source_dir/" "$target/"
 printf '%s\n' "$revision" > "$target/.git-revision"
