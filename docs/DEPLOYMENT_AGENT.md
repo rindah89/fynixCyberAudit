@@ -12,7 +12,7 @@ Fynix is deployed as independently releasable applications behind one shared edg
 | PPM | https://ppm.fynixhq.com | `rindah89/ppm` |
 | HR | https://hr.fynixhq.com | `rindah89/fynixhrm` |
 | Finance | https://finance.fynixhq.com | `rindah89/fynixFinance` |
-| ITSM | https://itsm.fynixhq.com | `rindah89/itsm-suite` with private `rindah89/itsm` submodule |
+| ITSM | https://itsm.fynixhq.com | `rindah89/itsm` |
 | DocFlow | https://docflow.fynixhq.com | `rindah89/docflow` |
 | CyberAudit | https://cyberaudit.fynixhq.com | `rindah89/fynixCyberAudit` |
 
