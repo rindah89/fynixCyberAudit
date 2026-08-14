@@ -37,7 +37,7 @@ final readonly class OidcConfig
         $redirect = self::settingOrConfig('auth.oidc.redirect_uri', 'oidc.redirect_uri')
             ?: rtrim((string) config('app.url'), '/').'/auth/sso/callback';
 
-        $scopes = self::settingOrConfig('auth.oidc.scopes', 'oidc.scopes') ?? ['openid', 'email', 'profile', 'groups'];
+        $scopes = self::settingOrConfig('auth.oidc.scopes', 'oidc.scopes') ?? ['openid', 'email', 'profile'];
         if (is_string($scopes)) {
             $scopes = array_values(array_filter(explode(' ', $scopes)));
         }

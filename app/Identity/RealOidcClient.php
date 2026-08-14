@@ -12,7 +12,7 @@ class RealOidcClient implements OidcClient
         private readonly string $clientSecret,
         private readonly string $authorizeEndpoint,
         private readonly string $tokenEndpoint,
-        private readonly array $scopes = ['openid', 'email', 'profile', 'groups'],
+        private readonly array $scopes = ['openid', 'email', 'profile'],
     ) {}
 
     public static function fromConfig(OidcConfig $config): self
