@@ -6,12 +6,11 @@ backup_root="${2:-/var/backups/fynix/fynixcyberaudit}"
 recipient_file="${FYNIX_BACKUP_AGE_RECIPIENT_FILE:-/etc/fynix/backup-age-recipient}"
 [[ -s "$recipient_file" ]] || { echo 'Backup age recipient is missing.' >&2; exit 1; }
 command -v age >/dev/null || { echo 'age is required for encrypted backups.' >&2; exit 1; }
-command -v flock >/dev/null || { echo 'flock is required for backup serialization.' >&2; exit 1; }
 install -d -m 0750 "$backup_root"
-exec 9>"$backup_root/.backup.lock"
-flock -n 9 || { echo 'Another CyberAudit backup is already running.' >&2; exit 1; }
+lock_dir="$backup_root/.backup.lock.d"
+mkdir "$lock_dir" 2>/dev/null || { echo 'Another CyberAudit backup is already running.' >&2; exit 1; }
 stage="$(mktemp -d "$backup_root/.staging.XXXXXXXX")"
-trap 'rm -rf -- "$stage"' EXIT
+trap 'rm -rf -- "$stage"; rmdir "$lock_dir"' EXIT
 # The native script supports S3 for its own archive. Suppress that here so only
 # the age-encrypted governed artifact can ever leave the host.
 plain="$(FYNIX_BACKUP_S3_URI= "$deploy_dir/deploy/backup.sh" "$deploy_dir" "$stage")"
