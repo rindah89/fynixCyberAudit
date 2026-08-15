@@ -23,6 +23,7 @@ class AnchorVendorOperationLedger extends Command
 
         try {
             $objectKey = $anchor->publish($ledger->head());
+            $ledger->markAnchored($objectKey);
         } catch (Throwable $error) {
             report($error);
             $this->error('Vendor operation ledger anchor export failed.');

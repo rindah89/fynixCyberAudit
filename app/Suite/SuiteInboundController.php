@@ -127,7 +127,9 @@ class SuiteInboundController
         ])) : [];
         $integrity = $vendorOperations->integrityStatus();
         $integrityOk = $integrity['status'] === 'ok' && $integrity['fresh'];
-        $ready = $missing === [] && $supportMissing === [] && $integrityOk;
+        $anchor = $vendorOperations->anchorStatus();
+        $anchorOk = ! config('suite.support.anchor.enabled') || $anchor['fresh'];
+        $ready = $missing === [] && $supportMissing === [] && $integrityOk && $anchorOk;
 
         return response()->json([
             'status' => $ready ? 'ok' : 'not_ready',
@@ -139,6 +141,12 @@ class SuiteInboundController
                 'integrity_checked_at' => $integrity['checked_at'],
                 'missing_configuration' => $supportMissing,
                 'last_recorded_at' => VendorOperationEvent::query()->latest('id')->value('occurred_at'),
+                'anchor' => [
+                    'enabled' => (bool) config('suite.support.anchor.enabled'),
+                    'fresh' => $anchor['fresh'],
+                    'last_anchor_at' => $anchor['last_anchor_at'],
+                    'last_anchor_key' => $anchor['last_anchor_key'],
+                ],
             ],
             'last_inbound_outcome' => SuiteInboundDelivery::query()->where('source', 'itsm')->latest('id')->value('outcome'),
         ], $ready ? 200 : 503);

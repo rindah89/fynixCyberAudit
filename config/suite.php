@@ -21,6 +21,7 @@ return [
             'prefix' => trim((string) env('SUITE_SUPPORT_ANCHOR_PREFIX', 'vendor-operation-ledger'), '/'),
             'key' => env('SUITE_SUPPORT_ANCHOR_KEY'),
             'retention_days' => (int) env('SUITE_SUPPORT_ANCHOR_RETENTION_DAYS', 2555),
+            'max_age' => (int) env('SUITE_SUPPORT_ANCHOR_MAX_AGE', 129600),
             'kms_key_id' => env('SUITE_SUPPORT_ANCHOR_KMS_KEY_ID'),
         ],
     ],

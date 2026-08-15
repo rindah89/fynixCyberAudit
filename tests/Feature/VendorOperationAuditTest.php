@@ -148,6 +148,11 @@ class VendorOperationAuditTest extends TestCase
         $this->artisan('fynix:vendor-ledger-anchor')
             ->expectsOutputToContain('vendor-operation-ledger/')
             ->assertSuccessful();
+
+        $this->getJson('/api/suite/ready')
+            ->assertOk()
+            ->assertJsonPath('vendor_operations.anchor.enabled', true)
+            ->assertJsonPath('vendor_operations.anchor.fresh', true);
     }
 
     private function postOperation(

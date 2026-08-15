@@ -150,6 +150,32 @@ class VendorOperationLedger
         ];
     }
 
+    public function markAnchored(string $objectKey): void
+    {
+        DB::table('vendor_operation_ledger_heads')->where('id', 1)->update([
+            'last_anchor_at' => now(),
+            'last_anchor_key' => $objectKey,
+            'updated_at' => now(),
+        ]);
+    }
+
+    /** @return array{last_anchor_at: ?string, last_anchor_key: ?string, fresh: bool} */
+    public function anchorStatus(): array
+    {
+        $head = DB::table('vendor_operation_ledger_heads')->where('id', 1)->first();
+        $lastAnchorAt = $head?->last_anchor_at;
+        $fresh = $lastAnchorAt !== null
+            && CarbonImmutable::parse((string) $lastAnchorAt)->greaterThanOrEqualTo(
+                now()->subSeconds((int) config('suite.support.anchor.max_age', 129600))
+            );
+
+        return [
+            'last_anchor_at' => $lastAnchorAt === null ? null : (string) $lastAnchorAt,
+            'last_anchor_key' => $head?->last_anchor_key === null ? null : (string) $head->last_anchor_key,
+            'fresh' => $fresh,
+        ];
+    }
+
     private function recordIntegrity(bool $valid): bool
     {
         DB::table('vendor_operation_ledger_heads')->where('id', 1)->update([

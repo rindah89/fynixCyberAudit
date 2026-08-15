@@ -53,6 +53,11 @@ class SuitePreflight extends Command
 
                     return self::FAILURE;
                 }
+                if ((int) config('suite.support.anchor.max_age') < 3600) {
+                    $this->error('Support anchor maximum age must be at least one hour.');
+
+                    return self::FAILURE;
+                }
             }
             $this->info('Fynix vendor support audit binding is valid.');
         } else {
