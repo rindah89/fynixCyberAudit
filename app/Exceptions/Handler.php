@@ -2,6 +2,7 @@
 
 namespace App\Exceptions;
 
+use App\Support\Observability\SentryTransport;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Request;
 use Throwable;
@@ -25,7 +26,7 @@ class Handler extends ExceptionHandler
     public function register(): void
     {
         $this->reportable(function (Throwable $e) {
-            //
+            app(SentryTransport::class)->capture($e);
         });
 
         // Return JSON responses for survey routes when Accept header is JSON
