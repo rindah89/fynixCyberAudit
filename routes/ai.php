@@ -32,7 +32,8 @@ Route::middleware([McpEnabled::class])->group(function () {
     Mcp::oauthRoutes('oauth');
 
     // Override the default oauth/register route with Passport v12 compatible controller
-    Route::post('oauth/register', OAuthRegisterController::class);
+    Route::post('oauth/register', OAuthRegisterController::class)
+        ->middleware('throttle:oauth-registration');
 
     // Override the discovery endpoint to add token_endpoint_auth_methods_supported
     // This is required for MCP OAuth 2.1 public clients

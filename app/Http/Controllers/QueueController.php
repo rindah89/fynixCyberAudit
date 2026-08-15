@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\Process\Process;
 
 class QueueController extends Controller
 {
@@ -12,27 +11,10 @@ class QueueController extends Controller
      */
     public function isQueueWorkerRunning(): bool
     {
-        // Check for running queue worker processes using ps command (more reliable)
-        $process = new Process(['ps', 'aux']);
-        $process->run();
-
-        if (! $process->isSuccessful()) {
-            return false;
-        }
-
-        $output = $process->getOutput();
-
-        // Look for queue:work processes that are not defunct
-        $lines = explode("\n", $output);
-        foreach ($lines as $line) {
-            if (strpos($line, 'queue:work') !== false && strpos($line, '<defunct>') === false) {
-                Log::info('Found running queue worker', ['process_line' => $line]);
-
-                return true;
-            }
-        }
-
-        return false;
+        // Workers run in a separately supervised container. A web process
+        // cannot safely inspect or manage that process; readiness monitoring
+        // owns liveness. This method reports whether async dispatch is enabled.
+        return config('queue.default') !== 'sync';
     }
 
     /**
@@ -40,19 +22,9 @@ class QueueController extends Controller
      */
     public function startQueueWorker(): void
     {
-        // Use shell command to start queue worker as a true background process
-        $command = sprintf(
-            'nohup %s %s queue:work --daemon --tries=3 --timeout=300 > /dev/null 2>&1 &',
-            PHP_BINARY,
-            base_path('artisan')
-        );
-
-        // Execute the command in the background
-        exec($command);
-
-        Log::info('Queue worker started in background', [
-            'command' => $command,
-            'timestamp' => now(),
+        Log::warning('queue.worker_start_rejected', [
+            'error_code' => 'WORKER_LIFECYCLE_EXTERNAL',
+            'retryable' => false,
         ]);
     }
 
@@ -63,7 +35,7 @@ class QueueController extends Controller
     public function ensureQueueWorkerRunning(): ?bool
     {
         // Check if auto-start is enabled in configuration
-        if (! config('queue.auto_start', true)) {
+        if (! config('queue.auto_start', false)) {
             Log::info('Queue auto-start is disabled, skipping worker check');
 
             return null; // Auto-start disabled
@@ -97,14 +69,9 @@ class QueueController extends Controller
      */
     public function stopQueueWorkers(): void
     {
-        // Find and kill queue worker processes
-        $process = new Process(['pkill', '-f', 'queue:work']);
-        $process->run();
-
-        Log::info('Queue workers stop command executed', [
-            'success' => $process->isSuccessful(),
-            'output' => $process->getOutput(),
-            'timestamp' => now(),
+        Log::warning('queue.worker_stop_rejected', [
+            'error_code' => 'WORKER_LIFECYCLE_EXTERNAL',
+            'retryable' => false,
         ]);
     }
 }

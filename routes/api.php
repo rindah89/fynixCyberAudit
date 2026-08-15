@@ -17,6 +17,7 @@ use App\Http\Controllers\API\RiskController;
 use App\Http\Controllers\API\StandardController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
+use App\Suite\SuiteInboundController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -31,8 +32,9 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::post('/suite/events', [\App\Suite\SuiteInboundController::class, 'store']);
-Route::get('/suite/ready', [\App\Suite\SuiteInboundController::class, 'ready']);
+Route::post('/suite/events', [SuiteInboundController::class, 'store'])
+    ->middleware('throttle:suite-inbound');
+Route::get('/suite/ready', [SuiteInboundController::class, 'ready']);
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();

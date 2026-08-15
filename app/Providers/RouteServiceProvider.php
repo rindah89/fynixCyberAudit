@@ -25,7 +25,8 @@ class RouteServiceProvider extends ServiceProvider
     public function boot(): void
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute($request->user() ? 120 : 60)
+                ->by($request->user() ? 'user:'.$request->user()->getAuthIdentifier() : 'ip:'.$request->ip());
         });
 
         // Rate limiter for MCP endpoints
@@ -34,12 +35,18 @@ class RouteServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('global', function (Request $request) {
-            // Skip rate limiting for authenticated users and Livewire requests
-            if ($request->user() || $request->is('livewire/*')) {
-                return Limit::none();
-            }
+            $limit = $request->is('livewire/*') ? 180 : ($request->user() ? 300 : 60);
 
-            return Limit::perMinute(60)->by($request->ip());
+            return Limit::perMinute($limit)
+                ->by($request->user() ? 'user:'.$request->user()->getAuthIdentifier() : 'ip:'.$request->ip());
+        });
+
+        RateLimiter::for('oauth-registration', function (Request $request) {
+            return Limit::perMinute(10)->by('ip:'.$request->ip());
+        });
+
+        RateLimiter::for('suite-inbound', function (Request $request) {
+            return Limit::perMinute(120)->by('ip:'.$request->ip());
         });
 
         $this->routes(function () {
