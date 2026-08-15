@@ -2,21 +2,32 @@
 
 namespace App\Providers;
 
+use App\Identity\IdentityService;
+use App\Identity\OidcClient;
+use App\Identity\OidcConfig;
+use App\Identity\RealOidcClient;
+use App\Identity\StubOidcClient;
 use App\Livewire\CustomSessionGuard;
 use App\Models\User;
+use App\Suite\FakePpmClient;
+use App\Suite\LivePpmClient;
+use App\Suite\PpmClient;
+use App\Support\FynixPalette;
 use BezhanSalleh\LanguageSwitch\LanguageSwitch;
 use BladeUI\Icons\Factory as IconFactory;
 use Exception;
-use App\Support\FynixPalette;
 use Filament\Support\Facades\FilamentColor;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
 use Log;
+use MangoldSecurity\Settings\Services\Setting;
 use Schema;
 
 class AppServiceProvider extends ServiceProvider
@@ -26,6 +37,16 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // This event is emitted by the actual Laravel worker loop. A stopped
+        // or hung worker therefore cannot be kept healthy by a sibling process.
+        Queue::looping(function (): void {
+            Cache::store(config('queue.heartbeat_store', 'database'))->put(
+                config('queue.heartbeat_key', 'queue:worker:heartbeat'),
+                now()->timestamp,
+                max(60, (int) config('queue.heartbeat_ttl_seconds', 30) * 2),
+            );
+        });
+
         // Override the package's SessionGuard component with our custom one
         Livewire::component('filament-inactivity-guard::session-guard', CustomSessionGuard::class);
 
@@ -198,38 +219,38 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(\App\Identity\OidcConfig::class, fn () => \App\Identity\OidcConfig::resolve());
+        $this->app->bind(OidcConfig::class, fn () => OidcConfig::resolve());
 
-        $this->app->bind(\App\Identity\OidcClient::class, function ($app) {
-            if ($app->bound(\App\Identity\StubOidcClient::class)) {
-                return $app->make(\App\Identity\StubOidcClient::class);
+        $this->app->bind(OidcClient::class, function ($app) {
+            if ($app->bound(StubOidcClient::class)) {
+                return $app->make(StubOidcClient::class);
             }
 
-            $config = $app->make(\App\Identity\OidcConfig::class);
+            $config = $app->make(OidcConfig::class);
             if (! $config->isReady()) {
-                return new \App\Identity\StubOidcClient;
+                return new StubOidcClient;
             }
 
-            return \App\Identity\RealOidcClient::fromConfig($config);
+            return RealOidcClient::fromConfig($config);
         });
 
-        $this->app->bind(\App\Identity\IdentityService::class, function ($app) {
-            return new \App\Identity\IdentityService(
-                $app->make(\App\Identity\OidcClient::class),
-                $app->make(\App\Identity\OidcConfig::class),
+        $this->app->bind(IdentityService::class, function ($app) {
+            return new IdentityService(
+                $app->make(OidcClient::class),
+                $app->make(OidcConfig::class),
             );
         });
 
-        $this->app->bind(\App\Suite\PpmClient::class, function ($app) {
-            if ($app->bound(\App\Suite\FakePpmClient::class)) {
-                return $app->make(\App\Suite\FakePpmClient::class);
+        $this->app->bind(PpmClient::class, function ($app) {
+            if ($app->bound(FakePpmClient::class)) {
+                return $app->make(FakePpmClient::class);
             }
 
             if ($app->environment('testing')) {
-                return new \App\Suite\FakePpmClient;
+                return new FakePpmClient;
             }
 
-            return new \App\Suite\LivePpmClient;
+            return new LivePpmClient;
         });
 
         // Force HTTPS in production environments (must be in register, not boot)
@@ -253,7 +274,7 @@ class AppServiceProvider extends ServiceProvider
         // The mangoldsecurity/settings package registers this in boot() which is too late
         if (! $this->app->bound('setting')) {
             $this->app->singleton('setting', function () {
-                return new \MangoldSecurity\Settings\Services\Setting;
+                return new Setting;
             });
         }
     }

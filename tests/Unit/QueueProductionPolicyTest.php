@@ -3,7 +3,9 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\QueueController;
+use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class QueueProductionPolicyTest extends TestCase
@@ -28,7 +30,7 @@ class QueueProductionPolicyTest extends TestCase
         $controller = new QueueController;
         $this->assertFalse($controller->isQueueWorkerRunning());
 
-        Cache::store('array')->put('queue:worker:heartbeat', now()->timestamp, 60);
+        Event::dispatch(new Looping('database', 'default'));
         $this->assertTrue($controller->isQueueWorkerRunning());
 
         Cache::store('array')->put('queue:worker:heartbeat', now()->subMinute()->timestamp, 60);
