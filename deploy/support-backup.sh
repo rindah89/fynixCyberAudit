@@ -4,6 +4,7 @@ set -euo pipefail
 deploy_dir="${1:-/opt/fynix-suite/cyberaudit}"
 backup_root="${2:-/var/backups/fynix/fynixcyberaudit}"
 recipient_file="${FYNIX_BACKUP_AGE_RECIPIENT_FILE:-/etc/fynix/backup-age-recipient}"
+native_backup="${FYNIX_CYBERAUDIT_BACKUP_SCRIPT:-$deploy_dir/deploy/backup.sh}"
 [[ -s "$recipient_file" ]] || { echo 'Backup age recipient is missing.' >&2; exit 1; }
 command -v age >/dev/null || { echo 'age is required for encrypted backups.' >&2; exit 1; }
 install -d -m 0750 "$backup_root"
@@ -13,7 +14,7 @@ stage="$(mktemp -d "$backup_root/.staging.XXXXXXXX")"
 trap 'rm -rf -- "$stage"; rmdir "$lock_dir"' EXIT
 # The native script supports S3 for its own archive. Suppress that here so only
 # the age-encrypted governed artifact can ever leave the host.
-plain="$(FYNIX_BACKUP_S3_URI= "$deploy_dir/deploy/backup.sh" "$deploy_dir" "$stage")"
+plain="$(FYNIX_BACKUP_S3_URI= "$native_backup" "$deploy_dir" "$stage")"
 [[ "$plain" == "$stage/"*.tar.gz && -s "$plain" && -s "$plain.sha256" ]] || { echo 'CyberAudit backup contract produced an incomplete snapshot.' >&2; exit 1; }
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 artifact="$backup_root/fynix-cyberaudit-$timestamp-$$.tar.age"
