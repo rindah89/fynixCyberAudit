@@ -18,6 +18,12 @@ SUITE_SUPPORT_REMOTE_TENANT_ID=<support control-plane UUID>
 SUITE_SUPPORT_REPLAY_TOLERANCE=300
 SUITE_SUPPORT_LEDGER_KEY=<independent random secret of at least 32 bytes>
 SUITE_SUPPORT_INTEGRITY_MAX_AGE=86400
+SUITE_SUPPORT_ANCHOR_ENABLED=true
+SUITE_SUPPORT_ANCHOR_BUCKET=<S3 Object Lock enabled bucket>
+SUITE_SUPPORT_ANCHOR_PREFIX=vendor-operation-ledger
+SUITE_SUPPORT_ANCHOR_KEY=<independent random secret of at least 32 bytes>
+SUITE_SUPPORT_ANCHOR_RETENTION_DAYS=2555
+SUITE_SUPPORT_ANCHOR_KMS_KEY_ID=<KMS key ARN or alias>
 ```
 
 Run migrations and verify `/api/suite/ready` reports:
@@ -42,9 +48,12 @@ key must be held outside the database. The ready endpoint reads the persisted
 verification status in constant time. Schedule `php artisan
 fynix:vendor-ledger-verify` at least once per `SUITE_SUPPORT_INTEGRITY_MAX_AGE`.
 
-The HMAC chain detects database-only rewriting, but it is not an independent
-retention boundary. Production promotion also requires exporting signed ledger
-anchors to immutable storage such as an S3 Object Lock compliance-mode bucket.
+The HMAC chain detects database-only rewriting. A daily scheduled command first
+verifies the complete chain, signs its head with a separate key, then writes a
+unique checksum-protected object using S3 Object Lock **COMPLIANCE** mode and
+the configured retention period. The bucket must have Object Lock enabled at
+creation time and deny deletion/bypass-retention to the application role. Drill
+`php artisan fynix:vendor-ledger-anchor` before production promotion.
 
 Delivery UUIDs and request UUIDs are unique. Retries of an accepted delivery
 return `duplicate ignored` without adding a second ledger row. Unknown sources

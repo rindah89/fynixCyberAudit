@@ -134,6 +134,22 @@ class VendorOperationLedger
         return ['status' => (string) ($head?->integrity_status ?? 'unknown'), 'checked_at' => $checkedAt, 'fresh' => $fresh];
     }
 
+    /** @return array{last_hash: string, event_count: int, integrity_status: string, integrity_checked_at: ?string} */
+    public function head(): array
+    {
+        $head = DB::table('vendor_operation_ledger_heads')->where('id', 1)->first();
+        if ($head === null) {
+            throw new RuntimeException('Vendor operation ledger head is unavailable.');
+        }
+
+        return [
+            'last_hash' => (string) $head->last_hash,
+            'event_count' => (int) $head->event_count,
+            'integrity_status' => (string) $head->integrity_status,
+            'integrity_checked_at' => $head->integrity_checked_at === null ? null : (string) $head->integrity_checked_at,
+        ];
+    }
+
     private function recordIntegrity(bool $valid): bool
     {
         DB::table('vendor_operation_ledger_heads')->where('id', 1)->update([

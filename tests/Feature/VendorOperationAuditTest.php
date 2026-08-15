@@ -4,11 +4,15 @@ namespace Tests\Feature;
 
 use App\Models\VendorOperationEvent;
 use App\Suite\SuiteEnvelope;
+use App\Suite\VendorOperationAnchor;
+use Aws\Result;
+use Aws\S3\S3Client;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
+use Mockery;
 use Tests\TestCase;
 
 class VendorOperationAuditTest extends TestCase
@@ -114,6 +118,36 @@ class VendorOperationAuditTest extends TestCase
 
         $this->assertDatabaseCount('vendor_operation_events', 2);
         $this->assertSame(2, VendorOperationEvent::query()->where('operation_id', $operationId)->count());
+    }
+
+    public function test_verified_ledger_head_is_exported_with_compliance_object_lock(): void
+    {
+        Config::set('suite.support.anchor.enabled', true);
+        Config::set('suite.support.anchor.bucket', 'immutable-audit-anchors');
+        Config::set('suite.support.anchor.prefix', 'vendor-operation-ledger');
+        Config::set('suite.support.anchor.key', str_repeat('a', 32));
+        Config::set('suite.support.anchor.retention_days', 2555);
+        Config::set('suite.support.anchor.kms_key_id', 'alias/fynix-audit');
+        $this->postOperation('backup.run', 'ppm', 'succeeded')->assertOk();
+
+        $s3 = Mockery::mock(S3Client::class);
+        $s3->shouldReceive('putObject')->once()->with(Mockery::on(function (array $arguments): bool {
+            $body = json_decode((string) $arguments['Body'], true, flags: JSON_THROW_ON_ERROR);
+
+            return $arguments['Bucket'] === 'immutable-audit-anchors'
+                && $arguments['ObjectLockMode'] === 'COMPLIANCE'
+                && $arguments['ServerSideEncryption'] === 'aws:kms'
+                && $arguments['SSEKMSKeyId'] === 'alias/fynix-audit'
+                && str_starts_with((string) $body['signature'], 'hmac-sha256:')
+                && $body['event_count'] === 1;
+        }))->andReturn(new Result);
+        $anchor = new VendorOperationAnchor;
+        $anchor->setClient($s3);
+        $this->app->instance(VendorOperationAnchor::class, $anchor);
+
+        $this->artisan('fynix:vendor-ledger-anchor')
+            ->expectsOutputToContain('vendor-operation-ledger/')
+            ->assertSuccessful();
     }
 
     private function postOperation(

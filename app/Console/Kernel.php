@@ -18,6 +18,10 @@ class Kernel extends ConsoleKernel
             ->hourly()
             ->withoutOverlapping()
             ->when(fn (): bool => (bool) config('suite.support.enabled'));
+        $schedule->command('fynix:vendor-ledger-anchor')
+            ->dailyAt('00:30')
+            ->withoutOverlapping()
+            ->when(fn (): bool => (bool) config('suite.support.anchor.enabled'));
     }
 
     /**

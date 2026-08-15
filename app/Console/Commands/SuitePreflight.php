@@ -37,6 +37,23 @@ class SuitePreflight extends Command
 
                 return self::FAILURE;
             }
+            if (config('suite.support.anchor.enabled')) {
+                if (! config('suite.support.anchor.bucket')) {
+                    $this->error('Support anchor bucket is required.');
+
+                    return self::FAILURE;
+                }
+                if (strlen((string) config('suite.support.anchor.key')) < 32) {
+                    $this->error('Support anchor signing key must contain at least 32 bytes.');
+
+                    return self::FAILURE;
+                }
+                if ((int) config('suite.support.anchor.retention_days') < 365) {
+                    $this->error('Support anchor retention must be at least 365 days.');
+
+                    return self::FAILURE;
+                }
+            }
             $this->info('Fynix vendor support audit binding is valid.');
         } else {
             $this->info('Vendor support audit binding disabled.');
