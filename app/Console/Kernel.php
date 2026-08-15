@@ -14,6 +14,10 @@ class Kernel extends ConsoleKernel
     {
         // Generate recurring checklists daily at 6:00 AM
         $schedule->command('checklists:generate-recurring')->dailyAt('06:00');
+        $schedule->command('fynix:vendor-ledger-verify')
+            ->hourly()
+            ->withoutOverlapping()
+            ->when(fn (): bool => (bool) config('suite.support.enabled'));
     }
 
     /**
