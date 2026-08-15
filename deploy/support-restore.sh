@@ -22,8 +22,9 @@ if tar -tf "$stage/recovery.tar" | grep -Eq '(^|/)\.\.(/|$)|^/'; then
   exit 1
 fi
 tar -C "$stage" -xf "$stage/recovery.tar"
-mapfile -t archives < <(find "$stage" -mindepth 1 -maxdepth 1 -type f -name '*.tar.gz')
-[[ "${#archives[@]}" -eq 1 && -s "${archives[0]}.sha256" ]] || { echo 'Decrypted CyberAudit recovery set is incomplete.' >&2; exit 1; }
-"$deploy_dir/deploy/restore.sh" "$deploy_dir" "${archives[0]}" RESTORE-CYBERAUDIT
+archive_count="$(find "$stage" -mindepth 1 -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')"
+archive="$(find "$stage" -mindepth 1 -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+[[ "$archive_count" -eq 1 && -s "$archive.sha256" ]] || { echo 'Decrypted CyberAudit recovery set is incomplete.' >&2; exit 1; }
+"$deploy_dir/deploy/restore.sh" "$deploy_dir" "$archive" RESTORE-CYBERAUDIT
 trap - EXIT
 rm -rf -- "$stage"
