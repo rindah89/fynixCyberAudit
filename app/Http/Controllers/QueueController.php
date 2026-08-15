@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class QueueController extends Controller
@@ -11,10 +12,15 @@ class QueueController extends Controller
      */
     public function isQueueWorkerRunning(): bool
     {
-        // Workers run in a separately supervised container. A web process
-        // cannot safely inspect or manage that process; readiness monitoring
-        // owns liveness. This method reports whether async dispatch is enabled.
-        return config('queue.default') !== 'sync';
+        if (config('queue.default') === 'sync') {
+            return true;
+        }
+
+        $heartbeat = Cache::store(config('queue.heartbeat_store', 'database'))
+            ->get(config('queue.heartbeat_key', 'queue:worker:heartbeat'));
+
+        return is_numeric($heartbeat)
+            && now()->timestamp - (int) $heartbeat <= (int) config('queue.heartbeat_ttl_seconds', 30);
     }
 
     /**

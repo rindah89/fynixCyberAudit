@@ -28,6 +28,11 @@ return [
 
     'auto_start' => env('QUEUE_AUTO_START', false),
 
+    'heartbeat_store' => env('QUEUE_HEARTBEAT_STORE', 'database'),
+    'heartbeat_key' => env('QUEUE_HEARTBEAT_KEY', 'queue:worker:heartbeat'),
+    'heartbeat_interval_seconds' => (int) env('QUEUE_HEARTBEAT_INTERVAL_SECONDS', 10),
+    'heartbeat_ttl_seconds' => (int) env('QUEUE_HEARTBEAT_TTL_SECONDS', 30),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections
@@ -51,7 +56,7 @@ return [
             'driver' => 'database',
             'table' => 'jobs',
             'queue' => 'default',
-            'retry_after' => 90,
+            'retry_after' => 360,
             'after_commit' => true,
         ],
 
@@ -59,7 +64,7 @@ return [
             'driver' => 'beanstalkd',
             'host' => 'localhost',
             'queue' => 'default',
-            'retry_after' => 90,
+            'retry_after' => 360,
             'block_for' => 0,
             'after_commit' => true,
         ],
@@ -79,7 +84,7 @@ return [
             'driver' => 'redis',
             'connection' => 'default',
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => 90,
+            'retry_after' => 360,
             'block_for' => null,
             'after_commit' => true,
         ],

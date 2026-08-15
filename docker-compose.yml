@@ -86,7 +86,9 @@ services:
     build: .
     image: fynixcyberaudit
     restart: unless-stopped
-    command: php artisan queue:work --sleep=2 --tries=6 --timeout=300 --max-time=3600
+    command: >-
+      sh -c "php artisan queue:heartbeat --watch &
+      exec php artisan queue:work --sleep=2 --tries=6 --timeout=300 --max-time=3600"
     env_file:
       - .env
     depends_on:
