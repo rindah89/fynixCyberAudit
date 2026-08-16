@@ -6,6 +6,9 @@ deploy_dir="${FYNIX_CYBERAUDIT_DEPLOY_DIR:-/opt/fynix-suite/cyberaudit}"
 api_url="${FYNIX_CYBERAUDIT_PROBE_URL:-https://cyberaudit.fynixhq.com}"
 api_url="${api_url%/}"
 token_file="${FYNIX_CYBERAUDIT_PROBE_TOKEN_FILE:-/etc/fynix/cyberaudit-support-probe-token}"
+compose_project="${FYNIX_CYBERAUDIT_COMPOSE_PROJECT:-fynixcyberaudit}"
+compose_file="${FYNIX_CYBERAUDIT_COMPOSE_FILE:-$deploy_dir/docker-compose.yml}"
+compose_override="${FYNIX_CYBERAUDIT_COMPOSE_OVERRIDE_FILE:-}"
 operation_id=""; change_id=""; json_output=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,7 +23,8 @@ done
 [[ -s "$deploy_dir/.env" && -s "$token_file" ]] || { echo 'CyberAudit deployment or support-probe credential is missing.' >&2; exit 2; }
 
 cd "$deploy_dir"
-compose=(docker compose -p fynixcyberaudit --env-file .env)
+compose=(docker compose -p "$compose_project" --env-file .env -f "$compose_file")
+[[ -z "$compose_override" ]] || compose+=(-f "$compose_override")
 work_dir="$(mktemp -d)"
 trap 'rm -rf -- "$work_dir"' EXIT
 probe_token="$(< "$token_file")"
@@ -49,8 +53,8 @@ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["authentic
 
 RECEIPT_OPERATION_ID="$operation_id" RECEIPT_CHANGE_ID="$change_id" RECEIPT_OUTPUT="$json_output" python3 - <<'PY'
 import json, os, stat
-from datetime import UTC, datetime
-r={"application":"cyberaudit","operation_id":os.environ["RECEIPT_OPERATION_ID"],"change_id":os.environ["RECEIPT_CHANGE_ID"],"verified_at":datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00","Z"),"checks":{"schema":True,"restored_data":True,"workers":True,"public_route":True,"authenticated_rw":True,"probe_cleanup":True}}
+from datetime import datetime, timezone
+r={"application":"cyberaudit","operation_id":os.environ["RECEIPT_OPERATION_ID"],"change_id":os.environ["RECEIPT_CHANGE_ID"],"verified_at":datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00","Z"),"checks":{"schema":True,"restored_data":True,"workers":True,"public_route":True,"authenticated_rw":True,"probe_cleanup":True}}
 fd=os.open(os.environ["RECEIPT_OUTPUT"],os.O_WRONLY|os.O_TRUNC|os.O_NOFOLLOW)
 try:
     if not stat.S_ISREG(os.fstat(fd).st_mode): raise RuntimeError('receipt output is not a regular file')
