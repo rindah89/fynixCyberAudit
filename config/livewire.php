@@ -118,6 +118,12 @@ return [
     'inject_assets' => true,
 
     /*
+    | Use Livewire's CSP-compatible Alpine bundle, which does not require
+    | unsafe-eval in script-src.
+    */
+    'csp_safe' => true,
+
+    /*
     |---------------------------------------------------------------------------
     | Navigate (SPA mode)
     |---------------------------------------------------------------------------

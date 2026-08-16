@@ -2,7 +2,7 @@
 <head>
     <meta charset="utf-8">
     <title>Audit Evidence - {{ $dataRequest->code ?? $dataRequest->id }}</title>
-    <style>
+    <style nonce="{{ Vite::cspNonce() }}">
         body {
             font-family: DejaVu Sans, sans-serif;
             font-size: 11pt;

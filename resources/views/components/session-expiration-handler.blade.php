@@ -1,4 +1,4 @@
-<script>
+<script nonce="{{ Vite::cspNonce() }}">
     document.addEventListener('livewire:init', () => {
         Livewire.hook('request', ({ fail }) => {
             fail(({ status, preventDefault }) => {

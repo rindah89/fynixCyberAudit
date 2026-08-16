@@ -7,7 +7,7 @@
     <link rel="icon" href="{{ asset('img/logo_icon.png') }}"/>
     <title>@yield('title', config('app.name'))</title>
     @vite('resources/css/app.css')
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script nonce="{{ Vite::cspNonce() }}" defer src="https://cdn.jsdelivr.net/npm/@alpinejs/csp@3.x.x/dist/cdn.min.js"></script>
 </head>
 <body>
     @yield('content')

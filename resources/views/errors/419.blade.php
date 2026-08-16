@@ -6,7 +6,7 @@
     <title>{{ __('Page Expired') }}</title>
 </head>
 <body>
-    <script>
+    <script nonce="{{ Vite::cspNonce() }}">
         window.location.href = "{{ route('filament.app.auth.login') }}";
     </script>
     <p>{{ __('Your session has expired. Redirecting to login...') }}</p>

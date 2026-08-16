@@ -53,7 +53,7 @@
     </div>
 </main>
 
-<script>
+<script nonce="{{ Vite::cspNonce() }}">
     document.addEventListener('DOMContentLoaded', function () {
         const form = document.getElementById('authorizeForm');
         const button = document.getElementById('authorizeButton');

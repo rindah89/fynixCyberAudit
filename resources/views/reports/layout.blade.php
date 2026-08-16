@@ -4,7 +4,7 @@
     <title>Laravel PDF</title>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <link rel="stylesheet" href="//cdn.datatables.net/1.10.19/css/dataTables.bootstrap4.min.css">
-    <style>
+    <style nonce="{{ Vite::cspNonce() }}">
 
         @page { margin: 100px 50px; }
 

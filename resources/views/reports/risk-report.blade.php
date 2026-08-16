@@ -8,7 +8,7 @@
 
 @section('content')
 
-    <style>
+    <style nonce="{{ Vite::cspNonce() }}">
         /* Landscape mode styles */
         @page {
             size: landscape;

@@ -9,7 +9,7 @@
 
         <title>{{ config('app.name') }}</title>
 
-        <style>
+        <style nonce="{{ Vite::cspNonce() }}">
             [x-cloak] {
                 display: none !important;
             }
@@ -27,7 +27,7 @@
         @filamentScripts
         @vite('resources/js/app.js')
     </body>
-    <script>
+    <script nonce="{{ Vite::cspNonce() }}">
         function riskColorGradient(value) {
             if (value < 0 || value > 25) {
                 return '#000000'; // Default to black for invalid values

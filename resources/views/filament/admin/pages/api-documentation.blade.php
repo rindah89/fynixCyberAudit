@@ -143,7 +143,7 @@
         </x-filament::section>
     </div>
 
-    <style>
+    <style nonce="{{ Vite::cspNonce() }}">
         /* Enhanced code block styling */
         .prose pre {
             @apply bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto;

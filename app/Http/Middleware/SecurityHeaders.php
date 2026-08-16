@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
 
 class SecurityHeaders
@@ -16,6 +17,7 @@ class SecurityHeaders
      */
     public function handle(Request $request, Closure $next): Response
     {
+        $nonce = Vite::useCspNonce();
         $response = $next($request);
 
         // Security headers for all responses
@@ -31,7 +33,7 @@ class SecurityHeaders
 
         // CSP only for HTML responses
         if ($this->shouldAddCsp($response)) {
-            $response->headers->set('Content-Security-Policy', $this->buildPolicy($request));
+            $response->headers->set('Content-Security-Policy', $this->buildPolicy($request, $nonce));
         }
 
         return $response;
@@ -50,7 +52,7 @@ class SecurityHeaders
     /**
      * Build the Content-Security-Policy directive string.
      */
-    protected function buildPolicy(Request $request): string
+    protected function buildPolicy(Request $request, string $nonce): string
     {
         $storageEndpoints = $this->getStorageEndpoints();
         $cdnSources = $this->getCdnSources($request);
@@ -60,11 +62,13 @@ class SecurityHeaders
             // Default fallback - restrict to same origin
             "default-src 'self'",
 
-            // Scripts: self + unsafe-inline/eval required for Livewire/Alpine.js
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'".$cdnSources['script'],
+            // Livewire 4's CSP-safe bundle and Vite use this per-response nonce.
+            "script-src 'self' 'nonce-{$nonce}' 'strict-dynamic'".$cdnSources['script'],
+            "script-src-attr 'none'",
 
-            // Styles: self + unsafe-inline required for Filament's dynamic styles
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.bunny.net",
+            // Filament emits nonce-aware style blocks but still uses dynamic style attributes.
+            "style-src 'self' 'nonce-{$nonce}' https://fonts.googleapis.com https://fonts.bunny.net",
+            "style-src-attr 'unsafe-inline'",
 
             // Fonts: Google Fonts, Bunny Fonts + self
             "font-src 'self' https://fonts.gstatic.com https://fonts.bunny.net data:",

@@ -41,15 +41,7 @@ class FynixCyberAuditServer extends Server
      * The MCP server's instructions for the LLM.
      */
     protected string $instructions = <<<'MARKDOWN'
-        # Fynix Cyber Audit MCP Server
-
         GRC platform tools. All Manage* tools support: list, get, create, update, delete actions.
-
-        ## Tools
-        - ManageApplication, ManageAsset, ManageAudit, ManageAuditItem
-        - ManageChecklist (with approve action), ManageChecklistTemplate
-        - ManageControl, ManageImplementation, ManagePolicy, ManageProgram
-        - ManageRisk, ManageStandard, ManageTaxonomy, ManageVendor
 
         ## Taxonomies
         Entities use taxonomy IDs (department_id, scope_id, status_id, etc.). Look up IDs first:

@@ -780,7 +780,7 @@ abstract class BaseManageEntityTool extends Tool
         return [
             'action' => $schema->string()
                 ->enum(['list', 'get', 'create', 'update', 'delete'])
-                ->description('The action to perform: list (paginated), get (by id), create, update, or delete.')
+                ->description('Action: list (paginated), get (by id), create, update, or delete.')
                 ->required(),
 
             'id' => $schema->integer()
