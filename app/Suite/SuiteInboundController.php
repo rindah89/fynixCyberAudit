@@ -5,6 +5,7 @@ namespace App\Suite;
 use App\Models\SuiteInboundDelivery;
 use App\Models\SuiteInboundHighWater;
 use App\Models\VendorOperationEvent;
+use App\Support\AuthorizationDenialAudit;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -116,7 +117,7 @@ class SuiteInboundController
         return response()->json(['outcome' => $outcome]);
     }
 
-    public function ready(ItsmGateway $gateway, VendorOperationLedger $vendorOperations): JsonResponse
+    public function ready(ItsmGateway $gateway, VendorOperationLedger $vendorOperations, AuthorizationDenialAudit $authorizationAudit): JsonResponse
     {
         $missing = config('suite.itsm.enabled') ? $gateway->missingConfiguration() : [];
         $supportMissing = config('suite.support.enabled') ? array_keys(array_filter([
@@ -128,7 +129,9 @@ class SuiteInboundController
         $integrityOk = $integrity['status'] === 'ok' && $integrity['fresh'];
         $anchor = $vendorOperations->anchorStatus();
         $anchorOk = ! config('suite.support.anchor.enabled') || $anchor['fresh'];
-        $ready = $missing === [] && $supportMissing === [] && $integrityOk && $anchorOk;
+        $authorizationHealth = $authorizationAudit->health();
+        $authorizationOk = ! config('authorization-audit.enabled') || $authorizationHealth['healthy'];
+        $ready = $missing === [] && $supportMissing === [] && $integrityOk && $anchorOk && $authorizationOk;
 
         return response()->json([
             'status' => $ready ? 'ok' : 'not_ready',
@@ -146,6 +149,10 @@ class SuiteInboundController
                     'last_anchor_at' => $anchor['last_anchor_at'],
                     'last_anchor_key' => $anchor['last_anchor_key'],
                 ],
+            ],
+            'authorization_audit' => [
+                'enabled' => (bool) config('authorization-audit.enabled'),
+                ...$authorizationHealth,
             ],
             'last_inbound_outcome' => SuiteInboundDelivery::query()->where('source', 'itsm')->latest('id')->value('outcome'),
         ], $ready ? 200 : 503);

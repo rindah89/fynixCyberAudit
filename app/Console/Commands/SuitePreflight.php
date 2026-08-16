@@ -13,6 +13,16 @@ class SuitePreflight extends Command
 
     public function handle(ItsmGateway $gateway): int
     {
+        if (config('authorization-audit.enabled')) {
+            if (strlen((string) config('authorization-audit.fingerprint_key')) < 32
+                || strlen((string) config('suite.support.ledger_key')) < 32
+                || ! str_starts_with((string) config('authorization-audit.spool'), '/')) {
+                $this->error('Authorization audit requires 32-byte fingerprint/ledger keys and an absolute spool path.');
+
+                return self::FAILURE;
+            }
+            $this->info('Authorization denial auditing is configured.');
+        }
         if (config('suite.support.enabled')) {
             foreach (['remote_tenant_id', 'webhook_id'] as $key) {
                 if (! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', (string) config('suite.support.'.$key))) {
