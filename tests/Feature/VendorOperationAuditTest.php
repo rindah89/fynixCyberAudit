@@ -120,6 +120,30 @@ class VendorOperationAuditTest extends TestCase
         $this->assertSame(2, VendorOperationEvent::query()->where('operation_id', $operationId)->count());
     }
 
+    public function test_durable_outbox_can_deliver_an_old_operation_with_a_fresh_signature(): void
+    {
+        $this->postOperation(
+            'backup.run',
+            'ppm',
+            'succeeded',
+            occurredAt: now()->subHours(3)->utc()->format('Y-m-d\TH:i:s+00:00'),
+        )->assertOk()->assertJsonPath('outcome', 'recorded');
+
+        $this->assertDatabaseCount('vendor_operation_events', 1);
+    }
+
+    public function test_future_dated_vendor_operation_is_rejected(): void
+    {
+        $this->postOperation(
+            'backup.run',
+            'ppm',
+            'succeeded',
+            occurredAt: now()->addMinutes(6)->utc()->format('Y-m-d\TH:i:s+00:00'),
+        )->assertBadRequest()->assertJsonPath('outcome', 'invalid future event timestamp');
+
+        $this->assertDatabaseCount('vendor_operation_events', 0);
+    }
+
     public function test_verified_ledger_head_is_exported_with_compliance_object_lock(): void
     {
         Config::set('suite.support.anchor.enabled', true);
@@ -162,6 +186,7 @@ class VendorOperationAuditTest extends TestCase
         ?string $deliveryId = null,
         string $source = 'support',
         ?string $operationId = null,
+        ?string $occurredAt = null,
     ) {
         $requestId = (string) Str::uuid();
         $envelope = [
@@ -169,7 +194,7 @@ class VendorOperationAuditTest extends TestCase
             'tenant_id' => '55555555-5555-5555-8555-555555555555',
             'entity_type' => 'vendor_operation',
             'entity_id' => $requestId,
-            'occurred_at' => now()->utc()->format('Y-m-d\TH:i:s+00:00'),
+            'occurred_at' => $occurredAt ?? now()->utc()->format('Y-m-d\TH:i:s+00:00'),
             'payload' => [
                 'request_id' => $requestId,
                 'operation_id' => $operationId ?? (string) Str::uuid(),

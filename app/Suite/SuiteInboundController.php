@@ -74,9 +74,8 @@ class SuiteInboundController
 
         if ($source === 'support') {
             $occurredAt = CarbonImmutable::parse((string) ($envelope['occurred_at'] ?? ''))->utc();
-            $signedAt = CarbonImmutable::createFromTimestamp((int) $headers['x-fynix-timestamp'])->utc();
-            if (abs($occurredAt->diffInSeconds($signedAt, false)) > $tolerance) {
-                return response()->json(['outcome' => 'invalid event timestamp'], 400);
+            if ($occurredAt->greaterThan(now()->addSeconds($tolerance))) {
+                return response()->json(['outcome' => 'invalid future event timestamp'], 400);
             }
             try {
                 $vendorOperations->append($envelope, $deliveryId);
