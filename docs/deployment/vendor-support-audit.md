@@ -56,6 +56,19 @@ the configured retention period. The bucket must have Object Lock enabled at
 creation time and deny deletion/bypass-retention to the application role. Drill
 `php artisan fynix:vendor-ledger-anchor` before production promotion.
 
+## Governed restore verification
+
+The vendor portal invokes `deploy/support-post-restore-verify.sh` after restore.
+Provision a dedicated Sanctum token in
+`/etc/fynix/cyberaudit-support-probe-token` with only the
+`support:restore-probe` ability, owned by a support-probe user that has only
+`List Audits`. The verifier fails closed on pending migrations, failed suite
+preflight, an invalid vendor-operation hash chain, unhealthy containers or
+public readiness, failed authenticated audit access, or inability to
+write/read/delete a private evidence-storage probe. It never inserts or deletes
+an audit or vendor-ledger event. The portal validates its private operation- and
+change-bound JSON receipt before reporting restore success.
+
 Delivery UUIDs and request UUIDs are unique. Retries of an accepted delivery
 return `duplicate ignored` without adding a second ledger row. Unknown sources
 fail signature selection rather than inheriting another product's secret.
