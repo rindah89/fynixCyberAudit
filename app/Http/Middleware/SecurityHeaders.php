@@ -26,7 +26,7 @@ class SecurityHeaders
 
         // HSTS - only in production to avoid issues with local development
         if (app()->environment('production')) {
-            //$response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+            $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
         // CSP only for HTML responses

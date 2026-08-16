@@ -28,8 +28,8 @@ services:
       - "${APP_PORT:-8082}:80"
     environment:
       APP_NAME: ${APP_NAME:-Fynix Cyber Audit}
-      APP_ENV: ${APP_ENV:-local}
-      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_ENV: ${APP_ENV:-production}
+      APP_DEBUG: ${APP_DEBUG:-false}
       APP_KEY: ${APP_KEY:-}
       APP_URL: ${APP_URL:-http://localhost:8082}
       SENTRY_DSN: ${SENTRY_DSN:-}

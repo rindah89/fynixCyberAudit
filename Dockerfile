@@ -124,6 +124,11 @@ RUN echo '<VirtualHost *:80>\n\
 # Set ServerName to suppress warnings
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
+# Do not disclose detailed web/PHP runtime versions in responses.
+RUN printf '\nServerTokens Prod\nServerSignature Off\n' >> /etc/apache2/apache2.conf \
+    && sed -i 's/^expose_php = On/expose_php = Off/' /etc/php/${PHP_VERSION}/fpm/php.ini \
+    && sed -i 's/^expose_php = On/expose_php = Off/' /etc/php/${PHP_VERSION}/cli/php.ini
+
 # Set working directory
 WORKDIR /var/www/html
 
