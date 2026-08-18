@@ -65,6 +65,7 @@ return new class extends Migration
             $table->string('token_digest', 64)->unique();
             $table->timestamp('issued_at');
             $table->timestamp('expires_at');
+            $table->timestamp('revoked_at')->nullable();
             $table->timestamp('consumed_at')->nullable();
             $table->timestamps();
             $table->unique('authorization_id');
@@ -78,6 +79,9 @@ return new class extends Migration
             $table->string('action', 32);
             $table->string('reason_code', 64)->nullable();
             $table->string('previous_digest', 64)->nullable();
+            $table->uuid('event_nonce')->unique();
+            $table->timestamp('occurred_at');
+            $table->json('canonical_payload');
             $table->string('event_digest', 64)->unique();
             $table->timestamp('created_at')->useCurrent();
         });

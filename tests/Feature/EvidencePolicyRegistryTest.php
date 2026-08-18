@@ -48,12 +48,18 @@ class EvidencePolicyRegistryTest extends TestCase
         $this->itsmKeyFile = tempnam(sys_get_temp_dir(), 'evidence-v3-itsm-');
         file_put_contents($this->itsmKeyFile, str_repeat('i', 32));
         chmod($this->itsmKeyFile, 0600);
-        Config::set('change_evidence.itsm_authority_url', 'https://itsm.fynixhq.com/api/v1');
         Config::set('change_evidence.itsm_api_key_file', $this->itsmKeyFile);
         Http::fake(function () {
             $body = $this->currentItsmBody;
+            $immutable = $body;
+            foreach (['purpose', 'operation_id', 'policy_version', 'itsm_change_id', 'itsm_authorization_id', 'itsm_approval_revision', 'itsm_binding_digest', 'request_digest'] as $field) {
+                unset($immutable[$field]);
+            }
+            $immutable['contract_version'] = 'fynix-change-authorization/v2';
+            ksort($immutable);
+            $binding = hash('sha256', json_encode($immutable, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
-            return Http::response(['data' => ['id' => $body['itsm_authorization_id'], 'change_id' => $body['itsm_change_id'], 'request_id' => $body['itsm_request_id'], 'profile' => $body['itsm_profile'], 'company_id' => $body['company_id'], 'suite_tenant_id' => $body['suite_tenant_id'], 'customer_id' => $body['customer_id'], 'policy_version' => $body['policy_version'], 'approval_revision' => $body['itsm_approval_revision'], 'authority_binding_version' => $body['itsm_authority_binding_version'], 'binding_digest' => $body['itsm_binding_digest'], 'revoked' => false, 'expires_at' => now()->addHour()->toIso8601String()]], 200);
+            return Http::response(['data' => [...$immutable, 'binding_digest' => $binding, 'id' => $body['itsm_authorization_id'], 'change_id' => $body['itsm_change_id'], 'policy_version' => $body['policy_version'], 'approval_revision' => $body['itsm_approval_revision'], 'revoked' => false, 'created_at' => now()->subMinute()->toIso8601String(), 'expires_at' => now()->addHour()->toIso8601String()]], 200);
         });
         DB::table('executive_authority_bindings')->insert(['company_id' => 1, 'suite_tenant_id' => '00000000-0000-0000-0000-000000000001', 'customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f', 'authority' => 'executive-hq', 'version' => 7, 'active' => 1, 'verified_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
         $this->entitle('fynix-cyberaudit/deploy-release');
@@ -89,20 +95,16 @@ class EvidencePolicyRegistryTest extends TestCase
         $body = $this->body();
         $first = $this->submit($body)->assertCreated();
         $this->submit($body)->assertOk()->assertJsonPath('id', $first->json('id'));
-        foreach (['release_sha', 'image_digest', 'artifact_digest', 'manifest_digest', 'previous_release_sha', 'previous_image_digest', 'previous_artifact_digest', 'previous_manifest_digest', 'soak_evidence_sha256', 'security_evidence_sha256', 'regression_evidence_sha256'] as $field) {
+        foreach (['release_sha', 'image_digest', 'artifact_sha256', 'manifest_sha256', 'previous_release_sha', 'previous_image_digest', 'previous_artifact_sha256', 'soak_receipt_sha256', 'soak_evidence_sha256', 'readiness_evidence_sha256'] as $field) {
             $changed = $body;
             $changed[$field] = $field === 'image_digest' || $field === 'previous_image_digest' ? 'sha256:'.str_repeat('9', 64) : (str_contains($field, 'release') ? str_repeat('9', 40) : str_repeat('9', 64));
             if (str_starts_with($field, 'previous_')) {
-                $changed['rollback_ref'] = 'fynix-release:'.$changed['previous_release_sha'].'@'.$changed['previous_image_digest'].'#sha256:'.$changed['previous_artifact_digest'].'/manifest:'.$changed['previous_manifest_digest'];
+                $changed['rollback_ref'] = 'fynix-release:'.$changed['previous_release_sha'].'@'.$changed['previous_image_digest'].'#sha256:'.$changed['previous_artifact_sha256'];
             }
+            $changed['itsm_binding_digest'] = $this->itsmDigest($changed);
             $changed = $this->redigest($changed);
             $this->submit($changed)->assertConflict();
         }
-        $bad = $this->body();
-        $bad['itsm_change_id']++;
-        $bad = $this->redigest($bad);
-        $this->submit($bad)->assertUnprocessable();
-
         $live = $this->body();
         $this->currentItsmBody = $live;
         $forged = $live;
@@ -183,11 +185,50 @@ class EvidencePolicyRegistryTest extends TestCase
         EvidenceAuthorization::findOrFail($id)->delete();
     }
 
+    public function test_requester_key_deactivation_durably_revokes_authorization_claim_and_audit_chain_is_recomputable(): void
+    {
+        Permission::findOrCreate('review change evidence');
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo('review change evidence');
+        $this->reviewer($reviewer, true, false);
+        $body = $this->body();
+        $id = $this->submit($body)->json('id');
+        $this->actingAs($reviewer)->postJson("/api/evidence-authorizations/$id/accept")->assertOk();
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']])->assertCreated();
+        DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 0]);
+        $this->withToken($this->token)->getJson("/api/evidence-authorizations/$id")->assertForbidden();
+        $this->assertDatabaseHas('evidence_authorizations', ['id' => $id, 'status' => 'revoked']);
+        $this->assertNotNull(DB::table('evidence_authorization_claims')->where('authorization_id', $id)->value('revoked_at'));
+        DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 1]);
+        $this->withToken($this->token)->getJson("/api/evidence-authorizations/$id")->assertGone();
+
+        $previous = null;
+        foreach (DB::table('evidence_authorization_audit')->where('authorization_id', $id)->orderBy('id')->get() as $event) {
+            $payload = json_decode($event->canonical_payload, true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame($previous, $payload['previous_digest']);
+            ksort($payload);
+            $this->assertSame($event->event_digest, hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+            $this->assertSame($event->event_nonce, $payload['event_nonce']);
+            $previous = $event->event_digest;
+        }
+        $tampered = json_decode(DB::table('evidence_authorization_audit')->where('authorization_id', $id)->orderBy('id')->value('canonical_payload'), true, flags: JSON_THROW_ON_ERROR);
+        $tampered['action'] = 'forged';
+        ksort($tampered);
+        $this->assertNotSame($previous, hash('sha256', json_encode($tampered, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+    }
+
     private function body(string $profile = 'fynix-cyberaudit/deploy-release'): array
     {
-        $producer = $profile === 'fynix-cyberaudit/deploy-release' ? 'fynix-cyberaudit' : 'fynix-executive-hq';
-        $request = ['contract_version' => 'fynix-cyberaudit-evidence-authorization-request/v3', 'profile' => $profile, 'company_id' => 1, 'suite_tenant_id' => '00000000-0000-0000-0000-000000000001', 'customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f', 'producer' => $producer, 'request_id' => (string) Str::uuid(), 'target' => $producer, 'environment' => 'production', 'operation' => 'deploy-release', 'purpose' => 'deploy', 'operation_id' => (string) Str::uuid(), 'policy_version' => 'fynix-production-deploy/v2', 'release_sha' => str_repeat('a', 40), 'image_digest' => 'sha256:'.str_repeat('b', 64), 'artifact_digest' => str_repeat('c', 64), 'manifest_digest' => str_repeat('d', 64), 'previous_release_sha' => str_repeat('e', 40), 'previous_image_digest' => 'sha256:'.str_repeat('f', 64), 'previous_artifact_digest' => str_repeat('1', 64), 'previous_manifest_digest' => str_repeat('2', 64), 'rollback_ref' => '', 'rollback_compatible' => true, 'itsm_contract_version' => 'fynix-change-authorization/v2', 'itsm_profile' => $profile, 'itsm_request_id' => (string) Str::uuid(), 'itsm_change_id' => 42, 'itsm_authorization_id' => 81, 'itsm_approval_revision' => 3, 'itsm_authority_binding_version' => 7, 'itsm_binding_digest' => '', 'soak_evidence_sha256' => str_repeat('3', 64), 'readiness_evidence_sha256' => str_repeat('4', 64), 'security_evidence_sha256' => str_repeat('5', 64), 'regression_evidence_sha256' => str_repeat('6', 64), 'request_digest' => ''];
-        $request['rollback_ref'] = 'fynix-release:'.$request['previous_release_sha'].'@'.$request['previous_image_digest'].'#sha256:'.$request['previous_artifact_digest'].'/manifest:'.$request['previous_manifest_digest'];
+        $cyber = $profile === 'fynix-cyberaudit/deploy-release';
+        $producer = $cyber ? 'fynix-cyberaudit-release' : 'fynix-executive-hq-release';
+        $target = $cyber ? 'fynix-cyberaudit' : 'fynix-executive-hq';
+        $request = ['contract_version' => 'fynix-cyberaudit-evidence-authorization-request/v3', 'profile' => $profile, 'company_id' => 1, 'suite_tenant_id' => '00000000-0000-0000-0000-000000000001', 'customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f', 'producer' => $producer, 'request_id' => (string) Str::uuid(), 'target' => $target, 'environment' => 'production', 'operation' => 'deploy-release', 'purpose' => 'deploy', 'operation_id' => (string) Str::uuid(), 'policy_version' => 'fynix-production-deploy/v2', 'release_sha' => str_repeat('a', 40), 'image_digest' => 'sha256:'.str_repeat('b', 64), 'artifact_sha256' => str_repeat('c', 64), 'manifest_sha256' => str_repeat('d', 64), 'previous_release_sha' => str_repeat('e', 40), 'previous_image_digest' => 'sha256:'.str_repeat('f', 64), 'previous_artifact_sha256' => str_repeat('1', 64), 'rollback_ref' => '', 'itsm_change_id' => 42, 'itsm_authorization_id' => 81, 'itsm_approval_revision' => 3, 'itsm_binding_digest' => '', 'readiness_evidence_sha256' => str_repeat('4', 64), 'request_digest' => ''];
+        if ($cyber) {
+            $request += ['soak_receipt_sha256' => str_repeat('2', 64), 'soak_evidence_sha256' => str_repeat('3', 64), 'rollback_compatible' => true];
+        } else {
+            $request += ['tests_sha256' => str_repeat('5', 64), 'build_sha256' => str_repeat('6', 64)];
+        }
+        $request['rollback_ref'] = 'fynix-release:'.$request['previous_release_sha'].'@'.$request['previous_image_digest'].'#sha256:'.$request['previous_artifact_sha256'];
         $request['itsm_binding_digest'] = $this->itsmDigest($request);
 
         return $this->redigest($request);
@@ -204,7 +245,11 @@ class EvidencePolicyRegistryTest extends TestCase
 
     private function itsmDigest(array $b): string
     {
-        $value = ['approval_revision' => $b['itsm_approval_revision'], 'authority_binding_version' => $b['itsm_authority_binding_version'], 'authorization_id' => $b['itsm_authorization_id'], 'change_id' => $b['itsm_change_id'], 'company_id' => $b['company_id'], 'contract_version' => $b['itsm_contract_version'], 'customer_id' => $b['customer_id'], 'policy_version' => $b['policy_version'], 'profile' => $b['itsm_profile'], 'request_id' => $b['itsm_request_id'], 'suite_tenant_id' => $b['suite_tenant_id']];
+        $value = $b;
+        foreach (['purpose', 'operation_id', 'policy_version', 'itsm_change_id', 'itsm_authorization_id', 'itsm_approval_revision', 'itsm_binding_digest', 'request_digest'] as $field) {
+            unset($value[$field]);
+        }
+        $value['contract_version'] = 'fynix-change-authorization/v2';
         ksort($value);
 
         return hash('sha256', json_encode($value, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));

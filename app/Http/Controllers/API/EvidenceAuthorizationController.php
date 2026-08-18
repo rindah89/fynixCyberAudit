@@ -16,13 +16,16 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class EvidenceAuthorizationController extends Controller
 {
+    private const ITSM_URL = 'https://itsm.fynixhq.com/api/v1';
+
     public function store(Request $request): JsonResponse
     {
         abort_if(strlen($request->getContent()) > 65536, 413);
         $body = $request->all();
-        abort_unless(count($body) === count(Registry::REQUEST_FIELDS) && ! array_diff(array_keys($body), Registry::REQUEST_FIELDS), 422, 'Closed request schema required.');
         $policy = Registry::resolve((string) ($body['profile'] ?? ''));
         abort_unless($policy !== null, 422, 'Unknown evidence profile.');
+        $fields = Registry::requestFields($body['profile']);
+        abort_unless(count($body) === count($fields) && ! array_diff(array_keys($body), $fields), 422, 'Closed request schema required.');
         $key = $this->machine($request, $body['profile'], $body['company_id'] ?? null);
         $this->validateRequest($body, $policy);
         $this->authority($body);
@@ -57,7 +60,7 @@ class EvidenceAuthorizationController extends Controller
 
     public function show(Request $request, EvidenceAuthorization $authorization): JsonResponse
     {
-        $key = $this->machine($request, $authorization->profile, (int) $authorization->company_id);
+        $key = $this->machine($request, $authorization->profile, (int) $authorization->company_id, $authorization);
         $this->originKey($authorization, $key);
         $this->current($authorization);
         $this->liveItsm($authorization->request_json);
@@ -92,7 +95,7 @@ class EvidenceAuthorizationController extends Controller
 
     public function claim(Request $request, EvidenceAuthorization $authorization): JsonResponse
     {
-        $key = $this->machine($request, $authorization->profile, (int) $authorization->company_id);
+        $key = $this->machine($request, $authorization->profile, (int) $authorization->company_id, $authorization);
         $this->originKey($authorization, $key);
         $body = $request->all();
         abort_unless(count($body) === 4 && ! array_diff(array_keys($body), ['purpose', 'nonce', 'ttl_seconds', 'request_digest']), 422);
@@ -114,7 +117,7 @@ class EvidenceAuthorizationController extends Controller
 
     public function consume(Request $request, EvidenceAuthorization $authorization): JsonResponse
     {
-        $key = $this->machine($request, $authorization->profile, (int) $authorization->company_id);
+        $key = $this->machine($request, $authorization->profile, (int) $authorization->company_id, $authorization);
         $this->originKey($authorization, $key);
         $body = $request->all();
         abort_unless(count($body) === 4 && ! array_diff(array_keys($body), ['purpose', 'operation_id', 'request_digest', 'claim_token']), 422);
@@ -129,7 +132,7 @@ class EvidenceAuthorizationController extends Controller
                 return response()->json([...$locked->receipt_json, 'receipt_digest' => $locked->receipt_digest, 'signature' => $locked->signature]);
             }
             abort_unless($locked->status === 'accepted' && $body['purpose'] === 'deploy' && hash_equals($locked->operation_id, (string) $body['operation_id']) && hash_equals($locked->request_digest, (string) $body['request_digest']), 409);
-            abort_unless($claim && ! $claim->consumed_at && CarbonImmutable::parse($claim->expires_at)->isFuture() && is_string($body['claim_token'] ?? null) && hash_equals($claim->token_digest, hash('sha256', $body['claim_token'])), 409, 'Claim is absent, expired, consumed, or invalid.');
+            abort_unless($claim && ! $claim->consumed_at && ! $claim->revoked_at && CarbonImmutable::parse($claim->expires_at)->isFuture() && is_string($body['claim_token'] ?? null) && hash_equals($claim->token_digest, hash('sha256', $body['claim_token'])), 409, 'Claim is absent, expired, consumed, revoked, or invalid.');
             $binding = $this->authority($locked->request_json);
             $this->liveItsm($locked->request_json);
             [$keyId, $secret] = $this->signingIdentity();
@@ -164,9 +167,9 @@ class EvidenceAuthorizationController extends Controller
 
     private function validateRequest(array $body, array $policy): void
     {
-        abort_unless($body['contract_version'] === Registry::CONTRACT && $body['producer'] === $policy['producer'] && $body['target'] === $policy['target'] && $body['environment'] === 'production' && $body['operation'] === 'deploy-release' && $body['purpose'] === 'deploy' && $body['policy_version'] === 'fynix-production-deploy/v2' && $body['rollback_compatible'] === true, 422);
+        abort_unless($body['contract_version'] === Registry::CONTRACT && $body['producer'] === $policy['producer'] && $body['target'] === $policy['target'] && $body['environment'] === 'production' && $body['operation'] === 'deploy-release' && $body['purpose'] === 'deploy' && $body['policy_version'] === 'fynix-production-deploy/v2', 422);
         abort_unless(is_int($body['company_id']) && $body['company_id'] > 0 && is_int($body['itsm_change_id']) && $body['itsm_change_id'] > 0 && is_int($body['itsm_authorization_id']) && $body['itsm_authorization_id'] > 0 && is_int($body['itsm_approval_revision']) && $body['itsm_approval_revision'] >= 0, 422);
-        foreach (['suite_tenant_id', 'customer_id', 'request_id', 'operation_id', 'itsm_request_id'] as $field) {
+        foreach (['suite_tenant_id', 'customer_id', 'request_id', 'operation_id'] as $field) {
             abort_unless(is_string($body[$field]) && Str::isUuid($body[$field]), 422);
         }
         foreach (['release_sha', 'previous_release_sha'] as $field) {
@@ -175,26 +178,42 @@ class EvidenceAuthorizationController extends Controller
         foreach (['image_digest', 'previous_image_digest'] as $field) {
             abort_unless(is_string($body[$field]) && preg_match('/^sha256:[a-f0-9]{64}$/', $body[$field]), 422);
         }
-        foreach (['artifact_digest', 'manifest_digest', 'previous_artifact_digest', 'previous_manifest_digest', 'itsm_binding_digest', 'soak_evidence_sha256', 'readiness_evidence_sha256', 'security_evidence_sha256', 'regression_evidence_sha256', 'request_digest'] as $field) {
+        $digests = ['artifact_sha256', 'manifest_sha256', 'previous_artifact_sha256', 'itsm_binding_digest', 'readiness_evidence_sha256', 'request_digest'];
+        $digests = $body['profile'] === 'fynix-cyberaudit/deploy-release' ? [...$digests, 'soak_receipt_sha256', 'soak_evidence_sha256'] : [...$digests, 'tests_sha256', 'build_sha256'];
+        foreach ($digests as $field) {
             abort_unless(is_string($body[$field]) && preg_match('/^[a-f0-9]{64}$/', $body[$field]), 422);
         }
-        abort_unless($body['rollback_ref'] === 'fynix-release:'.$body['previous_release_sha'].'@'.$body['previous_image_digest'].'#sha256:'.$body['previous_artifact_digest'].'/manifest:'.$body['previous_manifest_digest'], 422);
+        abort_unless($body['rollback_ref'] === 'fynix-release:'.$body['previous_release_sha'].'@'.$body['previous_image_digest'].'#sha256:'.$body['previous_artifact_sha256'], 422);
+        abort_unless($body['profile'] !== 'fynix-cyberaudit/deploy-release' || $body['rollback_compatible'] === true, 422);
         $unsigned = $body;
         unset($unsigned['request_digest']);
         abort_unless(hash_equals(hash('sha256', $this->canonical($unsigned)), $body['request_digest']), 422);
-        abort_unless($body['itsm_contract_version'] === 'fynix-change-authorization/v2' && $body['itsm_profile'] === $body['profile'] && is_int($body['itsm_authority_binding_version']) && $body['itsm_authority_binding_version'] > 0, 422);
-        $itsm = ['approval_revision' => $body['itsm_approval_revision'], 'authority_binding_version' => $body['itsm_authority_binding_version'], 'authorization_id' => $body['itsm_authorization_id'], 'change_id' => $body['itsm_change_id'], 'company_id' => $body['company_id'], 'contract_version' => $body['itsm_contract_version'], 'customer_id' => $body['customer_id'], 'policy_version' => $body['policy_version'], 'profile' => $body['itsm_profile'], 'request_id' => $body['itsm_request_id'], 'suite_tenant_id' => $body['suite_tenant_id']];
-        abort_unless(hash_equals(hash('sha256', $this->canonical($itsm)), $body['itsm_binding_digest']), 422, 'ITSM binding digest mismatch.');
     }
 
-    private function machine(Request $request, string $profile, mixed $companyId): object
+    private function machine(Request $request, string $profile, mixed $companyId, ?EvidenceAuthorization $authorization = null): object
     {
         $token = $request->bearerToken();
         abort_unless(is_string($token) && strlen($token) >= 32 && strlen($token) <= 4096, 401);
-        $key = DB::table('evidence_requester_keys')->where(['token_digest' => hash('sha256', $token), 'company_id' => $companyId, 'profile' => $profile, 'active' => 1])->first();
-        abort_unless($key && (! $key->expires_at || CarbonImmutable::parse($key->expires_at)->isFuture()), 403, 'Credential lacks this profile entitlement.');
+        $key = DB::table('evidence_requester_keys')->where(['token_digest' => hash('sha256', $token), 'company_id' => $companyId, 'profile' => $profile])->first();
+        $current = $key && $key->active && (! $key->expires_at || CarbonImmutable::parse($key->expires_at)->isFuture());
+        if (! $current && $authorization && $key && hash_equals($authorization->requester_key_id, $key->key_id)) {
+            $this->persistCredentialInvalidation($authorization->id);
+        }
+        abort_unless($current, 403, 'Credential lacks this profile entitlement.');
 
         return $key;
+    }
+
+    private function persistCredentialInvalidation(int $authorizationId): void
+    {
+        DB::transaction(function () use ($authorizationId): void {
+            $authorization = EvidenceAuthorization::lockForUpdate()->findOrFail($authorizationId);
+            if (! $authorization->consumed_at && ! $authorization->revoked_at) {
+                $authorization->update(['status' => 'revoked', 'revoked_at' => now()]);
+                DB::table('evidence_authorization_claims')->where('authorization_id', $authorization->id)->whereNull('consumed_at')->update(['revoked_at' => now(), 'updated_at' => now()]);
+                $this->audit($authorization, 'credential_revoked', null, null);
+            }
+        }, 3);
     }
 
     private function reviewer(Request $request, EvidenceAuthorization $authorization, string $capability): void
@@ -206,7 +225,7 @@ class EvidenceAuthorizationController extends Controller
     private function authority(array $request): object
     {
         $binding = DB::table('executive_authority_bindings')->where(['company_id' => $request['company_id'], 'authority' => 'executive-hq', 'active' => 1])->first();
-        abort_unless($binding && hash_equals($binding->suite_tenant_id, $request['suite_tenant_id']) && hash_equals($binding->customer_id, $request['customer_id']) && (int) $binding->version === (int) $request['itsm_authority_binding_version'], 403, 'Executive authority is not current.');
+        abort_unless($binding && hash_equals($binding->suite_tenant_id, $request['suite_tenant_id']) && hash_equals($binding->customer_id, $request['customer_id']), 403, 'Executive authority is not current.');
 
         return $binding;
     }
@@ -242,11 +261,10 @@ class EvidenceAuthorizationController extends Controller
 
     private function liveItsm(array $request): void
     {
-        $base = config('change_evidence.itsm_authority_url');
-        abort_unless(is_string($base) && preg_match('#^https://[A-Za-z0-9.-]+(?::443)?(?:/[A-Za-z0-9._/-]*)?$#', $base), 503);
-        $url = rtrim($base, '/').'/change-authorizations/'.$request['itsm_authorization_id'];
+        $url = self::ITSM_URL.'/change-authorizations/'.$request['itsm_authorization_id'];
+        $token = $this->ownerOnlyFile(config('change_evidence.itsm_api_key_file'), 4096);
         try {
-            $response = Http::withoutRedirecting()->acceptJson()->withToken($this->ownerOnlyFile(config('change_evidence.itsm_api_key_file'), 4096))->timeout(10)->get($url);
+            $response = Http::withoutRedirecting()->acceptJson()->withToken($token)->timeout(10)->get($url);
         } catch (\Throwable) {
             abort(503, 'Live ITSM authority unavailable.');
         }
@@ -254,9 +272,19 @@ class EvidenceAuthorizationController extends Controller
         $outer = $response->json();
         abort_unless(is_array($outer) && array_keys($outer) === ['data'] && is_array($outer['data']), 503);
         $row = $outer['data'];
-        $fields = ['id', 'change_id', 'request_id', 'profile', 'company_id', 'suite_tenant_id', 'customer_id', 'policy_version', 'approval_revision', 'authority_binding_version', 'binding_digest', 'revoked', 'expires_at'];
+        $immutable = $request;
+        foreach (['purpose', 'operation_id', 'policy_version', 'itsm_change_id', 'itsm_authorization_id', 'itsm_approval_revision', 'itsm_binding_digest', 'request_digest'] as $field) {
+            unset($immutable[$field]);
+        }
+        $immutable['contract_version'] = 'fynix-change-authorization/v2';
+        $bindingDigest = hash('sha256', $this->canonical($immutable));
+        $expected = [...$immutable, 'binding_digest' => $bindingDigest, 'id' => $request['itsm_authorization_id'], 'change_id' => $request['itsm_change_id'], 'policy_version' => $request['policy_version'], 'approval_revision' => $request['itsm_approval_revision'], 'revoked' => false];
+        $fields = [...array_keys($expected), 'created_at', 'expires_at'];
         abort_unless(count($row) === count($fields) && ! array_diff(array_keys($row), $fields), 503);
-        abort_unless($row['id'] === $request['itsm_authorization_id'] && $row['change_id'] === $request['itsm_change_id'] && $row['request_id'] === $request['itsm_request_id'] && $row['profile'] === $request['itsm_profile'] && $row['company_id'] === $request['company_id'] && $row['suite_tenant_id'] === $request['suite_tenant_id'] && $row['customer_id'] === $request['customer_id'] && $row['policy_version'] === $request['policy_version'] && $row['approval_revision'] === $request['itsm_approval_revision'] && $row['authority_binding_version'] === $request['itsm_authority_binding_version'] && is_string($row['binding_digest']) && hash_equals($request['itsm_binding_digest'], $row['binding_digest']) && $row['revoked'] === false && CarbonImmutable::parse($row['expires_at'])->isFuture(), 403, 'Live ITSM authorization is not current.');
+        foreach ($expected as $field => $value) {
+            abort_unless(($row[$field] ?? null) === $value, 403, 'Live ITSM authorization differs from the requested evidence.');
+        }
+        abort_unless(hash_equals($bindingDigest, $request['itsm_binding_digest']) && hash_equals($bindingDigest, $row['binding_digest']) && CarbonImmutable::parse($row['created_at'])->lessThanOrEqualTo(now()->addMinutes(5)) && CarbonImmutable::parse($row['expires_at'])->isFuture(), 403, 'Live ITSM authorization is not current.');
     }
 
     private function signingIdentity(): array
@@ -298,8 +326,11 @@ class EvidenceAuthorizationController extends Controller
     private function audit(EvidenceAuthorization $authorization, string $action, ?int $actor, ?string $detail): void
     {
         $previous = DB::table('evidence_authorization_audit')->where('authorization_id', $authorization->id)->orderByDesc('id')->value('event_digest');
-        $digest = hash('sha256', implode(':', [$previous ?? '', $authorization->id, $action, $actor ?? '', $detail ?? $authorization->request_digest, now()->toIso8601String(), Str::uuid()]));
-        DB::table('evidence_authorization_audit')->insert(['authorization_id' => $authorization->id, 'company_id' => $authorization->company_id, 'profile' => $authorization->profile, 'actor_user_id' => $actor, 'action' => $action, 'previous_digest' => $previous, 'event_digest' => $digest, 'created_at' => now()]);
+        $occurredAt = now()->utc();
+        $nonce = (string) Str::uuid();
+        $payload = ['action' => $action, 'actor_user_id' => $actor, 'authorization_id' => $authorization->id, 'company_id' => (int) $authorization->company_id, 'detail_digest' => $detail ?? $authorization->request_digest, 'event_nonce' => $nonce, 'occurred_at' => $occurredAt->toIso8601String(), 'previous_digest' => $previous, 'profile' => $authorization->profile];
+        $digest = hash('sha256', $this->canonical($payload));
+        DB::table('evidence_authorization_audit')->insert(['authorization_id' => $authorization->id, 'company_id' => $authorization->company_id, 'profile' => $authorization->profile, 'actor_user_id' => $actor, 'action' => $action, 'previous_digest' => $previous, 'event_nonce' => $nonce, 'occurred_at' => $occurredAt, 'canonical_payload' => $this->canonical($payload), 'event_digest' => $digest, 'created_at' => $occurredAt]);
     }
 
     private function output(EvidenceAuthorization $authorization): array
