@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cyberaudit.fynixhq.com/contracts/executive-authority-binding-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "event_id", "nonce", "company_id", "suite_tenant_id", "customer_id", "version", "active", "issued_at", "expires_at"],
+  "properties": {
+    "contract_version": {"const": "fynix-executive-authority-binding/v1"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "nonce": {"type": "string", "format": "uuid"},
+    "company_id": {"type": "integer", "minimum": 1},
+    "suite_tenant_id": {"type": "string", "format": "uuid"},
+    "customer_id": {"type": "string", "format": "uuid"},
+    "version": {"type": "integer", "minimum": 1},
+    "active": {"type": "boolean"},
+    "issued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"}
+  }
+}

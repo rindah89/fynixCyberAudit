@@ -9,6 +9,7 @@ use App\Http\Controllers\API\ChecklistTemplateController;
 use App\Http\Controllers\API\ControlController;
 use App\Http\Controllers\API\DataRequestController;
 use App\Http\Controllers\API\DataRequestResponseController;
+use App\Http\Controllers\API\ExecutiveAuthorityBindingController;
 use App\Http\Controllers\API\FileAttachmentController;
 use App\Http\Controllers\API\ImplementationController;
 use App\Http\Controllers\API\PolicyController;
@@ -36,12 +37,13 @@ use Illuminate\Support\Facades\Route;
 Route::post('/suite/events', [SuiteInboundController::class, 'store'])
     ->middleware('throttle:suite-inbound');
 Route::get('/suite/ready', [SuiteInboundController::class, 'ready']);
-Route::post('/support-change-evidence', [SupportChangeEvidenceController::class, 'store'])->middleware('throttle:api');
-Route::get('/support-change-evidence/{acceptance}', [SupportChangeEvidenceController::class, 'show'])->middleware('throttle:api');
-Route::post('/support-change-evidence/{acceptance}/accept', [SupportChangeEvidenceController::class, 'accept'])->middleware(['auth:sanctum', 'throttle:api']);
-Route::post('/support-change-evidence/{acceptance}/reject', [SupportChangeEvidenceController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api']);
-Route::post('/support-change-evidence/{acceptance}/revoke', [SupportChangeEvidenceController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api']);
-Route::post('/support-change-evidence/{acceptance}/consume', [SupportChangeEvidenceController::class, 'consume'])->middleware('throttle:api');
+Route::post('/suite/executive-authority-bindings', [ExecutiveAuthorityBindingController::class, 'store'])->middleware('throttle:api');
+Route::post('/support-change-evidence', [SupportChangeEvidenceController::class, 'store'])->middleware('throttle:api')->name('support-change-evidence.store');
+Route::get('/support-change-evidence/{acceptance}', [SupportChangeEvidenceController::class, 'show'])->middleware('throttle:api')->name('support-change-evidence.show');
+Route::post('/support-change-evidence/{acceptance}/accept', [SupportChangeEvidenceController::class, 'accept'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.accept');
+Route::post('/support-change-evidence/{acceptance}/reject', [SupportChangeEvidenceController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.reject');
+Route::post('/support-change-evidence/{acceptance}/revoke', [SupportChangeEvidenceController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.revoke');
+Route::post('/support-change-evidence/{acceptance}/consume', [SupportChangeEvidenceController::class, 'consume'])->middleware('throttle:api')->name('support-change-evidence.consume');
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();

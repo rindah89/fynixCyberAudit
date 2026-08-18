@@ -28,8 +28,18 @@ digest and detached signature with public keys only. A separate identity
 with `revoke support change evidence` can revoke an accepted receipt; the
 original reviewer cannot revoke their own decision.
 
-Executive HQ bindings are stored as active, versioned authority records and
-are revalidated on every read, decision, revocation, and consumption. A missing
+Executive HQ publishes bindings to the dedicated
+`POST /api/suite/executive-authority-bindings` receiver. The closed
+`fynix-executive-authority-binding/v1` event contains only
+`event_id`, `nonce`, company/tenant/customer identity, monotonic `version`,
+`active`, `issued_at`, and `expires_at`. It is valid for at most five minutes
+and is signed by Executive HQ with Ed25519; CyberAudit pins the exact Executive
+origin and keeps only its current and previous public keys. Event IDs, nonces,
+and company versions are replay protected. The receiver and replay ledger are
+the only supported provisioning seam—direct database edits are not authority.
+
+Bindings are stored as active, versioned authority records and are revalidated
+on every read, decision, revocation, and consumption. A missing
 or changed binding permanently revokes the pending authorization before it
 fails closed; restoring the old mapping does not revive it. Rejection,
 revocation, expiry, and consumption are terminal. Append-only audit rows and
@@ -55,3 +65,11 @@ is available, the receipt remains pending and Support must fail closed.
 During signing-key rotation, the public set contains exactly the current and
 previous key IDs. The configured current public key must match the private key;
 a mismatch prevents consumption.
+
+Every rejected machine credential, tenant scope, canonical digest, and reviewer
+scope decision writes a redacted audit row. No bearer, signature, evidence
+content, or source address is stored in that row.
+
+Machine-readable cross-product contracts are
+[`../contracts/executive-authority-binding-v1.schema.json`](../contracts/executive-authority-binding-v1.schema.json)
+and [`../contracts/cyberaudit-acceptance-v2.schema.json`](../contracts/cyberaudit-acceptance-v2.schema.json).

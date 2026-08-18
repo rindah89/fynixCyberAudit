@@ -29,7 +29,7 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('role')->default('member');
             $table->timestamps();
-            $table->unique(['remediation_project_id', 'user_id']);
+            $table->unique(['remediation_project_id', 'user_id'], 'remediation_project_member_unique');
             });
         }
 

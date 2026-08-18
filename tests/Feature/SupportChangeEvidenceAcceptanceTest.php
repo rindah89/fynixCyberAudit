@@ -80,6 +80,7 @@ class SupportChangeEvidenceAcceptanceTest extends TestCase
         $subject = SupportChangeEvidenceAcceptance::findOrFail($id)->request_json;
         $receipt = $this->withToken(str_repeat('r', 32))->postJson("/api/support-change-evidence/$id/consume", Arr::only($subject, ['purpose', 'operation_id', 'request_digest']))->assertOk();
         $receipt->assertJsonPath('accepted', true)->assertJsonPath('key_id', 'g1');
+        $receipt->assertJsonPath('authority_binding_verified_at', fn ($value) => is_string($value) && preg_match('/(?:Z|[+-][0-9]{2}:[0-9]{2})$/', $value) === 1);
         $unsigned = $receipt->json();
         $signature = $unsigned['signature'];
         $digest = $unsigned['receipt_digest'];
@@ -156,6 +157,7 @@ class SupportChangeEvidenceAcceptanceTest extends TestCase
         $this->scope($reviewer, true, false);
         $id = SupportChangeEvidenceAcceptance::firstOrFail()->id;
         $this->actingAs($reviewer)->postJson("/api/support-change-evidence/$id/accept")->assertForbidden();
+        $this->assertDatabaseHas('support_change_evidence_audit', ['acceptance_id' => $id, 'action' => 'denied', 'reason_code' => 'reviewer_scope_denied']);
         $reviewer->givePermissionTo('review support change evidence');
         DB::table('support_change_evidence_reviewers')->where('user_id', $reviewer->id)->update(['company_id' => 2]);
         $this->actingAs($reviewer)->postJson("/api/support-change-evidence/$id/accept")->assertForbidden();
@@ -172,6 +174,7 @@ class SupportChangeEvidenceAcceptanceTest extends TestCase
         $bad['itsm_binding_digest'] = str_repeat('0', 64);
         $bad = $this->digestRequest($bad);
         $this->withToken(str_repeat('r', 32))->postJson('/api/support-change-evidence', $bad)->assertUnprocessable();
+        $this->assertDatabaseHas('support_change_evidence_audit', ['acceptance_id' => null, 'action' => 'denied', 'reason_code' => 'itsm_binding_mismatch']);
         $id = $this->withToken(str_repeat('r', 32))->postJson('/api/support-change-evidence', $body)->json('id');
         $this->actingAs($reviewer)->postJson("/api/support-change-evidence/$id/reject")->assertOk()->assertJsonPath('status', 'rejected');
         $this->actingAs($reviewer)->postJson("/api/support-change-evidence/$id/accept")->assertConflict();
@@ -180,11 +183,13 @@ class SupportChangeEvidenceAcceptanceTest extends TestCase
     public function test_machine_auth_closed_schema_and_body_limit_fail_closed(): void
     {
         $this->withToken('wrong')->postJson('/api/support-change-evidence', $this->body())->assertUnauthorized();
+        $this->assertDatabaseHas('support_change_evidence_audit', ['acceptance_id' => null, 'action' => 'denied', 'reason_code' => 'machine_auth_denied']);
         $crossTenant = $this->body();
         $crossTenant['company_id'] = 2;
         $crossTenant['itsm_binding_digest'] = $this->itsmBindingDigest($crossTenant);
         $crossTenant = $this->digestRequest($crossTenant);
         $this->withToken(str_repeat('r', 32))->postJson('/api/support-change-evidence', $crossTenant)->assertForbidden();
+        $this->assertDatabaseHas('support_change_evidence_audit', ['company_id' => 2, 'action' => 'denied', 'reason_code' => 'machine_tenant_denied']);
         $extra = [...$this->body(), 'unexpected' => true];
         $this->withToken(str_repeat('r', 32))->postJson('/api/support-change-evidence', $extra)->assertUnprocessable();
         $oversized = [...$this->body(), 'padding' => str_repeat('x', 70000)];

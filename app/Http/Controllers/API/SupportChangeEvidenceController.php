@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\SupportChangeEvidenceAcceptance as A;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,9 +35,15 @@ class SupportChangeEvidenceController extends Controller
             abort_unless(is_string($d[$k] ?? null) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/', $d[$k]), 422);
         }
         abort_unless(preg_match('/^sha256:[a-f0-9]{64}$/', $d['image_digest'] ?? ''), 422);
-        abort_unless(hash_equals($this->itsmBindingDigest($d), $d['itsm_binding_digest']), 422, 'ITSM binding digest mismatch.');
+        if (! hash_equals($this->itsmBindingDigest($d), $d['itsm_binding_digest'])) {
+            $this->auditDenied($r, null, $d['company_id'], 'itsm_binding_mismatch');
+            abort(422, 'ITSM binding digest mismatch.');
+        }
         $expected = hash('sha256', $this->canonical(array_intersect_key($d, array_flip(self::F))));
-        abort_unless(hash_equals($expected, $d['request_digest'] ?? ''), 422);
+        if (! hash_equals($expected, $d['request_digest'] ?? '')) {
+            $this->auditDenied($r, null, $d['company_id'], 'request_digest_mismatch');
+            abort(422);
+        }
         $this->binding($d);
 
         try {
@@ -51,7 +58,7 @@ class SupportChangeEvidenceController extends Controller
                 $this->audit($q, 'requested', null, $expected);
 
                 return response()->json($this->out($q), 201);
-            });
+            }, 3);
         } catch (QueryException $e) {
             if (! in_array((string) $e->getCode(), ['23000', '23505'], true)) {
                 throw $e;
@@ -65,7 +72,7 @@ class SupportChangeEvidenceController extends Controller
 
     public function show(Request $r, A $acceptance): JsonResponse
     {
-        $this->machine($r, (int) $acceptance->company_id);
+        $this->machine($r, (int) $acceptance->company_id, $acceptance);
         try {
             $this->current($acceptance);
         } catch (HttpException $e) {
@@ -105,7 +112,7 @@ class SupportChangeEvidenceController extends Controller
 
     public function consume(Request $r, A $acceptance): JsonResponse
     {
-        $this->machine($r, (int) $acceptance->company_id);
+        $this->machine($r, (int) $acceptance->company_id, $acceptance);
         $b = $r->all();
         abort_unless(count($b) === 3 && ! array_diff(array_keys($b), ['purpose', 'operation_id', 'request_digest']), 422);
 
@@ -118,8 +125,9 @@ class SupportChangeEvidenceController extends Controller
                 return response()->json([...$a->receipt_json, 'receipt_digest' => $a->receipt_digest, 'signature' => $a->signature]);
             }abort_unless($a->status === 'accepted' && $a->expires_at->isFuture(), 409);
             $bind = $this->binding($s);
+            $authorityVerifiedAt = CarbonImmutable::parse($bind->verified_at, 'UTC')->utc()->toIso8601String();
             [$keyId, $signingKey] = $this->signingIdentity();
-            $receipt = ['version' => 'fynix-cyberaudit-acceptance/v2', 'origin' => 'fynix-cyberaudit', ...$s, 'accepted' => true, 'observed_at' => now()->toIso8601String(), 'requested_at' => $a->created_at->toIso8601String(), 'reviewed_at' => $a->reviewed_at->toIso8601String(), 'issued_at' => now()->toIso8601String(), 'expires_at' => $a->expires_at->toIso8601String(), 'consumed_at' => now()->toIso8601String(), 'reviewer_id' => hash('sha256', 'user:'.$a->reviewed_by), 'authority' => 'executive-hq', 'authority_binding_version' => $bind->version, 'authority_binding_verified_at' => $bind->verified_at, 'authority_binding_digest' => $this->canonicalDigest($bind), 'key_id' => $keyId];
+            $receipt = ['version' => 'fynix-cyberaudit-acceptance/v2', 'origin' => 'fynix-cyberaudit', ...$s, 'accepted' => true, 'observed_at' => now()->toIso8601String(), 'requested_at' => $a->created_at->toIso8601String(), 'reviewed_at' => $a->reviewed_at->toIso8601String(), 'issued_at' => now()->toIso8601String(), 'expires_at' => $a->expires_at->toIso8601String(), 'consumed_at' => now()->toIso8601String(), 'reviewer_id' => hash('sha256', 'user:'.$a->reviewed_by), 'authority' => 'executive-hq', 'authority_binding_version' => $bind->version, 'authority_binding_verified_at' => $authorityVerifiedAt, 'authority_binding_digest' => $this->canonicalDigest($bind, $authorityVerifiedAt), 'key_id' => $keyId];
             $digest = hash('sha256', $this->canonical($receipt));
             $sig = rtrim(strtr(base64_encode(sodium_crypto_sign_detached(hex2bin($digest), $signingKey)), '+/', '-_'), '=');
             $a->update(['consumed_at' => now(), 'receipt_json' => $receipt, 'receipt_digest' => $digest, 'signature' => $sig, 'key_id' => $receipt['key_id']]);
@@ -149,15 +157,24 @@ class SupportChangeEvidenceController extends Controller
     private function reviewer(Request $r, A $a, string $cap): void
     {
         $permission = $cap === 'can_review' ? 'review support change evidence' : 'revoke support change evidence';
-        abort_unless($r->user() && $r->user()->can($permission) && DB::table('support_change_evidence_reviewers')->where(['user_id' => $r->user()->id, 'company_id' => $a->company_id, 'active' => 1, $cap => 1])->exists(), 403);
+        if (! ($r->user() && $r->user()->can($permission) && DB::table('support_change_evidence_reviewers')->where(['user_id' => $r->user()->id, 'company_id' => $a->company_id, 'active' => 1, $cap => 1])->exists())) {
+            $this->auditDenied($r, $a, (int) $a->company_id, 'reviewer_scope_denied');
+            abort(403);
+        }
     }
 
-    private function machine(Request $r, ?int $companyId): void
+    private function machine(Request $r, ?int $companyId, ?A $acceptance = null): void
     {
         $k = $this->secret('requester_key_file');
-        abort_unless($r->bearerToken() && hash_equals($k, $r->bearerToken()), 401);
+        if (! ($r->bearerToken() && hash_equals($k, $r->bearerToken()))) {
+            $this->auditDenied($r, $acceptance, $companyId, 'machine_auth_denied');
+            abort(401);
+        }
         $scope = (int) config('change_evidence.requester_company_id');
-        abort_unless($scope > 0 && $companyId === $scope, 403, 'Requester credential is not scoped to this company.');
+        if (! ($scope > 0 && $companyId === $scope)) {
+            $this->auditDenied($r, $acceptance, $companyId, 'machine_tenant_denied');
+            abort(403, 'Requester credential is not scoped to this company.');
+        }
     }
 
     private function binding(array $s): object
@@ -177,7 +194,7 @@ class SupportChangeEvidenceController extends Controller
     private function guardedTransaction(A $acceptance, callable $callback): JsonResponse
     {
         try {
-            return DB::transaction($callback);
+            return DB::transaction($callback, 3);
         } catch (HttpException $e) {
             if ($e->getStatusCode() === 403) {
                 $this->persistAuthorityInvalidation($acceptance->id);
@@ -222,9 +239,9 @@ class SupportChangeEvidenceController extends Controller
         return json_encode($v, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 
-    private function canonicalDigest(object $b): string
+    private function canonicalDigest(object $b, string $verifiedAt): string
     {
-        return hash('sha256', $this->canonical(['authority' => 'executive-hq', 'company_id' => (int) $b->company_id, 'customer_id' => $b->customer_id, 'suite_tenant_id' => $b->suite_tenant_id, 'verified_at' => $b->verified_at, 'version' => (int) $b->version]));
+        return hash('sha256', $this->canonical(['authority' => 'executive-hq', 'company_id' => (int) $b->company_id, 'customer_id' => $b->customer_id, 'suite_tenant_id' => $b->suite_tenant_id, 'verified_at' => $verifiedAt, 'version' => (int) $b->version]));
     }
 
     private function itsmBindingDigest(array $s): string
@@ -247,7 +264,12 @@ class SupportChangeEvidenceController extends Controller
 
     private function audit(A $a, string $action, ?int $actor, string $d): void
     {
-        DB::table('support_change_evidence_audit')->insert(['acceptance_id' => $a->id, 'actor_user_id' => $actor, 'action' => $action, 'details_digest' => hash('sha256', $action.$d), 'created_at' => now()]);
+        DB::table('support_change_evidence_audit')->insert(['acceptance_id' => $a->id, 'company_id' => $a->company_id, 'actor_user_id' => $actor, 'action' => $action, 'reason_code' => null, 'details_digest' => hash('sha256', $action.$d), 'created_at' => now()]);
+    }
+
+    private function auditDenied(Request $request, ?A $acceptance, ?int $companyId, string $reason): void
+    {
+        DB::table('support_change_evidence_audit')->insert(['acceptance_id' => $acceptance?->id, 'company_id' => $companyId, 'actor_user_id' => $request->user()?->id, 'action' => 'denied', 'reason_code' => $reason, 'details_digest' => hash('sha256', implode(':', ['denied', $reason, $request->method(), (string) $request->route()?->getName()])), 'created_at' => now()]);
     }
 
     private function out(A $a): array

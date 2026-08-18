@@ -18,6 +18,18 @@ return new class extends Migration
             $table->timestamp('verified_at');
             $table->timestamps();
         });
+        Schema::create('executive_authority_binding_events', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('event_id')->unique();
+            $table->uuid('nonce')->unique();
+            $table->unsignedBigInteger('company_id');
+            $table->unsignedBigInteger('version');
+            $table->string('event_digest', 64);
+            $table->string('key_id', 64);
+            $table->string('outcome', 24);
+            $table->timestamp('received_at')->useCurrent();
+            $table->unique(['company_id', 'version'], 'executive_binding_company_version_unique');
+        });
         Schema::create('support_change_evidence_reviewers', function (Blueprint $table): void {
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
             $table->unsignedBigInteger('company_id');
@@ -56,9 +68,11 @@ return new class extends Migration
         });
         Schema::create('support_change_evidence_audit', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('acceptance_id')->constrained('support_change_evidence_acceptances')->restrictOnDelete();
+            $table->foreignId('acceptance_id')->nullable()->constrained('support_change_evidence_acceptances')->restrictOnDelete();
+            $table->unsignedBigInteger('company_id')->nullable();
             $table->foreignId('actor_user_id')->nullable()->constrained('users')->restrictOnDelete();
             $table->string('action', 32);
+            $table->string('reason_code', 64)->nullable();
             $table->string('details_digest', 64);
             $table->timestamp('created_at')->useCurrent();
         });
@@ -69,6 +83,7 @@ return new class extends Migration
         Schema::dropIfExists('support_change_evidence_audit');
         Schema::dropIfExists('support_change_evidence_acceptances');
         Schema::dropIfExists('support_change_evidence_reviewers');
+        Schema::dropIfExists('executive_authority_binding_events');
         Schema::dropIfExists('executive_authority_bindings');
     }
 };
