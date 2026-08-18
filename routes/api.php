@@ -15,6 +15,7 @@ use App\Http\Controllers\API\PolicyController;
 use App\Http\Controllers\API\ProgramController;
 use App\Http\Controllers\API\RiskController;
 use App\Http\Controllers\API\StandardController;
+use App\Http\Controllers\API\SupportChangeEvidenceController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
 use App\Suite\SuiteInboundController;
@@ -35,6 +36,12 @@ use Illuminate\Support\Facades\Route;
 Route::post('/suite/events', [SuiteInboundController::class, 'store'])
     ->middleware('throttle:suite-inbound');
 Route::get('/suite/ready', [SuiteInboundController::class, 'ready']);
+Route::post('/support-change-evidence', [SupportChangeEvidenceController::class, 'store'])->middleware('throttle:api');
+Route::get('/support-change-evidence/{acceptance}', [SupportChangeEvidenceController::class, 'show'])->middleware('throttle:api');
+Route::post('/support-change-evidence/{acceptance}/accept', [SupportChangeEvidenceController::class, 'accept'])->middleware(['auth:sanctum', 'throttle:api']);
+Route::post('/support-change-evidence/{acceptance}/reject', [SupportChangeEvidenceController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api']);
+Route::post('/support-change-evidence/{acceptance}/revoke', [SupportChangeEvidenceController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api']);
+Route::post('/support-change-evidence/{acceptance}/consume', [SupportChangeEvidenceController::class, 'consume'])->middleware('throttle:api');
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
