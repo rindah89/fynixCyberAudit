@@ -43,3 +43,5 @@ grep -q 'artisan migrate --force' "$root/deploy/aws-update.sh"
 grep -q 'artisan fynix:suite-preflight' "$root/deploy/aws-update.sh"
 if grep -q 'compose .*--build' "$root/deploy/aws-update.sh"; then exit 1; fi
 grep -q 'image_sha256' "$root/scripts/build-release-bundle.sh"
+grep -q 'cyberaudit_change_signing_public_keys' "$root/deploy/handoff-support-change-verifier.sh"
+if grep -q 'signing_private_key:.' "$root/deploy/handoff-support-change-verifier.sh"; then exit 1; fi
