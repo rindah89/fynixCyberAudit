@@ -1,40 +1,11 @@
-name: test-build-deploy-aws
+name: deployment-disabled-use-governed-local-dispatcher
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: production-fynix-cyberaudit
-  cancel-in-progress: false
-
-env:
-  AWS_REGION: us-east-2
-  AWS_DEFAULT_REGION: us-east-2
-  RELEASE_BUCKET: fynix-releases-172670236523-us-east-2
-  INSTANCE_ID: i-04578bd74b67567c1
-
 jobs:
-  verify-and-deploy:
-    runs-on: [self-hosted, linux, x64, fynix-suite]
+  deployment-disabled:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Validate tracked shell scripts
-        run: git ls-files '*.sh' | while IFS= read -r script; do bash -n "$script"; done
-      - name: Test deployment recovery guards
-        run: bash tests/deployment_scripts_test.sh
-      - name: Build production image
-        run: docker build -t "fynix-cyberaudit-ci:$GITHUB_SHA" .
-      - name: Package immutable source release
-        run: tar --exclude=.git --exclude=node_modules --exclude=storage/framework/testing -czf "/tmp/fynix-cyberaudit-$GITHUB_SHA.tar.gz" .
-      - name: Upload and deploy through Systems Manager
-        run: |
-          aws s3 cp "/tmp/fynix-cyberaudit-$GITHUB_SHA.tar.gz" "s3://$RELEASE_BUCKET/cyberaudit/$GITHUB_SHA.tar.gz"
-          command_id=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
-            --parameters commands="[\"set -eu\",\"mkdir -p /tmp/fynix-cyberaudit-$GITHUB_SHA\",\"aws s3 cp 's3://$RELEASE_BUCKET/cyberaudit/$GITHUB_SHA.tar.gz' /tmp/fynix-cyberaudit-$GITHUB_SHA/release.tar.gz\",\"tar -xzf /tmp/fynix-cyberaudit-$GITHUB_SHA/release.tar.gz -C /tmp/fynix-cyberaudit-$GITHUB_SHA\",\"bash /tmp/fynix-cyberaudit-$GITHUB_SHA/deploy/aws-update.sh /opt/fynix-suite/cyberaudit '$GITHUB_SHA'\"]" \
-            --query 'Command.CommandId' --output text)
-          for _ in $(seq 1 360); do status=$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text); [[ "$status" == Success ]] && break; [[ "$status" =~ ^(Failed|Cancelled|TimedOut)$ ]] && exit 1; sleep 5; done
-          [[ "$status" == Success ]]
-          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID"
-      - run: curl -fsS https://cyberaudit.fynixhq.com/
+      - run: echo "CyberAudit deployment is exclusively authorized through scripts/deploy-aws-local.sh"

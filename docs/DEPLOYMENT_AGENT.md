@@ -16,7 +16,7 @@ Fynix is deployed as independently releasable applications behind one shared edg
 | DocFlow | https://docflow.fynixhq.com | `rindah89/docflow` |
 | CyberAudit | https://cyberaudit.fynixhq.com | `rindah89/fynixCyberAudit` |
 
-Production currently runs in AWS account `172670236523`, region `us-east-2`, on application host `i-04578bd74b67567c1`. Builds run on the private self-hosted runner labeled `fynix-suite`. Release artifacts are immutable and reach the host through private S3 plus AWS Systems Manager; SSH and inbound access to the build host are not required.
+Production currently runs in AWS account `172670236523`, region `us-east-2`, on application host `i-04578bd74b67567c1`. The governed local dispatcher builds and validates an immutable release bundle, then transports it through private S3 plus AWS Systems Manager; SSH and inbound access to the host are not required. GitHub Actions deployment is disabled.
 
 The target on-prem architecture is the same contract: Linux + Docker Compose, persistent per-app `.env`, per-app databases/volumes, a shared HTTPS edge, immutable release artifacts, migrations, health checks, and rollback. Cloud transport may change, but application release scripts must remain usable without AWS-specific application logic.
 
@@ -25,8 +25,8 @@ The target on-prem architecture is the same contract: Linux + Docker Compose, pe
 1. Read `.github/workflows/deploy-aws.yml` and the release/update scripts before changing deployment behavior.
 2. Preserve persistent secrets and data. Never replace a production `.env` with an example file, print secrets, or commit credentials.
 3. Test and build before deployment. Database changes must be additive/resumable and run with the repository's privileged migration path.
-4. Push the intended commit to `main`. The GitHub Actions run is the deployment record; do not manually copy a working tree to production.
-5. Wait for the workflow to complete successfully. Inspect the SSM command output on failure.
+4. Push the intended commit to `main`, then invoke `scripts/deploy-aws-local.sh` only with the closed ITSM authorization receipt, current accepted CyberAudit evidence, completed soak evidence, and explicit `--execute`. The script remains fail-closed when its exact authorization adapter is unavailable.
+5. Retain the dispatcher receipt and inspect the SSM command output on failure. Do not manually copy a working tree to production.
 6. Verify the application-specific health URL and a user-facing route. A container being “Up” is insufficient.
 7. Verify HQ still exposes the application in its selector when product visibility changes.
 8. Roll back with the repository's release script/previous immutable artifact. Do not reset databases or delete volumes.
@@ -43,9 +43,9 @@ The production recovery objectives are: database RPO **1 hour**; files and confi
 
 - The immutable production version is the full Git SHA release in the private bucket. Human releases use non-moving annotated SemVer tags (`vMAJOR.MINOR.PATCH`) pointing to a successfully deployed SHA.
 - Before migrations and daily, create a consistent MySQL dump plus copies of persistent uploaded evidence and the production `.env`/application key. Encrypt backups off-host; retain at least 7 daily, 4 weekly, and 12 monthly recovery points unless policy is stricter.
-- Roll back code by deploying the prior SHA artifact through its `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`. Laravel migrations must be additive/backward-compatible; never drop suite audit/link state in a routine rollback.
+- Roll back code with the retained exact bundle, prior SHA, and prior artifact SHA through `deploy/rollback.sh <bundle> <deploy-dir> <sha> <artifact-sha256>`. Laravel migrations must be additive/backward-compatible; never drop suite audit/link state in a routine rollback.
 - Use `deploy/backup.sh` and `deploy/restore.sh` for a consistent MySQL plus application-storage recovery set. Provider snapshots may supplement it. After restore, verify migrations, `fynix:suite-preflight`, `/api/suite/ready`, evidence access, and an authenticated audit read.
-- Use `deploy/rollback.sh <extracted-release> <deploy-dir> <sha>` for a previous immutable release. Perform and record a restore drill at least quarterly.
+- Use `deploy/rollback.sh <extracted-release> <deploy-dir> <sha> <artifact-sha256>` for a previous immutable release. Perform and record a restore drill at least quarterly.
 
 
 ## Required handoff
@@ -54,6 +54,6 @@ Record the deployed commit, workflow URL/result, migration result, health result
 
 ## This repository
 
-The workflow builds the Laravel production image, creates an immutable source release, and runs `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`.
+The governed local dispatcher creates the exact image/source bundle and calls `deploy/aws-update.sh <bundle> /opt/fynix-suite/cyberaudit <sha> <artifact-sha256>` on the host. The dispatcher is intentionally unusable until the closed `fynix-cyberaudit/deploy-release` ITSM adapter is present.
 
 Production route: `https://cyberaudit.fynixhq.com/`. Integration readiness: `https://cyberaudit.fynixhq.com/api/suite/ready`. Run `php artisan migrate --force` and `php artisan fynix:suite-preflight` in the deployed app. The one-DC ITSM integration procedure is `docs/deployment/grc-itsm-one-dc.md`.
