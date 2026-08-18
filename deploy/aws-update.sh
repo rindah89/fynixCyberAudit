@@ -4,9 +4,13 @@ source_dir="$(cd "$(dirname "$0")/.." && pwd)"
 target="${1:?deployment directory required}"
 revision="${2:?revision required}"
 test -s "$target/.env"
+[[ -x "$source_dir/deploy/install-change-evidence-materializer.sh" ]]
+"$source_dir/deploy/install-change-evidence-materializer.sh"
+test -s /run/fynix-cyberaudit/change.env
 set -a
 # shellcheck disable=SC1091
 source "$target/.env"
+source /run/fynix-cyberaudit/change.env
 set +a
 mkdir -p "$target"
 rsync -a --delete --exclude='.env' --exclude='.git-revision' --exclude='node_modules' "$source_dir/" "$target/"

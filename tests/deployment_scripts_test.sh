@@ -29,3 +29,9 @@ chmod +x "$release/deploy/aws-update.sh"
 "$root/deploy/rollback.sh" "$release" "$tmp/target" deadbeef
 grep -q 'rollback .*deadbeef' "$log"
 if "$root/deploy/restore.sh" "$deploy" "$archive" WRONG 2>/dev/null; then exit 1; fi
+grep -q 'origin/main' "$root/scripts/deploy-aws-local.sh"
+grep -q 'head-object' "$root/scripts/deploy-aws-local.sh"
+grep -q 'materialize-change-evidence-secrets' "$root/deploy/install-change-evidence-materializer.sh"
+grep -q 'findmnt.*tmpfs' "$root/deploy/materialize-change-evidence-secrets.sh"
+grep -q 'signing_private_key' "$root/deploy/materialize-change-evidence-secrets.sh"
+grep -q '/run/fynix-cyberaudit' "$root/docker-compose.yml"

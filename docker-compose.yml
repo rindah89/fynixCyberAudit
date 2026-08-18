@@ -81,6 +81,15 @@ services:
       SUITE_ITSM_WEBHOOK_SECRET: ${SUITE_ITSM_WEBHOOK_SECRET:-}
       SUITE_LOCAL_TENANT_ID: ${SUITE_LOCAL_TENANT_ID:-}
       SUITE_ITSM_REMOTE_TENANT_ID: ${SUITE_ITSM_REMOTE_TENANT_ID:-}
+      CYBERAUDIT_CHANGE_REQUESTER_COMPANY_ID: ${CYBERAUDIT_CHANGE_REQUESTER_COMPANY_ID:-}
+      CYBERAUDIT_CHANGE_REQUESTER_KEY_FILE: /run/fynix-cyberaudit/change-requester-key
+      CYBERAUDIT_CHANGE_SIGNING_KEY_FILE: /run/fynix-cyberaudit/change-signing-private-key
+      CYBERAUDIT_CHANGE_SIGNING_KEY_ID: ${CYBERAUDIT_CHANGE_SIGNING_KEY_ID:-}
+      CYBERAUDIT_CHANGE_SIGNING_PUBLIC_KEYS_FILE: /run/fynix-cyberaudit/change-signing-public-keys.json
+      CYBERAUDIT_EXECUTIVE_ORIGIN: ${CYBERAUDIT_EXECUTIVE_ORIGIN:-fynix-executive}
+      CYBERAUDIT_EXECUTIVE_PUBLIC_KEYS_FILE: /run/fynix-cyberaudit/executive-public-keys.json
+    volumes:
+      - /run/fynix-cyberaudit:/run/fynix-cyberaudit:ro
 
   worker:
     build: .
