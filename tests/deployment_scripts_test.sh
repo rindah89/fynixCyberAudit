@@ -30,6 +30,9 @@ chmod +x "$release/source/deploy/aws-update.sh"
 grep -q 'rollback .*deadbeef.*aaaaaaaa' "$log"
 if "$root/deploy/restore.sh" "$deploy" "$archive" WRONG 2>/dev/null; then exit 1; fi
 grep -q 'origin/main' "$root/scripts/deploy-aws-local.sh"
+grep -q 'validate-cyberaudit-deploy-authorization.py consume' "$root/scripts/deploy-aws-local.sh"
+grep -q 'no claim consumed' "$root/scripts/deploy-aws-local.sh"
+receipt_line="$(grep -n 'persist-release-receipts.py' "$root/scripts/deploy-aws-local.sh"|cut -d: -f1)"; s3_line="$(grep -n 'put-object' "$root/scripts/deploy-aws-local.sh"|cut -d: -f1)"; [[ "$receipt_line" -lt "$s3_line" ]]
 grep -q 'if: \${{ false }}' "$root/.github/workflows/deploy-aws.yml"
 grep -q 'head-object' "$root/scripts/deploy-aws-local.sh"
 grep -q -- "--if-none-match '\*'" "$root/scripts/deploy-aws-local.sh"
