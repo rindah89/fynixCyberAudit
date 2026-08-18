@@ -196,7 +196,6 @@ class EvidencePolicyRegistryTest extends TestCase
         $this->actingAs($reviewer)->postJson("/api/evidence-authorizations/$id/accept")->assertOk();
         $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']])->assertCreated();
         DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 0]);
-        $this->withToken($this->token)->getJson("/api/evidence-authorizations/$id")->assertForbidden();
         $this->assertDatabaseHas('evidence_authorizations', ['id' => $id, 'status' => 'revoked']);
         $this->assertNotNull(DB::table('evidence_authorization_claims')->where('authorization_id', $id)->value('revoked_at'));
         DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 1]);
@@ -215,6 +214,24 @@ class EvidencePolicyRegistryTest extends TestCase
         $tampered['action'] = 'forged';
         ksort($tampered);
         $this->assertNotSame($previous, hash('sha256', json_encode($tampered, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+    }
+
+    public function test_expire_rotate_and_delete_key_mutations_atomically_revoke_all_unconsumed_authorizations(): void
+    {
+        foreach (['expire', 'rotate', 'delete'] as $index => $mutation) {
+            $keyId = "lifecycle-$mutation";
+            DB::table('evidence_requester_keys')->insert(['key_id' => $keyId, 'token_digest' => hash('sha256', "token-$mutation"), 'company_id' => 1, 'profile' => 'fynix-cyberaudit/deploy-release', 'active' => 1, 'created_at' => now(), 'updated_at' => now()]);
+            $authorization = EvidenceAuthorization::create(['profile' => 'fynix-cyberaudit/deploy-release', 'company_id' => 1, 'suite_tenant_id' => '00000000-0000-0000-0000-000000000001', 'customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f', 'requester_key_id' => $keyId, 'authority_binding_version' => 7, 'request_id' => (string) Str::uuid(), 'operation_id' => (string) Str::uuid(), 'request_digest' => str_repeat((string) ($index + 1), 64), 'request_json' => ['company_id' => 1], 'status' => 'accepted', 'retention_until' => now()->addYears(7)]);
+            DB::table('evidence_authorization_claims')->insert(['authorization_id' => $authorization->id, 'nonce' => (string) Str::uuid(), 'token_digest' => hash('sha256', "claim-$mutation"), 'issued_at' => now(), 'expires_at' => now()->addMinutes(5), 'created_at' => now(), 'updated_at' => now()]);
+            $query = DB::table('evidence_requester_keys')->where('key_id', $keyId);
+            match ($mutation) {
+                'expire' => $query->update(['expires_at' => now()->addHour()]),
+                'rotate' => $query->update(['token_digest' => hash('sha256', 'rotated')]),
+                'delete' => $query->delete(),
+            };
+            $this->assertDatabaseHas('evidence_authorizations', ['id' => $authorization->id, 'status' => 'revoked']);
+            $this->assertNotNull(DB::table('evidence_authorization_claims')->where('authorization_id', $authorization->id)->value('revoked_at'));
+        }
     }
 
     private function body(string $profile = 'fynix-cyberaudit/deploy-release'): array

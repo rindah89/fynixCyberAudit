@@ -28,11 +28,11 @@ class EvidenceAuthorizationController extends Controller
         abort_unless(count($body) === count($fields) && ! array_diff(array_keys($body), $fields), 422, 'Closed request schema required.');
         $key = $this->machine($request, $body['profile'], $body['company_id'] ?? null);
         $this->validateRequest($body, $policy);
-        $this->authority($body);
+        $binding = $this->authority($body);
         $this->liveItsm($body);
 
         try {
-            return DB::transaction(function () use ($body, $key): JsonResponse {
+            return DB::transaction(function () use ($body, $key, $binding): JsonResponse {
                 $existing = EvidenceAuthorization::where(['company_id' => $body['company_id'], 'profile' => $body['profile'], 'request_id' => $body['request_id']])->lockForUpdate()->first();
                 if ($existing) {
                     abort_unless(hash_equals($existing->request_digest, $body['request_digest']), 409);
@@ -43,6 +43,7 @@ class EvidenceAuthorizationController extends Controller
                     'profile' => $body['profile'], 'company_id' => $body['company_id'],
                     'suite_tenant_id' => $body['suite_tenant_id'], 'customer_id' => $body['customer_id'],
                     'requester_key_id' => $key->key_id, 'request_id' => $body['request_id'],
+                    'authority_binding_version' => (int) $binding->version,
                     'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'],
                     'request_json' => $body, 'retention_until' => now()->addYears((int) config('change_evidence.retention_years', 7)),
                 ]);
@@ -133,7 +134,7 @@ class EvidenceAuthorizationController extends Controller
             }
             abort_unless($locked->status === 'accepted' && $body['purpose'] === 'deploy' && hash_equals($locked->operation_id, (string) $body['operation_id']) && hash_equals($locked->request_digest, (string) $body['request_digest']), 409);
             abort_unless($claim && ! $claim->consumed_at && ! $claim->revoked_at && CarbonImmutable::parse($claim->expires_at)->isFuture() && is_string($body['claim_token'] ?? null) && hash_equals($claim->token_digest, hash('sha256', $body['claim_token'])), 409, 'Claim is absent, expired, consumed, revoked, or invalid.');
-            $binding = $this->authority($locked->request_json);
+            $binding = $this->authority($locked->request_json, (int) $locked->authority_binding_version);
             $this->liveItsm($locked->request_json);
             [$keyId, $secret] = $this->signingIdentity();
             $now = now();
@@ -222,17 +223,17 @@ class EvidenceAuthorizationController extends Controller
         abort_unless($request->user() && $request->user()->can($permission) && DB::table('evidence_profile_reviewers')->where(['user_id' => $request->user()->id, 'company_id' => $authorization->company_id, 'profile' => $authorization->profile, 'active' => 1, $capability => 1])->exists(), 403);
     }
 
-    private function authority(array $request): object
+    private function authority(array $request, ?int $expectedVersion = null): object
     {
         $binding = DB::table('executive_authority_bindings')->where(['company_id' => $request['company_id'], 'authority' => 'executive-hq', 'active' => 1])->first();
-        abort_unless($binding && hash_equals($binding->suite_tenant_id, $request['suite_tenant_id']) && hash_equals($binding->customer_id, $request['customer_id']), 403, 'Executive authority is not current.');
+        abort_unless($binding && hash_equals($binding->suite_tenant_id, $request['suite_tenant_id']) && hash_equals($binding->customer_id, $request['customer_id']) && ($expectedVersion === null || (int) $binding->version === $expectedVersion), 403, 'Executive authority is not current.');
 
         return $binding;
     }
 
     private function current(EvidenceAuthorization $authorization): void
     {
-        $this->authority($authorization->request_json);
+        $this->authority($authorization->request_json, (int) $authorization->authority_binding_version);
         abort_if($authorization->revoked_at || ($authorization->expires_at && $authorization->expires_at->isPast()), 410);
     }
 

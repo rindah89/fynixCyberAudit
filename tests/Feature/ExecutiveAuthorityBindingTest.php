@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\EvidenceAuthorization;
 use App\Models\SupportChangeEvidenceAcceptance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -54,12 +55,17 @@ class ExecutiveAuthorityBindingTest extends TestCase
         $this->send($active)->assertAccepted();
         $acceptance = SupportChangeEvidenceAcceptance::create(['company_id' => 1, 'suite_tenant_id' => $active['suite_tenant_id'], 'customer_id' => $active['customer_id'], 'producer' => 'fynix-support', 'request_id' => (string) Str::uuid(), 'purpose' => 'deploy', 'operation_id' => (string) Str::uuid(), 'request_digest' => str_repeat('a', 64), 'request_json' => ['company_id' => 1], 'status' => 'pending']);
         DB::table('support_change_evidence_audit')->insert(['acceptance_id' => $acceptance->id, 'company_id' => 1, 'action' => 'requested', 'details_digest' => str_repeat('b', 64), 'created_at' => now()]);
+        $v3 = EvidenceAuthorization::create(['profile' => 'fynix-cyberaudit/deploy-release', 'company_id' => 1, 'suite_tenant_id' => $active['suite_tenant_id'], 'customer_id' => $active['customer_id'], 'requester_key_id' => 'key-1', 'authority_binding_version' => 1, 'request_id' => (string) Str::uuid(), 'operation_id' => (string) Str::uuid(), 'request_digest' => str_repeat('c', 64), 'request_json' => ['company_id' => 1], 'status' => 'accepted', 'retention_until' => now()->addYears(7)]);
+        DB::table('evidence_authorization_claims')->insert(['authorization_id' => $v3->id, 'nonce' => (string) Str::uuid(), 'token_digest' => str_repeat('d', 64), 'issued_at' => now(), 'expires_at' => now()->addMinutes(5), 'created_at' => now(), 'updated_at' => now()]);
         $disabled = $this->event(version: 2, active: false, tenant: $active['suite_tenant_id'], customer: $active['customer_id']);
         $this->send($disabled)->assertAccepted()->assertJsonPath('outcome', 'deactivated');
         $this->assertDatabaseHas('support_change_evidence_acceptances', ['id' => $acceptance->id, 'status' => 'revoked']);
+        $this->assertDatabaseHas('evidence_authorizations', ['id' => $v3->id, 'status' => 'revoked']);
+        $this->assertNotNull(DB::table('evidence_authorization_claims')->where('authorization_id', $v3->id)->value('revoked_at'));
         $restored = $this->event(version: 3, active: true, tenant: $active['suite_tenant_id'], customer: $active['customer_id']);
         $this->send($restored)->assertAccepted();
         $this->assertDatabaseHas('support_change_evidence_acceptances', ['id' => $acceptance->id, 'status' => 'revoked']);
+        $this->assertDatabaseHas('evidence_authorizations', ['id' => $v3->id, 'status' => 'revoked']);
     }
 
     public function test_wrong_origin_key_stale_and_future_events_are_denied(): void

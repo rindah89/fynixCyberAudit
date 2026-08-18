@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -37,6 +38,7 @@ return new class extends Migration
             $table->uuid('suite_tenant_id');
             $table->uuid('customer_id');
             $table->string('requester_key_id', 64);
+            $table->unsignedBigInteger('authority_binding_version');
             $table->uuid('request_id');
             $table->uuid('operation_id');
             $table->string('request_digest', 64);
@@ -85,14 +87,34 @@ return new class extends Migration
             $table->string('event_digest', 64)->unique();
             $table->timestamp('created_at')->useCurrent();
         });
+        $this->createCredentialLifecycleTriggers();
     }
 
     public function down(): void
     {
+        $this->dropCredentialLifecycleTriggers();
         Schema::dropIfExists('evidence_authorization_audit');
         Schema::dropIfExists('evidence_authorization_claims');
         Schema::dropIfExists('evidence_authorizations');
         Schema::dropIfExists('evidence_profile_reviewers');
         Schema::dropIfExists('evidence_requester_keys');
+    }
+
+    private function createCredentialLifecycleTriggers(): void
+    {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            DB::unprepared("CREATE TRIGGER evidence_key_lifecycle_update AFTER UPDATE ON evidence_requester_keys WHEN OLD.active <> NEW.active OR OLD.key_id <> NEW.key_id OR OLD.token_digest <> NEW.token_digest OR COALESCE(OLD.expires_at, '') <> COALESCE(NEW.expires_at, '') BEGIN UPDATE evidence_authorizations SET status='revoked', revoked_at=COALESCE(revoked_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP WHERE requester_key_id=OLD.key_id AND consumed_at IS NULL; UPDATE evidence_authorization_claims SET revoked_at=COALESCE(revoked_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP WHERE consumed_at IS NULL AND authorization_id IN (SELECT id FROM evidence_authorizations WHERE requester_key_id=OLD.key_id); END");
+            DB::unprepared("CREATE TRIGGER evidence_key_lifecycle_delete BEFORE DELETE ON evidence_requester_keys BEGIN UPDATE evidence_authorizations SET status='revoked', revoked_at=COALESCE(revoked_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP WHERE requester_key_id=OLD.key_id AND consumed_at IS NULL; UPDATE evidence_authorization_claims SET revoked_at=COALESCE(revoked_at,CURRENT_TIMESTAMP), updated_at=CURRENT_TIMESTAMP WHERE consumed_at IS NULL AND authorization_id IN (SELECT id FROM evidence_authorizations WHERE requester_key_id=OLD.key_id); END");
+
+            return;
+        }
+        DB::unprepared("CREATE TRIGGER evidence_key_lifecycle_update AFTER UPDATE ON evidence_requester_keys FOR EACH ROW BEGIN IF OLD.active <> NEW.active OR OLD.key_id <> NEW.key_id OR OLD.token_digest <> NEW.token_digest OR NOT (OLD.expires_at <=> NEW.expires_at) THEN UPDATE evidence_authorizations SET status='revoked', revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()), updated_at=UTC_TIMESTAMP() WHERE requester_key_id=OLD.key_id AND consumed_at IS NULL; UPDATE evidence_authorization_claims SET revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()), updated_at=UTC_TIMESTAMP() WHERE consumed_at IS NULL AND authorization_id IN (SELECT id FROM evidence_authorizations WHERE requester_key_id=OLD.key_id); END IF; END");
+        DB::unprepared("CREATE TRIGGER evidence_key_lifecycle_delete BEFORE DELETE ON evidence_requester_keys FOR EACH ROW BEGIN UPDATE evidence_authorizations SET status='revoked', revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()), updated_at=UTC_TIMESTAMP() WHERE requester_key_id=OLD.key_id AND consumed_at IS NULL; UPDATE evidence_authorization_claims SET revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()), updated_at=UTC_TIMESTAMP() WHERE consumed_at IS NULL AND authorization_id IN (SELECT id FROM evidence_authorizations WHERE requester_key_id=OLD.key_id); END");
+    }
+
+    private function dropCredentialLifecycleTriggers(): void
+    {
+        DB::unprepared('DROP TRIGGER IF EXISTS evidence_key_lifecycle_update');
+        DB::unprepared('DROP TRIGGER IF EXISTS evidence_key_lifecycle_delete');
     }
 };

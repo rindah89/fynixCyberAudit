@@ -9,6 +9,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ExecutiveAuthorityBindingController extends Controller
 {
@@ -51,7 +52,7 @@ class ExecutiveAuthorityBindingController extends Controller
                 } else {
                     DB::table('executive_authority_bindings')->updateOrInsert(['company_id' => $body['company_id']], ['suite_tenant_id' => $body['suite_tenant_id'], 'customer_id' => $body['customer_id'], 'authority' => 'executive-hq', 'version' => $body['version'], 'active' => $body['active'], 'verified_at' => CarbonImmutable::now('UTC'), 'created_at' => $current?->created_at ?? now(), 'updated_at' => now()]);
                     $outcome = $body['active'] ? 'applied' : 'deactivated';
-                    if (! $body['active'] || ($current && ($current->suite_tenant_id !== $body['suite_tenant_id'] || $current->customer_id !== $body['customer_id']))) {
+                    if ($current && (int) $body['version'] > (int) $current->version) {
                         $this->invalidate($body['company_id']);
                     }
                 }
@@ -73,6 +74,18 @@ class ExecutiveAuthorityBindingController extends Controller
         foreach ($rows as $row) {
             $row->update(['status' => 'revoked', 'revoked_at' => $row->revoked_at ?? now()]);
             DB::table('support_change_evidence_audit')->insert(['acceptance_id' => $row->id, 'company_id' => $companyId, 'actor_user_id' => null, 'action' => 'authority_revoked', 'reason_code' => 'executive_binding_changed', 'details_digest' => hash('sha256', 'executive_binding_changed'.$row->request_digest), 'created_at' => now()]);
+        }
+        $authorizations = DB::table('evidence_authorizations')->where('company_id', $companyId)->whereNull('consumed_at')->whereIn('status', ['pending', 'accepted'])->lockForUpdate()->get();
+        foreach ($authorizations as $authorization) {
+            DB::table('evidence_authorizations')->where('id', $authorization->id)->update(['status' => 'revoked', 'revoked_at' => $authorization->revoked_at ?? now(), 'updated_at' => now()]);
+            DB::table('evidence_authorization_claims')->where('authorization_id', $authorization->id)->whereNull('consumed_at')->update(['revoked_at' => now(), 'updated_at' => now()]);
+            $previous = DB::table('evidence_authorization_audit')->where('authorization_id', $authorization->id)->orderByDesc('id')->value('event_digest');
+            $occurredAt = now()->utc();
+            $nonce = (string) Str::uuid();
+            $payload = ['action' => 'authority_revoked', 'actor_user_id' => null, 'authorization_id' => $authorization->id, 'company_id' => (int) $authorization->company_id, 'detail_digest' => hash('sha256', 'executive_binding_changed'.$authorization->request_digest), 'event_nonce' => $nonce, 'occurred_at' => $occurredAt->toIso8601String(), 'previous_digest' => $previous, 'profile' => $authorization->profile];
+            ksort($payload);
+            $canonical = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            DB::table('evidence_authorization_audit')->insert(['authorization_id' => $authorization->id, 'company_id' => $authorization->company_id, 'profile' => $authorization->profile, 'actor_user_id' => null, 'action' => 'authority_revoked', 'previous_digest' => $previous, 'event_nonce' => $nonce, 'occurred_at' => $occurredAt, 'canonical_payload' => $canonical, 'event_digest' => hash('sha256', $canonical), 'created_at' => $occurredAt]);
         }
     }
 
