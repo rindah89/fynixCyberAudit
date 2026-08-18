@@ -9,4 +9,7 @@ return [
     'signing_key_id' => env('CYBERAUDIT_CHANGE_SIGNING_KEY_ID'),
     'signing_public_keys_file' => env('CYBERAUDIT_CHANGE_SIGNING_PUBLIC_KEYS_FILE'),
     'ttl_seconds' => (int) env('CYBERAUDIT_CHANGE_ACCEPTANCE_TTL_SECONDS', 600),
+    'retention_years' => (int) env('CYBERAUDIT_EVIDENCE_RETENTION_YEARS', 7),
+    'itsm_authority_url' => env('CYBERAUDIT_ITSM_AUTHORITY_URL', 'https://itsm.fynixhq.com/api/v1'),
+    'itsm_api_key_file' => env('CYBERAUDIT_ITSM_API_KEY_FILE'),
 ];

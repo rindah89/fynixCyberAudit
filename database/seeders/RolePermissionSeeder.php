@@ -49,6 +49,8 @@ class RolePermissionSeeder extends Seeder
             'Manage Users',
             'View Audit Log',
             'Manage Preferences',
+            'review change evidence',
+            'revoke change evidence',
         ];
 
         foreach ($additionalPermissions as $permission) {

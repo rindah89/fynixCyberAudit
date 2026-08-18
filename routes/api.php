@@ -9,6 +9,7 @@ use App\Http\Controllers\API\ChecklistTemplateController;
 use App\Http\Controllers\API\ControlController;
 use App\Http\Controllers\API\DataRequestController;
 use App\Http\Controllers\API\DataRequestResponseController;
+use App\Http\Controllers\API\EvidenceAuthorizationController;
 use App\Http\Controllers\API\ExecutiveAuthorityBindingController;
 use App\Http\Controllers\API\FileAttachmentController;
 use App\Http\Controllers\API\ImplementationController;
@@ -44,6 +45,13 @@ Route::post('/support-change-evidence/{acceptance}/accept', [SupportChangeEviden
 Route::post('/support-change-evidence/{acceptance}/reject', [SupportChangeEvidenceController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.reject');
 Route::post('/support-change-evidence/{acceptance}/revoke', [SupportChangeEvidenceController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.revoke');
 Route::post('/support-change-evidence/{acceptance}/consume', [SupportChangeEvidenceController::class, 'consume'])->middleware('throttle:api')->name('support-change-evidence.consume');
+Route::post('/evidence-authorizations', [EvidenceAuthorizationController::class, 'store'])->middleware('throttle:api')->name('evidence-authorizations.store');
+Route::get('/evidence-authorizations/{authorization}', [EvidenceAuthorizationController::class, 'show'])->middleware('throttle:api')->name('evidence-authorizations.show');
+Route::post('/evidence-authorizations/{authorization}/accept', [EvidenceAuthorizationController::class, 'accept'])->middleware(['auth:sanctum', 'throttle:api'])->name('evidence-authorizations.accept');
+Route::post('/evidence-authorizations/{authorization}/reject', [EvidenceAuthorizationController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api'])->name('evidence-authorizations.reject');
+Route::post('/evidence-authorizations/{authorization}/revoke', [EvidenceAuthorizationController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api'])->name('evidence-authorizations.revoke');
+Route::post('/evidence-authorizations/{authorization}/claims', [EvidenceAuthorizationController::class, 'claim'])->middleware('throttle:api')->name('evidence-authorizations.claim');
+Route::post('/evidence-authorizations/{authorization}/consume', [EvidenceAuthorizationController::class, 'consume'])->middleware('throttle:api')->name('evidence-authorizations.consume');
 
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
