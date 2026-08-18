@@ -1,24 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"; cd "$root"
-test -x scripts/validate-cyberaudit-deploy-authorization.py || {
-  echo "ITSM fynix-cyberaudit/deploy-release profile adapter is unavailable; deployment denied" >&2
-  exit 1
-}
-region="${AWS_REGION:-us-east-2}"; bucket="${RELEASE_BUCKET:-fynix-releases-172670236523-us-east-2}"; instance="${INSTANCE_ID:-i-04578bd74b67567c1}"
-revision="$(git rev-parse HEAD)"; artifact="${TMPDIR:-/tmp}/fynix-cyberaudit-$revision.tar.gz"; archive="s3://$bucket/cyberaudit/$revision.tar.gz"; work="/tmp/fynix-cyberaudit-$revision"
-test -z "$(git status --porcelain --untracked-files=no)"
-test "$revision" = "$(git rev-parse origin/main)"
-test "$(aws sts get-caller-identity --query Account --output text)" = 172670236523
-git ls-files '*.sh' | while read -r script; do bash -n "$script"; done
-php artisan test
-bash tests/deployment_scripts_test.sh
-docker build --label "org.opencontainers.image.revision=$revision" -t "fynix-cyberaudit-release:$revision" .
-git archive --format=tar HEAD | gzip -n >"$artifact"
-local_size="$(wc -c <"$artifact"|tr -d ' ')"; aws s3 cp "$artifact" "$archive" --region "$region" --only-show-errors
-test "$local_size" = "$(aws s3api head-object --bucket "$bucket" --key "cyberaudit/$revision.tar.gz" --region "$region" --query ContentLength --output text)"
-ssm_payload="$(jq -nc --arg a "$archive" --arg w "$work" --arg r "$revision" '{commands:["set -eu","mkdir -p "+($w|@sh),"aws s3 cp "+($a|@sh)+" "+(($w+"/release.tar.gz")|@sh)+" --only-show-errors","tar -xzf "+(($w+"/release.tar.gz")|@sh)+" -C "+($w|@sh),"bash "+(($w+"/deploy/aws-update.sh")|@sh)+" /opt/fynix-suite/cyberaudit "+($r|@sh)]}')"
-command_id="$(aws ssm send-command --region "$region" --instance-ids "$instance" --document-name AWS-RunShellScript --comment "Deploy CyberAudit $revision" --parameters "$ssm_payload" --query Command.CommandId --output text)"
-for _ in $(seq 1 360); do status="$(aws ssm get-command-invocation --region "$region" --command-id "$command_id" --instance-id "$instance" --query Status --output text)"; [[ "$status" == Success ]]&&break; [[ "$status" =~ ^(Failed|Cancelled|TimedOut)$ ]]&&break; sleep 5; done
-[[ "$status" == Success ]]; curl -fsS https://cyberaudit.fynixhq.com/api/suite/ready >/dev/null
-printf 'revision=%s artifact=%s ssm_command_id=%s\n' "$revision" "$archive" "$command_id"
+test -x scripts/validate-cyberaudit-deploy-authorization.py || { echo "ITSM fynix-cyberaudit/deploy-release profile adapter is unavailable; deployment denied" >&2; exit 1; }
+region="${AWS_REGION:-us-east-2}"; account=172670236523; execute=0
+usage(){ echo "usage: $0 --authority-receipt FILE --authority-keys FILE --soak-receipt FILE --soak-evidence FILE --bucket BUCKET --instance i-ID [--execute]" >&2; }
+while (($#)); do case "$1" in --authority-receipt) authority=$2;shift 2;; --authority-keys) keys=$2;shift 2;; --soak-receipt) soak=$2;shift 2;; --soak-evidence) evidence=$2;shift 2;; --bucket) bucket=$2;shift 2;; --instance) instance=$2;shift 2;; --execute) execute=1;shift;; *) usage;exit 2;; esac; done
+: "${authority:?}" "${keys:?}" "${soak:?}" "${evidence:?}" "${bucket:?}" "${instance:?}"; [[ "$instance" =~ ^i-[0-9a-f]+$ && "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
+test "$(git branch --show-current)" = main; test -z "$(git status --porcelain)"; git fetch --quiet origin main; revision="$(git rev-parse HEAD)"; test "$revision" = "$(git rev-parse origin/main)"; test "$(aws sts get-caller-identity --query Account --output text)" = "$account"
+php artisan test; bash tests/deployment_scripts_test.sh; docker compose config -q
+work="$(mktemp -d)"; trap 'rm -rf -- "$work"' EXIT; artifact="$(scripts/build-release-bundle.sh "$work")"; artifact_sha="$(sha256sum "$artifact"|cut -d' ' -f1)"; manifest_sha="$(basename "$artifact" .tar.gz|awk -F- '{print $NF}')"
+python3 scripts/validate-cyberaudit-deploy-authorization.py --authority-receipt "$authority" --authority-keys "$keys" --soak-receipt "$soak" --soak-evidence "$evidence" --release "$revision" --artifact-sha256 "$artifact_sha" --manifest-sha256 "$manifest_sha"
+[[ $execute == 1 ]] || { echo "validated dry run; pass --execute only with release-manager approval"; exit 0; }
+key="cyberaudit/releases/$revision/$artifact_sha.tar.gz"; uri="s3://$bucket/$key"; aws s3api head-object --region "$region" --bucket "$bucket" --key "$key" >/dev/null 2>&1 && { echo "immutable release key already exists" >&2; exit 1; }; aws s3 cp "$artifact" "$uri" --region "$region" --only-show-errors --metadata "sha256=$artifact_sha,revision=$revision"; test "$(aws s3api head-object --region "$region" --bucket "$bucket" --key "$key" --query Metadata.sha256 --output text)" = "$artifact_sha"
+payload="$(jq -nc --arg u "$uri" --arg s "$artifact_sha" --arg r "$revision" '{commands:["set -eu","work=$(mktemp -d)","trap '\''rm -rf -- $work'\'' EXIT","aws s3 cp "+($u|@sh)+" $work/release.tar.gz --only-show-errors","test $(sha256sum $work/release.tar.gz|cut -d '\'' '\'' -f1) = "+($s|@sh),"mkdir $work/bundle","tar -xzf $work/release.tar.gz -C $work/bundle --no-same-owner","tar -xf $work/bundle/source.tar -C $work/bundle --no-same-owner","bash $work/bundle/source/deploy/aws-update.sh $work/bundle /opt/fynix-suite/cyberaudit "+($r|@sh)]}')"; command_id="$(aws ssm send-command --region "$region" --instance-ids "$instance" --document-name AWS-RunShellScript --comment "CyberAudit $revision" --parameters "$payload" --query Command.CommandId --output text)"; aws ssm wait command-executed --region "$region" --command-id "$command_id" --instance-id "$instance"; aws ssm get-command-invocation --region "$region" --command-id "$command_id" --instance-id "$instance" >/dev/null
+curl -fsS --max-time 20 https://cyberaudit.fynixhq.com/api/suite/ready | jq -e --arg r "$revision" '.status=="ok" and .release_sha==$r' >/dev/null; printf 'release=%s artifact_sha256=%s ssm_command_id=%s\n' "$revision" "$artifact_sha" "$command_id"
