@@ -63,13 +63,15 @@ class EvidenceAuthorizationMysqlHttpTest extends TestCase
         }
         $resultDirectory = sys_get_temp_dir().'/evidence-http-'.Str::uuid();
         mkdir($resultDirectory, 0700);
+        $claimNonce = (string) Str::uuid();
+        $claimToken = str_repeat('c', 64);
         $children = [];
         for ($index = 0; $index < 8; $index++) {
             $pid = pcntl_fork();
             if ($pid === 0) {
                 DB::disconnect();
                 DB::reconnect();
-                $payload = ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']];
+                $payload = ['purpose' => 'deploy', 'nonce' => $claimNonce, 'ttl_seconds' => 600, 'request_digest' => $body['request_digest'], 'claim_token' => $claimToken];
                 $httpRequest = HttpRequest::create("/api/evidence-authorizations/$id/claims", 'POST', [], [], [], [
                     'HTTP_AUTHORIZATION' => 'Bearer '.$token,
                     'HTTP_ACCEPT' => 'application/json',
@@ -89,9 +91,12 @@ class EvidenceAuthorizationMysqlHttpTest extends TestCase
         DB::reconnect();
         $results = collect(glob("$resultDirectory/*.json"))->map(fn (string $file): array => json_decode(file_get_contents($file), true, flags: JSON_THROW_ON_ERROR));
         $this->assertCount(1, $results->where('status', 201));
-        $this->assertCount(7, $results->where('status', 409));
+        $this->assertCount(7, $results->where('status', 200));
         $claim = $results->firstWhere('status', 201)['body'];
-        $consume = ['purpose' => 'deploy', 'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'], 'claim_token' => $claim['claim_token']];
+        foreach ($results as $result) {
+            $this->assertSame($claim, $result['body']);
+        }
+        $consume = ['purpose' => 'deploy', 'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'], 'claim_token' => $claimToken];
         $first = $this->withToken($token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertOk()->json();
         $second = $this->withToken($token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertOk()->json();
         $this->assertEquals($first, $second);

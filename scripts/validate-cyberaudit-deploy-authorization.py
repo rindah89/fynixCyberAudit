@@ -15,6 +15,8 @@ def load(path):
  try: return json.loads(locked(path))
  except (ValueError,OSError) as e: raise Denied("JSON file invalid") from e
 def digest(v): return hashlib.sha256(canonical(v).encode()).hexdigest()
+def claim_token(secret,origin,authorization_id,nonce,subject_digest):
+ return hmac.new(secret.encode(),f"{origin}:{authorization_id}:{nonce}:{subject_digest}".encode(),hashlib.sha256).hexdigest()
 def request(binding):
  fixed={"contract_version":"fynix-change-authorization/v2","profile":PROFILE,"producer":"fynix-cyberaudit-release","target":"fynix-cyberaudit","environment":"production","operation":"deploy-release","rollback_compatible":True}
  body={**fixed,**binding}; body["binding_digest"]=digest(body); validate_request(body); return body
@@ -104,9 +106,10 @@ def verify_cyber(r,keyset,expected):
  authority={"authority":"executive-hq","company_id":r["company_id"],"customer_id":r["customer_id"],"suite_tenant_id":r["suite_tenant_id"],"verified_at":r["authority_binding_verified_at"],"version":r["authority_binding_version"]}
  if r.get("authority")!="executive-hq" or r.get("authority_binding_digest")!=digest(authority) or not requested<=reviewed<=observed<=issued<=consumed<=now+timedelta(minutes=5) or authority_verified>now+timedelta(minutes=5) or not consumed<expires<=issued+timedelta(seconds=600): raise Denied("CyberAudit evidence chronology invalid")
  return r
-def cyber_status(row,expected,authorization_id,require_accepted=True):
+def cyber_status(row,expected,authorization_id,require_accepted=True,allow_consumed=False):
  fields={"id","contract_version","profile","request_id","request_digest","status","expires_at","revoked_at","consumed_at","retention_until"}
- if set(row)!=fields or row.get("id")!=authorization_id or row.get("contract_version")!=expected["contract_version"] or row.get("profile")!=expected["profile"] or row.get("request_id")!=expected["request_id"] or row.get("request_digest")!=expected["request_digest"] or row.get("revoked_at") is not None or row.get("consumed_at") is not None: raise Denied("CyberAudit authorization status invalid")
+ if set(row)!=fields or row.get("id")!=authorization_id or row.get("contract_version")!=expected["contract_version"] or row.get("profile")!=expected["profile"] or row.get("request_id")!=expected["request_id"] or row.get("request_digest")!=expected["request_digest"] or row.get("revoked_at") is not None or (row.get("consumed_at") is not None and not allow_consumed): raise Denied("CyberAudit authorization status invalid")
+ if row.get("consumed_at") is not None: when(row["consumed_at"],"Cyber consumed")
  if require_accepted and (row.get("status")!="accepted" or when(row["expires_at"],"Cyber authorization expiry")<=datetime.now(timezone.utc)): raise Denied("CyberAudit authorization is not accepted/current")
  return row
 def verify_receipt(r,b,operation_id,keyset,change_id):
@@ -124,21 +127,21 @@ def verify_receipt(r,b,operation_id,keyset,change_id):
 def main():
  p=argparse.ArgumentParser(); p.add_argument("action",choices=("request","status","consume")); p.add_argument("--binding",required=True); p.add_argument("--api-key-file",required=True); p.add_argument("--authorization-id",type=int); p.add_argument("--operation-id"); p.add_argument("--nonce"); p.add_argument("--itsm-keys"); p.add_argument("--cyber-request"); p.add_argument("--cyber-api-key-file"); p.add_argument("--cyber-authorization-id",type=int); p.add_argument("--cyber-nonce"); p.add_argument("--cyber-keys"); a=p.parse_args()
  try:
-  body=request(load(a.binding)); call=client(locked(a.api_key_file,4096).strip())
+  body=request(load(a.binding)); itsm_token=locked(a.api_key_file,4096).strip(); call=client(itsm_token)
   if a.action=="request": out=public(call("POST","/change-authorizations",body),body)
   elif a.action=="status": out=public(call("GET",f"/change-authorizations/{a.authorization_id}"),body)
   else:
    if not all((a.authorization_id,a.operation_id,a.nonce,a.itsm_keys,a.cyber_request,a.cyber_api_key_file,a.cyber_authorization_id,a.cyber_nonce,a.cyber_keys)): raise Denied("consume arguments incomplete")
-   uuid.UUID(a.operation_id); uuid.UUID(a.nonce); uuid.UUID(a.cyber_nonce); row=public(call("GET",f"/change-authorizations/{a.authorization_id}"),body); expected=verify_cyber_request(load(a.cyber_request),body,row,a.authorization_id,a.operation_id); ccall=cyber_client(locked(a.cyber_api_key_file,4096).strip()); cyber_status(ccall("GET",f"/evidence-authorizations/{a.cyber_authorization_id}"),expected,a.cyber_authorization_id)
-   claim=call("POST",f"/change-authorizations/{a.authorization_id}/claims",{"purpose":"deploy","nonce":a.nonce,"ttl_seconds":600,"binding_digest":body["binding_digest"]}); token=claim.get("claim_token")
-   if set(claim)!={"authorization_id","purpose","approval_revision","nonce","issued_at","expires_at","claim_token"} or claim.get("authorization_id")!=a.authorization_id or claim.get("purpose")!="deploy" or claim.get("nonce")!=a.nonce or not re.fullmatch(r"[a-f0-9]{64}",str(token)): raise Denied("ITSM claim invalid")
+   uuid.UUID(a.operation_id); uuid.UUID(a.nonce); uuid.UUID(a.cyber_nonce); row=public(call("GET",f"/change-authorizations/{a.authorization_id}"),body); expected=verify_cyber_request(load(a.cyber_request),body,row,a.authorization_id,a.operation_id); cyber_token=locked(a.cyber_api_key_file,4096).strip(); ccall=cyber_client(cyber_token); cyber_status(ccall("GET",f"/evidence-authorizations/{a.cyber_authorization_id}"),expected,a.cyber_authorization_id,allow_consumed=True)
+   token=claim_token(itsm_token,"fynix-itsm-claim/v2",a.authorization_id,a.nonce,body["binding_digest"]); claim=call("POST",f"/change-authorizations/{a.authorization_id}/claims",{"purpose":"deploy","nonce":a.nonce,"ttl_seconds":600,"binding_digest":body["binding_digest"],"claim_token":token})
+   if set(claim)!={"authorization_id","purpose","approval_revision","nonce","issued_at","expires_at"} or claim.get("authorization_id")!=a.authorization_id or claim.get("purpose")!="deploy" or claim.get("nonce")!=a.nonce: raise Denied("ITSM claim invalid")
    issued=when(claim["issued_at"],"claim issued"); expires=when(claim["expires_at"],"claim expiry")
-   if not issued<=datetime.now(timezone.utc)+timedelta(minutes=5) or not issued<expires<=issued+timedelta(seconds=600): raise Denied("ITSM claim chronology invalid")
+   if not issued<=datetime.now(timezone.utc)+timedelta(minutes=5) or not datetime.now(timezone.utc)<expires<=issued+timedelta(seconds=600): raise Denied("ITSM claim chronology invalid")
    receipt=call("POST",f"/change-authorizations/{a.authorization_id}/consume",{"purpose":"deploy","operation_id":a.operation_id,"binding_digest":body["binding_digest"],"claim_token":token}); itsm_receipt=verify_receipt(receipt,body,a.operation_id,keys(a.itsm_keys),row["change_id"])
-   cclaim=ccall("POST",f"/evidence-authorizations/{a.cyber_authorization_id}/claims",{"purpose":"deploy","nonce":a.cyber_nonce,"ttl_seconds":600,"request_digest":expected["request_digest"]}); ctoken=cclaim.get("claim_token")
-   if set(cclaim)!={"authorization_id","purpose","nonce","issued_at","expires_at","claim_token"} or cclaim.get("authorization_id")!=a.cyber_authorization_id or cclaim.get("nonce")!=a.cyber_nonce or not re.fullmatch(r"[a-f0-9]{64}",str(ctoken)): raise Denied("CyberAudit claim invalid")
+   ctoken=claim_token(cyber_token,"fynix-cyberaudit-claim/v3",a.cyber_authorization_id,a.cyber_nonce,expected["request_digest"]); cclaim=ccall("POST",f"/evidence-authorizations/{a.cyber_authorization_id}/claims",{"purpose":"deploy","nonce":a.cyber_nonce,"ttl_seconds":600,"request_digest":expected["request_digest"],"claim_token":ctoken})
+   if set(cclaim)!={"authorization_id","purpose","nonce","issued_at","expires_at"} or cclaim.get("authorization_id")!=a.cyber_authorization_id or cclaim.get("nonce")!=a.cyber_nonce: raise Denied("CyberAudit claim invalid")
    ci=when(cclaim["issued_at"],"Cyber claim issued"); ce=when(cclaim["expires_at"],"Cyber claim expiry")
-   if not ci<=datetime.now(timezone.utc)+timedelta(minutes=5) or not ci<ce<=ci+timedelta(seconds=600): raise Denied("CyberAudit claim chronology invalid")
+   if not ci<=datetime.now(timezone.utc)+timedelta(minutes=5) or not datetime.now(timezone.utc)<ce<=ci+timedelta(seconds=600): raise Denied("CyberAudit claim chronology invalid")
    cyber_receipt=verify_cyber(ccall("POST",f"/evidence-authorizations/{a.cyber_authorization_id}/consume",{"purpose":"deploy","operation_id":a.operation_id,"request_digest":expected["request_digest"],"claim_token":ctoken}),keys(a.cyber_keys),expected); out={"itsm":itsm_receipt,"cyberaudit":cyber_receipt}
   print(canonical(out)); return 0
  except (Denied,OSError,ValueError,TypeError,subprocess.SubprocessError) as e: print("cyberaudit-deploy-authorization: "+str(e),file=os.sys.stderr); return 2

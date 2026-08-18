@@ -8,6 +8,10 @@ def binding():
 def cyber_request(body,row,auth_id,op):
  v={k:x for k,x in body.items() if k not in {"contract_version","binding_digest"}};v.update({"contract_version":"fynix-cyberaudit-evidence-authorization-request/v3","purpose":"deploy","operation_id":op,"policy_version":"fynix-production-deploy/v2","itsm_change_id":row["change_id"],"itsm_authorization_id":auth_id,"itsm_approval_revision":row["approval_revision"],"itsm_binding_digest":body["binding_digest"]});v["request_digest"]=M.digest(v);return v
 class AdapterTest(unittest.TestCase):
+ def test_claim_token_is_stable_subject_bound_and_secret_derived(self):
+  first=M.claim_token("s"*32,"fynix-itsm-claim/v2",81,"10000000-0000-4000-8000-000000000001","a"*64)
+  self.assertEqual(first,M.claim_token("s"*32,"fynix-itsm-claim/v2",81,"10000000-0000-4000-8000-000000000001","a"*64));self.assertRegex(first,r"^[a-f0-9]{64}$")
+  self.assertNotEqual(first,M.claim_token("s"*32,"fynix-itsm-claim/v2",81,"20000000-0000-4000-8000-000000000001","a"*64))
  def test_closed_request_binds_full_release_and_rollback_tuple(self):
   b=M.request(binding()); self.assertEqual(b["profile"],M.PROFILE); self.assertEqual(b["binding_digest"],M.digest({k:v for k,v in b.items() if k!="binding_digest"}))
   bad=dict(binding()); bad["rollback_ref"]="fynix-release:wrong"
@@ -29,6 +33,11 @@ class AdapterTest(unittest.TestCase):
   now=datetime.now(timezone.utc); b=M.request(binding()); row={**b,"id":1,"change_id":2,"policy_version":"fynix-production-deploy/v2","approval_revision":0,"revoked":False,"created_at":now.isoformat(),"expires_at":(now+timedelta(hours=1)).isoformat()}; M.public(row,b)
   row["extra"]=True
   with self.assertRaisesRegex(M.Denied,"schema"): M.public(row,b)
+ def test_consumed_cyber_status_is_accepted_only_for_exact_recovery(self):
+  now=datetime.now(timezone.utc);expected={"contract_version":"fynix-cyberaudit-evidence-authorization-request/v3","profile":M.PROFILE,"request_id":str(uuid.uuid4()),"request_digest":"a"*64}
+  row={"id":9,**expected,"status":"accepted","expires_at":(now+timedelta(minutes=5)).isoformat(),"revoked_at":None,"consumed_at":now.isoformat(),"retention_until":(now+timedelta(days=1)).isoformat()}
+  with self.assertRaisesRegex(M.Denied,"status"): M.cyber_status(row,expected,9)
+  self.assertEqual(row,M.cyber_status(row,expected,9,allow_consumed=True))
  def test_timestamp_parser_rejects_naive_and_malformed(self):
   for value in (None,"nonsense","2026-01-01T00:00:00"):
    with self.assertRaises(M.Denied): M.when(value,"test")

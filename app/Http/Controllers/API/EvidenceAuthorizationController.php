@@ -103,14 +103,28 @@ class EvidenceAuthorizationController extends Controller
             return $this->guardedTransaction($authorization, function () use ($body, $authorization): JsonResponse {
                 $locked = EvidenceAuthorization::lockForUpdate()->findOrFail($authorization->id);
                 $this->current($locked);
-                abort_unless($locked->status === 'accepted' && ! $locked->consumed_at && hash_equals($locked->request_digest, (string) $body['request_digest']), 409);
-                abort_if(DB::table('evidence_authorization_claims')->where('authorization_id', $locked->id)->exists(), 409, 'A claim has already been issued.');
-                $token = bin2hex(random_bytes(32));
+                abort_unless(hash_equals($locked->request_digest, (string) $body['request_digest']), 409);
+                $existing = DB::table('evidence_authorization_claims')->where('authorization_id', $locked->id)->lockForUpdate()->first();
+                $recoverable = isset($body['claim_token']);
+                if ($existing && $recoverable) {
+                    $same = hash_equals($existing->nonce, $body['nonce'])
+                        && hash_equals($existing->token_digest, hash('sha256', $body['claim_token']))
+                        && ! $existing->revoked_at
+                        && (int) abs(CarbonImmutable::parse($existing->expires_at)->diffInSeconds(CarbonImmutable::parse($existing->issued_at), false)) === $body['ttl_seconds'];
+                    abort_unless($same, 409, 'A claim has already been issued with different claim material.');
+
+                    return response()->json($this->claimMetadata($locked->id, $existing->nonce, $existing->issued_at, $existing->expires_at));
+                }
+                abort_if($existing, 409, 'A claim has already been issued.');
+                abort_unless($locked->status === 'accepted' && ! $locked->consumed_at, 409);
+                $claimToken = $recoverable ? $body['claim_token'] : bin2hex(random_bytes(32));
                 $issued = now();
-                DB::table('evidence_authorization_claims')->insert(['authorization_id' => $locked->id, 'nonce' => $body['nonce'], 'token_digest' => hash('sha256', $token), 'issued_at' => $issued, 'expires_at' => $issued->copy()->addSeconds($body['ttl_seconds']), 'created_at' => $issued, 'updated_at' => $issued]);
+                DB::table('evidence_authorization_claims')->insert(['authorization_id' => $locked->id, 'nonce' => $body['nonce'], 'token_digest' => hash('sha256', $claimToken), 'issued_at' => $issued, 'expires_at' => $issued->copy()->addSeconds($body['ttl_seconds']), 'created_at' => $issued, 'updated_at' => $issued]);
                 $this->audit($locked, 'claimed', null, hash('sha256', $body['nonce']));
 
-                return response()->json(['authorization_id' => $locked->id, 'purpose' => 'deploy', 'nonce' => $body['nonce'], 'issued_at' => $issued->toIso8601String(), 'expires_at' => $issued->copy()->addSeconds($body['ttl_seconds'])->toIso8601String(), 'claim_token' => $token], 201);
+                $metadata = $this->claimMetadata($locked->id, $body['nonce'], $issued, $issued->copy()->addSeconds($body['ttl_seconds']));
+
+                return response()->json($recoverable ? $metadata : [...$metadata, 'claim_token' => $claimToken], 201);
             }, 3);
         } catch (QueryException $exception) {
             if (! $this->isDuplicateKey($exception)) {
@@ -118,6 +132,17 @@ class EvidenceAuthorizationController extends Controller
             }
             abort(409, 'A claim has already been issued.');
         }
+    }
+
+    private function claimMetadata(int $authorizationId, string $nonce, mixed $issuedAt, mixed $expiresAt): array
+    {
+        return [
+            'authorization_id' => $authorizationId,
+            'purpose' => 'deploy',
+            'nonce' => $nonce,
+            'issued_at' => CarbonImmutable::parse($issuedAt)->toIso8601String(),
+            'expires_at' => CarbonImmutable::parse($expiresAt)->toIso8601String(),
+        ];
     }
 
     public function consume(ConsumeEvidenceAuthorizationRequest $request, EvidenceAuthorization $authorization): JsonResponse

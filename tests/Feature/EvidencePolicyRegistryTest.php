@@ -150,20 +150,29 @@ class EvidencePolicyRegistryTest extends TestCase
         $peerToken = 'profile-entitled-peer-token-0000000000000001';
         DB::table('evidence_requester_keys')->insert(['key_id' => 'machine-peer', 'token_digest' => hash('sha256', $peerToken), 'company_id' => 1, 'profile' => $body['profile'], 'active' => 1, 'created_at' => now(), 'updated_at' => now()]);
         $this->withToken($peerToken)->getJson("/api/evidence-authorizations/$id")->assertForbidden();
-        $claimBody = ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']];
+        $claimToken = str_repeat('c', 64);
+        $claimBody = ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest'], 'claim_token' => $claimToken];
         $this->withToken($peerToken)->postJson("/api/evidence-authorizations/$id/claims", $claimBody)->assertForbidden();
-        $claim = $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", $claimBody)->assertCreated()->json();
+        $claim = $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", $claimBody)->assertCreated()->assertJsonMissing(['claim_token'])->json();
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", $claimBody)->assertOk()->assertExactJson($claim);
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", [...$claimBody, 'claim_token' => str_repeat('d', 64)])->assertConflict();
         $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", [...$claimBody, 'nonce' => (string) Str::uuid()])->assertConflict();
-        $consume = ['purpose' => 'deploy', 'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'], 'claim_token' => $claim['claim_token']];
+        $consume = ['purpose' => 'deploy', 'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'], 'claim_token' => $claimToken];
         $first = $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertOk()->json();
         $second = $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertOk()->json();
         $this->assertSame($first, $second);
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", $claimBody)->assertOk()->assertExactJson($claim);
         $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/consume", [...$consume, 'claim_token' => str_repeat('0', 64)])->assertConflict();
         $this->assertTrue(sodium_crypto_sign_verify_detached($this->decode($first['signature']), hex2bin($first['receipt_digest']), $this->publicKey));
         $this->assertSame($body['itsm_binding_digest'], $first['itsm_binding_digest']);
         $this->assertSame(7, $first['authority_binding_version']);
         $this->assertSame(1, DB::table('evidence_authorization_audit')->where(['authorization_id' => $id, 'action' => 'consumed'])->count());
         $this->assertDatabaseHas('evidence_authorization_claims', ['authorization_id' => $id]);
+
+        $legacyBody = $this->body();
+        $legacyId = $this->submit($legacyBody)->json('id');
+        $this->actingAs($reviewer)->postJson("/api/evidence-authorizations/$legacyId/accept")->assertOk();
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$legacyId/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $legacyBody['request_digest']])->assertCreated()->assertJsonPath('claim_token', fn ($value) => is_string($value) && preg_match('/^[a-f0-9]{64}$/', $value) === 1);
     }
 
     public function test_expiry_wrong_claim_cross_tenant_and_deletion_fail_closed(): void
@@ -175,11 +184,12 @@ class EvidencePolicyRegistryTest extends TestCase
         $body = $this->body();
         $id = $this->submit($body)->json('id');
         $this->actingAs($reviewer)->postJson("/api/evidence-authorizations/$id/accept")->assertOk();
-        $claim = $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 60, 'request_digest' => $body['request_digest']])->json();
+        $claimToken = str_repeat('e', 64);
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 60, 'request_digest' => $body['request_digest'], 'claim_token' => $claimToken])->assertCreated();
         $consume = ['purpose' => 'deploy', 'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'], 'claim_token' => str_repeat('f', 64)];
         $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertConflict();
         $this->travel(61)->seconds();
-        $consume['claim_token'] = $claim['claim_token'];
+        $consume['claim_token'] = $claimToken;
         $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertConflict();
         $this->travelBack();
         $this->expectException(QueryException::class);
@@ -195,7 +205,7 @@ class EvidencePolicyRegistryTest extends TestCase
         $body = $this->body();
         $id = $this->submit($body)->json('id');
         $this->actingAs($reviewer)->postJson("/api/evidence-authorizations/$id/accept")->assertOk();
-        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']])->assertCreated();
+        $this->withToken($this->token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest'], 'claim_token' => str_repeat('f', 64)])->assertCreated();
         DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 0]);
         $this->assertDatabaseHas('evidence_authorizations', ['id' => $id, 'status' => 'revoked']);
         $this->assertNotNull(DB::table('evidence_authorization_claims')->where('authorization_id', $id)->value('revoked_at'));
