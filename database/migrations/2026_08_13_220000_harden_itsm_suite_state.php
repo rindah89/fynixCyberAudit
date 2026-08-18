@@ -23,9 +23,9 @@ return new class extends Migration
             Schema::create('suite_inbound_high_water', function (Blueprint $table) {
                 $table->id();
                 $table->uuid('local_tenant_id');
-                $table->string('source');
-                $table->string('entity_type');
-                $table->string('entity_id');
+                $table->string('source', 64);
+                $table->string('entity_type', 64);
+                $table->string('entity_id', 255);
                 $table->timestampTz('occurred_at');
                 $table->timestamps();
                 $table->unique(['local_tenant_id', 'source', 'entity_type', 'entity_id'], 'suite_high_water_unique');

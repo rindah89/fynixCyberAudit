@@ -2,6 +2,7 @@
 
 namespace App\Exceptions;
 
+use App\Support\AuthorizationDenialAudit;
 use App\Support\Observability\SentryTransport;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Request;
@@ -37,6 +38,17 @@ class Handler extends ExceptionHandler
                 return response()->json([
                     'error' => $e->getMessage() ?: 'An error occurred',
                 ], $status);
+            }
+        });
+
+        $this->renderable(function (Throwable $e, Request $request) {
+            $status = method_exists($e, 'getStatusCode') ? (int) $e->getStatusCode() : 500;
+            if (in_array($status, [401, 403], true)) {
+                try {
+                    app(AuthorizationDenialAudit::class)->capture($request, $status);
+                } catch (Throwable) {
+                    error_log('authorization_audit phase=persist outcome=failed');
+                }
             }
         });
     }

@@ -1,8 +1,30 @@
 <?php
 
 $secrets = env('SUITE_PPM_WEBHOOK_SECRETS', '');
+$supportSecrets = env('SUITE_SUPPORT_WEBHOOK_SECRETS', '');
 
 return [
+    'support' => [
+        'enabled' => filter_var(env('SUITE_SUPPORT_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'webhook_id' => env('SUITE_SUPPORT_WEBHOOK_ID'),
+        'webhook_secrets' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) $supportSecrets)
+        ))),
+        'remote_tenant_id' => env('SUITE_SUPPORT_REMOTE_TENANT_ID'),
+        'replay_tolerance' => (int) env('SUITE_SUPPORT_REPLAY_TOLERANCE', 300),
+        'ledger_key' => env('SUITE_SUPPORT_LEDGER_KEY'),
+        'integrity_max_age' => (int) env('SUITE_SUPPORT_INTEGRITY_MAX_AGE', 86400),
+        'anchor' => [
+            'enabled' => filter_var(env('SUITE_SUPPORT_ANCHOR_ENABLED', false), FILTER_VALIDATE_BOOL),
+            'bucket' => env('SUITE_SUPPORT_ANCHOR_BUCKET'),
+            'prefix' => trim((string) env('SUITE_SUPPORT_ANCHOR_PREFIX', 'vendor-operation-ledger'), '/'),
+            'key' => env('SUITE_SUPPORT_ANCHOR_KEY'),
+            'retention_days' => (int) env('SUITE_SUPPORT_ANCHOR_RETENTION_DAYS', 2555),
+            'max_age' => (int) env('SUITE_SUPPORT_ANCHOR_MAX_AGE', 129600),
+            'kms_key_id' => env('SUITE_SUPPORT_ANCHOR_KMS_KEY_ID'),
+        ],
+    ],
     'itsm' => [
         'enabled' => filter_var(env('SUITE_ITSM_ENABLED', env('FYNIX_ITSM_ENABLED', false)), FILTER_VALIDATE_BOOL),
         'base_url' => env('SUITE_ITSM_BASE_URL', env('FYNIX_ITSM_BASE_URL')),

@@ -15,6 +15,7 @@ use App\Http\Controllers\API\PolicyController;
 use App\Http\Controllers\API\ProgramController;
 use App\Http\Controllers\API\RiskController;
 use App\Http\Controllers\API\StandardController;
+use App\Http\Controllers\API\SupportRestoreProbeController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
 use App\Suite\SuiteInboundController;
@@ -41,6 +42,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 Route::middleware(['auth:sanctum'])->group(function () {
+
+    Route::post('/support/restore-probe', SupportRestoreProbeController::class);
 
     // RESTful API Resources with full CRUD operations
     Route::apiResource('users', UserController::class);
