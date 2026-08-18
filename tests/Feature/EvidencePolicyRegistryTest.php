@@ -259,6 +259,37 @@ class EvidencePolicyRegistryTest extends TestCase
         $this->assertDatabaseHas('evidence_authorization_audit', ['action' => 'denied', 'reason_code' => 'itsm_binding_denied']);
     }
 
+    public function test_existing_authorization_denials_extend_one_recomputable_chain(): void
+    {
+        $body = $this->body();
+        $id = $this->submit($body)->assertCreated()->json('id');
+
+        $unauthorizedReviewer = User::factory()->create();
+        $this->actingAs($unauthorizedReviewer)->postJson("/api/evidence-authorizations/$id/accept")->assertForbidden();
+
+        $peerToken = str_repeat('p', 40);
+        DB::table('evidence_requester_keys')->insert(['key_id' => 'peer-denied', 'token_digest' => hash('sha256', $peerToken), 'company_id' => 1, 'profile' => $body['profile'], 'active' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        $this->withToken($peerToken)->getJson("/api/evidence-authorizations/$id")->assertForbidden();
+
+        $this->currentItsmBody = [...$body, 'itsm_authorization_id' => 999];
+        $this->withToken($this->token)->getJson("/api/evidence-authorizations/$id")->assertForbidden();
+
+        DB::table('executive_authority_bindings')->where('company_id', 1)->update(['version' => 8]);
+        $this->withToken($this->token)->getJson("/api/evidence-authorizations/$id")->assertForbidden();
+
+        $previous = null;
+        $events = DB::table('evidence_authorization_audit')->where('authorization_id', $id)->orderBy('id')->get();
+        $this->assertGreaterThanOrEqual(5, $events->count());
+        foreach ($events as $event) {
+            $payload = json_decode($event->canonical_payload, true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame($previous, $payload['previous_digest']);
+            ksort($payload);
+            $this->assertSame($event->event_digest, hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+            $previous = $event->event_digest;
+        }
+        $this->assertSame(4, $events->where('action', 'denied')->count());
+    }
+
     private function body(string $profile = 'fynix-cyberaudit/deploy-release'): array
     {
         $cyber = $profile === 'fynix-cyberaudit/deploy-release';

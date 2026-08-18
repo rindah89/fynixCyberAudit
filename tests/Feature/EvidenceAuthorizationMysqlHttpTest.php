@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\ChangeEvidence\EvidenceAuthorizationAuditor;
 use App\Models\EvidenceAuthorization;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request as HttpRequest;
@@ -103,6 +104,37 @@ class EvidenceAuthorizationMysqlHttpTest extends TestCase
         $canonicalPayload = json_decode($lifecycleAudit->canonical_payload, true, flags: JSON_THROW_ON_ERROR);
         ksort($canonicalPayload);
         $this->assertSame($lifecycleAudit->event_digest, hash('sha256', json_encode($canonicalPayload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+        $children = [];
+        for ($index = 0; $index < 8; $index++) {
+            $pid = pcntl_fork();
+            if ($pid === 0) {
+                try {
+                    DB::disconnect();
+                    DB::reconnect();
+                    app(EvidenceAuthorizationAuditor::class)->denied('concurrent_denied', ['authorization_id' => $lifecycle->id, 'company_id' => 1, 'profile' => 'fynix-cyberaudit/deploy-release', 'worker' => $index]);
+                    exit(0);
+                } catch (\Throwable) {
+                    exit(2);
+                }
+            }
+            $children[] = $pid;
+        }
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            $this->assertSame(0, pcntl_wexitstatus($status), 'Concurrent audit append escaped transaction retry.');
+        }
+        DB::disconnect();
+        DB::reconnect();
+        $previous = null;
+        $auditEvents = DB::table('evidence_authorization_audit')->where('authorization_id', $lifecycle->id)->orderBy('id')->get();
+        $this->assertCount(9, $auditEvents);
+        foreach ($auditEvents as $event) {
+            $payload = json_decode($event->canonical_payload, true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame($previous, $payload['previous_digest']);
+            ksort($payload);
+            $this->assertSame($event->event_digest, hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+            $previous = $event->event_digest;
+        }
         foreach (glob("$resultDirectory/*.json") as $file) {
             @unlink($file);
         }
