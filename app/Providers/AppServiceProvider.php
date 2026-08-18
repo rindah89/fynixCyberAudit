@@ -21,6 +21,7 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\URL;
@@ -37,6 +38,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('database.default') === 'sqlite') {
+            DB::connection()->getPdo()->sqliteCreateFunction('sha256', static fn (string $value): string => hash('sha256', $value), 1);
+        }
+
         // This event is emitted by the actual Laravel worker loop. A stopped
         // or hung worker therefore cannot be kept healthy by a sibling process.
         Queue::looping(function (): void {

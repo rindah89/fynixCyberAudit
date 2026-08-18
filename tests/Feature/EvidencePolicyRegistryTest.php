@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -221,7 +222,7 @@ class EvidencePolicyRegistryTest extends TestCase
         foreach (['expire', 'rotate', 'delete'] as $index => $mutation) {
             $keyId = "lifecycle-$mutation";
             DB::table('evidence_requester_keys')->insert(['key_id' => $keyId, 'token_digest' => hash('sha256', "token-$mutation"), 'company_id' => 1, 'profile' => 'fynix-cyberaudit/deploy-release', 'active' => 1, 'created_at' => now(), 'updated_at' => now()]);
-            $authorization = EvidenceAuthorization::create(['profile' => 'fynix-cyberaudit/deploy-release', 'company_id' => 1, 'suite_tenant_id' => '00000000-0000-0000-0000-000000000001', 'customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f', 'requester_key_id' => $keyId, 'authority_binding_version' => 7, 'request_id' => (string) Str::uuid(), 'operation_id' => (string) Str::uuid(), 'request_digest' => str_repeat((string) ($index + 1), 64), 'request_json' => ['company_id' => 1], 'status' => 'accepted', 'retention_until' => now()->addYears(7)]);
+            $authorization = EvidenceAuthorization::factory()->create(['company_id' => 1, 'suite_tenant_id' => '00000000-0000-0000-0000-000000000001', 'customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f', 'requester_key_id' => $keyId, 'authority_binding_version' => 7, 'request_digest' => str_repeat((string) ($index + 1), 64), 'request_json' => ['company_id' => 1], 'status' => 'accepted']);
             DB::table('evidence_authorization_claims')->insert(['authorization_id' => $authorization->id, 'nonce' => (string) Str::uuid(), 'token_digest' => hash('sha256', "claim-$mutation"), 'issued_at' => now(), 'expires_at' => now()->addMinutes(5), 'created_at' => now(), 'updated_at' => now()]);
             $query = DB::table('evidence_requester_keys')->where('key_id', $keyId);
             match ($mutation) {
@@ -231,7 +232,31 @@ class EvidencePolicyRegistryTest extends TestCase
             };
             $this->assertDatabaseHas('evidence_authorizations', ['id' => $authorization->id, 'status' => 'revoked']);
             $this->assertNotNull(DB::table('evidence_authorization_claims')->where('authorization_id', $authorization->id)->value('revoked_at'));
+            $this->assertDatabaseHas('evidence_authorization_audit', ['authorization_id' => $authorization->id, 'action' => 'credential_revoked', 'reason_code' => 'key_lifecycle']);
         }
+    }
+
+    public function test_denied_profile_credential_tenant_and_itsm_decisions_are_durably_audited(): void
+    {
+        $unknown = $this->body();
+        $unknown['profile'] = 'unknown/profile';
+        $this->withToken($this->token)->postJson('/api/evidence-authorizations', $unknown)->assertUnprocessable();
+        $this->assertDatabaseHas('evidence_authorization_audit', ['action' => 'denied', 'reason_code' => 'profile_denied']);
+
+        DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 0]);
+        $this->submit($this->body())->assertForbidden();
+        $this->assertDatabaseHas('evidence_authorization_audit', ['action' => 'denied', 'reason_code' => 'credential_denied']);
+        DB::table('evidence_requester_keys')->where('key_id', 'machine-1')->update(['active' => 1]);
+
+        DB::table('executive_authority_bindings')->where('company_id', 1)->update(['customer_id' => (string) Str::uuid()]);
+        $this->submit($this->body())->assertForbidden();
+        $this->assertDatabaseHas('evidence_authorization_audit', ['action' => 'denied', 'reason_code' => 'tenant_authority_denied']);
+        DB::table('executive_authority_bindings')->where('company_id', 1)->update(['customer_id' => '4b982d36-4437-4f19-a51d-709a9ccfae8f']);
+
+        $itsmDenied = $this->body();
+        $this->currentItsmBody = [...$itsmDenied, 'itsm_authorization_id' => 999];
+        $this->withToken($this->token)->postJson('/api/evidence-authorizations', $itsmDenied)->assertForbidden();
+        $this->assertDatabaseHas('evidence_authorization_audit', ['action' => 'denied', 'reason_code' => 'itsm_binding_denied']);
     }
 
     private function body(string $profile = 'fynix-cyberaudit/deploy-release'): array
@@ -282,7 +307,7 @@ class EvidencePolicyRegistryTest extends TestCase
         DB::table('evidence_profile_reviewers')->insert(['user_id' => $user->id, 'company_id' => 1, 'profile' => 'fynix-cyberaudit/deploy-release', 'can_review' => $review, 'can_revoke' => $revoke, 'active' => 1, 'created_at' => now(), 'updated_at' => now()]);
     }
 
-    private function submit(array $body)
+    private function submit(array $body): TestResponse
     {
         $this->currentItsmBody = $body;
 

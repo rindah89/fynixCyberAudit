@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\EvidenceAuthorization;
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Http\Request as HttpRequest;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -54,11 +57,56 @@ class EvidenceAuthorizationMysqlHttpTest extends TestCase
         $created = $this->withToken($token)->postJson('/api/evidence-authorizations', $body)->assertCreated();
         $id = $created->json('id');
         DB::table('evidence_authorizations')->where('id', $id)->update(['status' => 'accepted', 'reviewed_at' => now(), 'expires_at' => now()->addMinutes(10)]);
-        $claim = $this->withToken($token)->postJson("/api/evidence-authorizations/$id/claims", ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']])->assertCreated()->json();
+        if (! extension_loaded('pcntl')) {
+            $this->fail('pcntl is required for the real concurrent HTTP claim test');
+        }
+        $resultDirectory = sys_get_temp_dir().'/evidence-http-'.Str::uuid();
+        mkdir($resultDirectory, 0700);
+        $children = [];
+        for ($index = 0; $index < 8; $index++) {
+            $pid = pcntl_fork();
+            if ($pid === 0) {
+                DB::disconnect();
+                DB::reconnect();
+                $payload = ['purpose' => 'deploy', 'nonce' => (string) Str::uuid(), 'ttl_seconds' => 600, 'request_digest' => $body['request_digest']];
+                $httpRequest = HttpRequest::create("/api/evidence-authorizations/$id/claims", 'POST', [], [], [], [
+                    'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+                    'HTTP_ACCEPT' => 'application/json',
+                    'CONTENT_TYPE' => 'application/json',
+                ], json_encode($payload, JSON_THROW_ON_ERROR));
+                $response = app(Kernel::class)->handle($httpRequest);
+                file_put_contents("$resultDirectory/$index.json", json_encode(['status' => $response->getStatusCode(), 'body' => json_decode($response->getContent(), true)], JSON_THROW_ON_ERROR));
+                exit(0);
+            }
+            $children[] = $pid;
+        }
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            $this->assertSame(0, pcntl_wexitstatus($status), 'Concurrent HTTP worker failed.');
+        }
+        DB::disconnect();
+        DB::reconnect();
+        $results = collect(glob("$resultDirectory/*.json"))->map(fn (string $file): array => json_decode(file_get_contents($file), true, flags: JSON_THROW_ON_ERROR));
+        $this->assertCount(1, $results->where('status', 201));
+        $this->assertCount(7, $results->where('status', 409));
+        $claim = $results->firstWhere('status', 201)['body'];
         $consume = ['purpose' => 'deploy', 'operation_id' => $body['operation_id'], 'request_digest' => $body['request_digest'], 'claim_token' => $claim['claim_token']];
         $first = $this->withToken($token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertOk()->json();
         $second = $this->withToken($token)->postJson("/api/evidence-authorizations/$id/consume", $consume)->assertOk()->json();
         $this->assertEquals($first, $second);
+        DB::table('evidence_requester_keys')->insert(['key_id' => 'mysql-lifecycle', 'token_digest' => hash('sha256', 'mysql-lifecycle-token'), 'company_id' => 1, 'profile' => 'fynix-cyberaudit/deploy-release', 'active' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        $lifecycle = EvidenceAuthorization::factory()->create(['company_id' => 1, 'requester_key_id' => 'mysql-lifecycle', 'authority_binding_version' => 7, 'status' => 'accepted']);
+        DB::table('evidence_requester_keys')->where('key_id', 'mysql-lifecycle')->update(['active' => 0]);
+        $this->assertDatabaseHas('evidence_authorizations', ['id' => $lifecycle->id, 'status' => 'revoked']);
+        $this->assertDatabaseHas('evidence_authorization_audit', ['authorization_id' => $lifecycle->id, 'action' => 'credential_revoked', 'reason_code' => 'key_lifecycle']);
+        $lifecycleAudit = DB::table('evidence_authorization_audit')->where('authorization_id', $lifecycle->id)->first();
+        $canonicalPayload = json_decode($lifecycleAudit->canonical_payload, true, flags: JSON_THROW_ON_ERROR);
+        ksort($canonicalPayload);
+        $this->assertSame($lifecycleAudit->event_digest, hash('sha256', json_encode($canonicalPayload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)));
+        foreach (glob("$resultDirectory/*.json") as $file) {
+            @unlink($file);
+        }
+        @rmdir($resultDirectory);
         @unlink($signing);
         @unlink($public);
         @unlink($itsm);

@@ -2,10 +2,15 @@
 
 namespace App\Models;
 
+use Database\Factories\EvidenceAuthorizationFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class EvidenceAuthorization extends Model
 {
+    /** @use HasFactory<EvidenceAuthorizationFactory> */
+    use HasFactory;
+
     protected $guarded = [];
 
     protected $casts = [

@@ -11,4 +11,3 @@ php artisan migrate --force --path=database/migrations/2024_10_27_170857_create_
 php artisan migrate --force --path=database/migrations/2026_08_18_180000_create_support_change_evidence_acceptances.php
 php artisan migrate --force --path=database/migrations/2026_08_18_230000_create_evidence_policy_registry_tables.php
 vendor/bin/phpunit -c tests/phpunit.mysql.xml tests/Feature/EvidenceAuthorizationMysqlHttpTest.php
-php tests/mysql_evidence_concurrency_test.php
