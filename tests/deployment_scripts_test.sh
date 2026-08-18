@@ -45,6 +45,10 @@ grep -q 'artisan migrate --force' "$root/deploy/aws-update.sh"
 grep -q 'artisan fynix:suite-preflight' "$root/deploy/aws-update.sh"
 grep -q 'previous_artifact' "$root/deploy/aws-update.sh"
 grep -q 'prior_worker' "$root/deploy/aws-update.sh"
+grep -q 'os.replace(tmp, path)' "$root/deploy/aws-update.sh"
+grep -q 'os.fsync(directory)' "$root/deploy/aws-update.sh"
+grep -q 'get-object.*version-id' "$root/scripts/deploy-aws-local.sh"
+grep -q 'incoming/.artifact-sha256' "$root/deploy/aws-update.sh"
 if grep -q -- '--pull' "$root/scripts/build-release-bundle.sh"; then exit 1; fi
 if grep -q 'compose .*--build' "$root/deploy/aws-update.sh"; then exit 1; fi
 grep -q 'image_sha256' "$root/scripts/build-release-bundle.sh"
