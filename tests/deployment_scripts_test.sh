@@ -3,6 +3,13 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 for script in "$root"/deploy/*.sh; do bash -n "$script"; done
+post_restore_verify="$root/deploy/support-post-restore-verify.sh"
+grep -q 'fynix:vendor-ledger-verify' "$post_restore_verify"
+grep -q 'api/support/restore-probe' "$post_restore_verify"
+grep -q 'O_NOFOLLOW' "$post_restore_verify"
+for check in schema restored_data workers public_route authenticated_rw probe_cleanup; do
+  grep -q "\"$check\":True" "$post_restore_verify"
+done
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 bin="$tmp/bin"; mkdir -p "$bin"

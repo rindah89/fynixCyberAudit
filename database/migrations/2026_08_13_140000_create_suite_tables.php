@@ -11,12 +11,12 @@ return new class extends Migration
         if (! Schema::hasTable('suite_entity_links')) {
             Schema::create('suite_entity_links', function (Blueprint $table) {
             $table->id();
-            $table->string('local_type');
+            $table->string('local_type', 64);
             $table->unsignedBigInteger('local_id');
-            $table->string('system');
-            $table->string('entity_type');
-            $table->string('entity_id');
-            $table->string('relation')->default('derived_from');
+            $table->string('system', 32);
+            $table->string('entity_type', 64);
+            $table->string('entity_id', 255);
+            $table->string('relation', 64)->default('derived_from');
             $table->string('remote_status')->nullable();
             $table->string('remote_url')->nullable();
             $table->json('meta')->nullable();

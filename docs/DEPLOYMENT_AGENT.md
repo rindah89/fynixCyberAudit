@@ -46,6 +46,7 @@ The production recovery objectives are: database RPO **1 hour**; files and confi
 - Roll back code by deploying the prior SHA artifact through its `deploy/aws-update.sh /opt/fynix-suite/cyberaudit <sha>`. Laravel migrations must be additive/backward-compatible; never drop suite audit/link state in a routine rollback.
 - Use `deploy/backup.sh` and `deploy/restore.sh` for a consistent MySQL plus application-storage recovery set. Provider snapshots may supplement it. After restore, verify migrations, `fynix:suite-preflight`, `/api/suite/ready`, evidence access, and an authenticated audit read.
 - Use `deploy/rollback.sh <extracted-release> <deploy-dir> <sha>` for a previous immutable release. Perform and record a restore drill at least quarterly.
+- CyberAudit authorization denials are appended directly to the existing hash-chained vendor ledger. Enable `CYBERAUDIT_AUTHORIZATION_AUDIT_ENABLED` only with a unique 32-byte fingerprint key and the existing secure `SUITE_SUPPORT_LEDGER_KEY`. Failed ledger writes spool beneath persistent `storage/app`, are replayed every minute, are included by the governed backup, and make `/api/suite/ready` fail when stale or malformed. Never store bodies, query strings, raw bearer credentials, email addresses, or unbounded route paths.
 
 
 ## Required handoff

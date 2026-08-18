@@ -3,6 +3,7 @@
 namespace App\Http;
 
 use App\Http\Middleware\Authenticate;
+use App\Http\Middleware\CaptureAuthorizationDenials;
 use App\Http\Middleware\CheckPasswordReset;
 use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\McpEnabled;
@@ -43,6 +44,7 @@ class Kernel extends HttpKernel
      * @var array<int, class-string|string>
      */
     protected $middleware = [
+        CaptureAuthorizationDenials::class,
         StripHostOverrideHeaders::class,
         RequestCorrelation::class,
         TrustHosts::class,

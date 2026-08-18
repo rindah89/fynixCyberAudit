@@ -12,8 +12,17 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
+        $schedule->command('fynix:authorization-audit-drain --once')->everyMinute()->withoutOverlapping();
         // Generate recurring checklists daily at 6:00 AM
         $schedule->command('checklists:generate-recurring')->dailyAt('06:00');
+        $schedule->command('fynix:vendor-ledger-verify')
+            ->hourly()
+            ->withoutOverlapping()
+            ->when(fn (): bool => (bool) config('suite.support.enabled'));
+        $schedule->command('fynix:vendor-ledger-anchor')
+            ->dailyAt('00:30')
+            ->withoutOverlapping()
+            ->when(fn (): bool => (bool) config('suite.support.anchor.enabled'));
     }
 
     /**
