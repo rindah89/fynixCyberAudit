@@ -23,9 +23,9 @@ stop_line="$(grep -n ' stop app' "$log" | cut -d: -f1)"
 copy_line="$(grep -n ' cp .*storage-app' "$log" | tail -1 | cut -d: -f1)"
 start_line="$(grep -n ' start app' "$log" | cut -d: -f1)"
 [[ "$stop_line" -lt "$copy_line" && "$copy_line" -lt "$start_line" ]]
-release="$tmp/release"; mkdir -p "$release/deploy"
-printf '#!/bin/sh\nprintf "rollback %%s\\n" "$*" >> "%s"\n' "$log" > "$release/deploy/aws-update.sh"
-chmod +x "$release/deploy/aws-update.sh"
+release="$tmp/release"; mkdir -p "$release/source/deploy"
+printf '#!/bin/sh\nprintf "rollback %%s\\n" "$*" >> "%s"\n' "$log" > "$release/source/deploy/aws-update.sh"
+chmod +x "$release/source/deploy/aws-update.sh"
 "$root/deploy/rollback.sh" "$release" "$tmp/target" deadbeef
 grep -q 'rollback .*deadbeef' "$log"
 if "$root/deploy/restore.sh" "$deploy" "$archive" WRONG 2>/dev/null; then exit 1; fi
@@ -35,3 +35,11 @@ grep -q 'materialize-change-evidence-secrets' "$root/deploy/install-change-evide
 grep -q 'findmnt.*tmpfs' "$root/deploy/materialize-change-evidence-secrets.sh"
 grep -q 'signing_private_key' "$root/deploy/materialize-change-evidence-secrets.sh"
 grep -q '/run/fynix-cyberaudit' "$root/docker-compose.yml"
+grep -q 'Wants=network-online.target' "$root/deploy/fynix-cyberaudit-secrets.service"
+grep -q 'install -m 0400' "$root/deploy/materialize-change-evidence-secrets.sh"
+grep -q 'docker load' "$root/deploy/aws-update.sh"
+grep -q -- '--no-build' "$root/deploy/aws-update.sh"
+grep -q 'artisan migrate --force' "$root/deploy/aws-update.sh"
+grep -q 'artisan fynix:suite-preflight' "$root/deploy/aws-update.sh"
+if grep -q 'compose .*--build' "$root/deploy/aws-update.sh"; then exit 1; fi
+grep -q 'image_sha256' "$root/scripts/build-release-bundle.sh"

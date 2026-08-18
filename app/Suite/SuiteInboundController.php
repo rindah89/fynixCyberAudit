@@ -76,6 +76,7 @@ class SuiteInboundController
         $missing = config('suite.itsm.enabled') ? $gateway->missingConfiguration() : [];
         return response()->json([
             'status' => $missing === [] ? 'ok' : 'not_ready',
+            'release_sha' => env('FYNIX_RELEASE_SHA', 'development'),
             'ppm' => (bool) config('suite.ppm.enabled'),
             'itsm' => (bool) config('suite.itsm.enabled'),
             'last_inbound_outcome' => SuiteInboundDelivery::query()->where('source', 'itsm')->latest('id')->value('outcome'),

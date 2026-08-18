@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"; cd "$root"
+test -x scripts/validate-cyberaudit-deploy-authorization.py || {
+  echo "ITSM fynix-cyberaudit/deploy-release profile adapter is unavailable; deployment denied" >&2
+  exit 1
+}
 region="${AWS_REGION:-us-east-2}"; bucket="${RELEASE_BUCKET:-fynix-releases-172670236523-us-east-2}"; instance="${INSTANCE_ID:-i-04578bd74b67567c1}"
 revision="$(git rev-parse HEAD)"; artifact="${TMPDIR:-/tmp}/fynix-cyberaudit-$revision.tar.gz"; archive="s3://$bucket/cyberaudit/$revision.tar.gz"; work="/tmp/fynix-cyberaudit-$revision"
 test -z "$(git status --porcelain --untracked-files=no)"

@@ -19,7 +19,7 @@ services:
 
   app:
     build: .
-    image: fynixcyberaudit
+    image: ${CYBERAUDIT_IMAGE:-fynixcyberaudit}
     restart: unless-stopped
     depends_on:
       db:
@@ -88,12 +88,13 @@ services:
       CYBERAUDIT_CHANGE_SIGNING_PUBLIC_KEYS_FILE: /run/fynix-cyberaudit/change-signing-public-keys.json
       CYBERAUDIT_EXECUTIVE_ORIGIN: ${CYBERAUDIT_EXECUTIVE_ORIGIN:-fynix-executive}
       CYBERAUDIT_EXECUTIVE_PUBLIC_KEYS_FILE: /run/fynix-cyberaudit/executive-public-keys.json
+      FYNIX_RELEASE_SHA: ${FYNIX_RELEASE_SHA:-development}
     volumes:
       - /run/fynix-cyberaudit:/run/fynix-cyberaudit:ro
 
   worker:
     build: .
-    image: fynixcyberaudit
+    image: ${CYBERAUDIT_IMAGE:-fynixcyberaudit}
     restart: unless-stopped
     command: php artisan queue:work --sleep=2 --tries=6 --timeout=300 --max-time=3600
     env_file:
