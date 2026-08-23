@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\SsoController;
 use App\Http\Controllers\ControlTestExecutionEvidenceController;
 use App\Http\Controllers\GovernanceIssueClosureEvidenceController;
 use App\Http\Controllers\MediaProxyController;
+use App\Http\Controllers\RecoveryExerciseEvidenceController;
 use App\Http\Controllers\SurveyAttachmentController;
 use App\Http\Controllers\TrustCenterController;
 use App\Http\Controllers\Vendor\VendorAuthController;
@@ -49,6 +50,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('ai-monitoring-review-evidence.download');
     Route::get('/app/vendor-risk-review-evidence/{evidence}/download', [VendorRiskReviewEvidenceController::class, 'download'])
         ->name('vendor-risk-review-evidence.download');
+    Route::get('/app/recovery-exercise-evidence/{evidence}/download', [RecoveryExerciseEvidenceController::class, 'download'])
+        ->name('recovery-exercise-evidence.download');
 
     // Media proxy route for serving private S3/cloud storage files
     Route::get('/media/{path}', [MediaProxyController::class, 'show'])

@@ -9,8 +9,11 @@ use App\Models\RecoveryExercise;
 use App\Models\RecoveryPlan;
 use App\Models\User;
 use App\Services\GovernanceIssueLifecycleManager;
+use App\Services\GovernedEvidenceSnapshotter;
 use App\Support\Enterprise;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ResilienceManager
@@ -52,48 +55,70 @@ class ResilienceManager
     public function completeExercise(RecoveryExercise $exercise, User $actor, array $data): RecoveryExercise
     {
         $this->assertCanManage($actor);
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-        return DB::transaction(function () use ($exercise, $actor, $data) {
-            $locked = RecoveryExercise::query()->lockForUpdate()->findOrFail($exercise->id);
-            if ($locked->completed_at) {
-                throw ValidationException::withMessages(['recovery_exercise_id' => 'Completed exercises cannot be completed again.']);
-            }
-            $plan = RecoveryPlan::query()->with('businessService')->lockForUpdate()->findOrFail($locked->recovery_plan_id);
-            $bia = $plan->businessService->latestApprovedImpactAnalysis()->lockForUpdate()->first();
-            if (! $bia) {
-                throw ValidationException::withMessages(['recovery_plan_id' => 'An approved impact analysis is required before exercise completion.']);
-            }
+        try {
+            return DB::transaction(function () use ($exercise, $actor, $data, $snapshotter, $snapshotBatch, &$retainedCopies) {
+                $locked = RecoveryExercise::query()->lockForUpdate()->findOrFail($exercise->id);
+                $this->assertCanManage($actor);
+                if ($locked->completed_at) {
+                    throw ValidationException::withMessages(['recovery_exercise_id' => 'Completed exercises cannot be completed again.']);
+                }
+                $plan = RecoveryPlan::query()->lockForUpdate()->findOrFail($locked->recovery_plan_id);
+                if ($plan->status->value !== 'approved') {
+                    throw ValidationException::withMessages(['recovery_plan_id' => 'Only approved plans can be completed as exercises.']);
+                }
+                $service = BusinessService::query()->lockForUpdate()->findOrFail($plan->business_service_id);
+                $plan->setRelation('businessService', $service);
+                $bia = $service->latestApprovedImpactAnalysis()->lockForUpdate()->first();
+                if (! $bia) {
+                    throw ValidationException::withMessages(['recovery_plan_id' => 'An approved impact analysis is required before exercise completion.']);
+                }
+                $evidenceSnapshots = empty($data['evidence_attachment_ids']) ? [] : $snapshotter->snapshot(
+                    $data['evidence_attachment_ids'], $actor, 'recovery-exercise', $snapshotBatch, $retainedCopies,
+                );
 
-            $rtoMet = $data['actual_recovery_time_minutes'] <= $bia->recovery_time_objective_minutes;
-            $rpoMet = $data['actual_recovery_point_minutes'] <= $bia->recovery_point_objective_minutes;
-            $outcome = $rtoMet && $rpoMet ? RecoveryExerciseOutcome::Passed
-                : ($rtoMet || $rpoMet ? RecoveryExerciseOutcome::Partial : RecoveryExerciseOutcome::Failed);
-            $locked->update($data + [
-                'completed_by' => $actor->id,
-                'completed_at' => now(),
-                'rto_objective_minutes' => $bia->recovery_time_objective_minutes,
-                'rpo_objective_minutes' => $bia->recovery_point_objective_minutes,
-                'outcome' => $outcome,
-            ]);
-
-            if ($outcome !== RecoveryExerciseOutcome::Passed) {
-                $issue = $locked->issue()->create([
-                    'business_service_id' => $plan->business_service_id,
-                    'owner_id' => $plan->owner_id,
-                    'title' => 'Recovery exercise missed resilience objectives',
-                    'description' => sprintf(
-                        'Exercise achieved RTO %d/%d minutes and RPO %d/%d minutes.',
-                        $data['actual_recovery_time_minutes'], $bia->recovery_time_objective_minutes,
-                        $data['actual_recovery_point_minutes'], $bia->recovery_point_objective_minutes,
-                    ),
-                    'severity' => $outcome === RecoveryExerciseOutcome::Failed ? 'critical' : 'high',
-                    'status' => 'open',
+                $rtoMet = $data['actual_recovery_time_minutes'] <= $bia->recovery_time_objective_minutes;
+                $rpoMet = $data['actual_recovery_point_minutes'] <= $bia->recovery_point_objective_minutes;
+                $outcome = $rtoMet && $rpoMet ? RecoveryExerciseOutcome::Passed
+                    : ($rtoMet || $rpoMet ? RecoveryExerciseOutcome::Partial : RecoveryExerciseOutcome::Failed);
+                $completedAt = now();
+                $locked->update(Arr::except($data, 'evidence_attachment_ids') + [
+                    'completed_by' => $actor->id,
+                    'completed_at' => $completedAt,
+                    'rto_objective_minutes' => $bia->recovery_time_objective_minutes,
+                    'rpo_objective_minutes' => $bia->recovery_point_objective_minutes,
+                    'outcome' => $outcome,
                 ]);
-                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
-            }
+                foreach ($evidenceSnapshots as $snapshot) {
+                    $locked->evidence()->create($snapshot + ['linked_by' => $actor->id, 'linked_at' => $completedAt]);
+                }
 
-            return $locked->fresh(['issue']);
-        });
+                if ($outcome !== RecoveryExerciseOutcome::Passed) {
+                    $issue = $locked->issue()->create([
+                        'business_service_id' => $plan->business_service_id,
+                        'owner_id' => $plan->owner_id,
+                        'title' => 'Recovery exercise missed resilience objectives',
+                        'description' => sprintf(
+                            'Exercise achieved RTO %d/%d minutes and RPO %d/%d minutes.',
+                            $data['actual_recovery_time_minutes'], $bia->recovery_time_objective_minutes,
+                            $data['actual_recovery_point_minutes'], $bia->recovery_point_objective_minutes,
+                        ),
+                        'severity' => $outcome === RecoveryExerciseOutcome::Failed ? 'critical' : 'high',
+                        'status' => 'open',
+                    ]);
+                    app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
+                }
+
+                return $locked->fresh(['issue', 'evidence.linkedBy:id,name']);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+
+            throw $exception;
+        }
     }
 
     private function assertCanManage(User $actor): void

@@ -3,18 +3,29 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\BusinessServiceResource;
+use App\Filament\Resources\BusinessServiceResource\Pages\ViewBusinessService;
+use App\Filament\Resources\BusinessServiceResource\RelationManagers\RecoveryExercisesRelationManager;
 use App\Models\Application;
+use App\Models\Audit;
 use App\Models\BusinessImpactAnalysis;
 use App\Models\BusinessService;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\RecoveryExercise;
+use App\Models\RecoveryExerciseEvidence;
 use App\Models\RecoveryPlan;
 use App\Models\ResilienceIssue;
 use App\Models\User;
+use App\OperationalResilience\ResilienceManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class OperationalResilienceTest extends TestCase
@@ -26,6 +37,7 @@ class OperationalResilienceTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         Config::set('enterprise.modules.resilience', true);
+        Storage::fake('private');
     }
 
     public function test_resilience_manager_can_create_service_and_approved_impact_analysis(): void
@@ -118,6 +130,78 @@ class OperationalResilienceTest extends TestCase
             ->assertJsonPath('service.latest_exercise_outcome', 'passed');
 
         $this->assertDatabaseCount('resilience_issues', 0);
+    }
+
+    public function test_completed_exercise_can_bind_authorized_accepted_audit_evidence(): void
+    {
+        $manager = $this->manager();
+        $service = $this->serviceWithApprovedBia($manager, 120, 15);
+        $plan = RecoveryPlan::factory()->approved()->create(['business_service_id' => $service->id, 'owner_id' => $manager->id]);
+        $exercise = RecoveryExercise::factory()->create(['recovery_plan_id' => $plan->id, 'facilitator_id' => $manager->id]);
+        $attachment = $this->acceptedEvidence($manager, 'resilience/exercise-log.txt', 'exercise evidence bytes');
+        Sanctum::actingAs($manager);
+
+        $this->postJson("/api/recovery-exercises/{$exercise->id}/complete", [
+            'actual_recovery_time_minutes' => 90, 'actual_recovery_point_minutes' => 10,
+            'observations' => 'The retained log supports the measured recovery result.',
+            'evidence_attachment_ids' => [$attachment->id],
+        ])->assertOk()
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', 'exercise evidence bytes'));
+
+        $evidence = RecoveryExerciseEvidence::query()->firstOrFail();
+        $this->assertSame('Accepted', $evidence->response_status_snapshot);
+        $migration = require database_path('migrations/2026_08_24_270000_create_recovery_exercise_evidence.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('recovery_exercise_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+        Storage::disk('private')->put($attachment->file_path, 'later source replacement');
+        $this->actingAs($manager, 'web')->get(route('recovery-exercise-evidence.download', $evidence))
+            ->assertSuccessful()->assertStreamedContent('exercise evidence bytes');
+        $this->actingAs(User::factory()->create(), 'web')->get(route('recovery-exercise-evidence.download', $evidence))
+            ->assertForbidden();
+        try {
+            $evidence->delete();
+            $this->fail('Recovery exercise evidence was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('recovery_exercise_evidence', ['id' => $evidence->id]);
+        }
+        try {
+            $attachment->delete();
+            $this->fail('A governed source attachment was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('file_attachments', ['id' => $attachment->id]);
+        }
+
+        $viewer = User::factory()->create();
+        $service->update(['owner_id' => $viewer->id]);
+        $this->actingAs($viewer, 'web');
+        Livewire::test(RecoveryExercisesRelationManager::class, [
+            'ownerRecord' => $service->fresh(), 'pageClass' => ViewBusinessService::class,
+        ])->assertCanSeeTableRecords([$exercise->fresh()])
+            ->assertTableColumnStateSet('evidence_count', 0, $exercise->fresh())
+            ->assertTableActionHidden('inspect_evidence', $exercise->fresh());
+    }
+
+    public function test_failed_evidence_selection_does_not_complete_exercise_or_retain_files(): void
+    {
+        $manager = $this->manager();
+        $service = $this->serviceWithApprovedBia($manager, 120, 15);
+        $plan = RecoveryPlan::factory()->approved()->create(['business_service_id' => $service->id, 'owner_id' => $manager->id]);
+        $exercise = RecoveryExercise::factory()->create(['recovery_plan_id' => $plan->id, 'facilitator_id' => $manager->id]);
+        $authorized = $this->acceptedEvidence($manager, 'resilience/authorized.txt', 'authorized bytes');
+        $foreign = $this->acceptedEvidence(User::factory()->create(), 'resilience/foreign.txt', 'foreign bytes');
+        Sanctum::actingAs($manager);
+
+        $this->postJson("/api/recovery-exercises/{$exercise->id}/complete", [
+            'actual_recovery_time_minutes' => 90, 'actual_recovery_point_minutes' => 10,
+            'observations' => 'The mixed evidence set must reject atomically.',
+            'evidence_attachment_ids' => [$authorized->id, $foreign->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+
+        $this->assertNull($exercise->fresh()->completed_at);
+        $this->assertDatabaseCount('recovery_exercise_evidence', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles('governed-evidence/recovery-exercise'));
     }
 
     public function test_plan_cannot_be_approved_without_an_approved_impact_analysis(): void
@@ -248,6 +332,27 @@ class OperationalResilienceTest extends TestCase
         ])->assertForbidden();
     }
 
+    public function test_completion_service_reauthorizes_before_creating_result_or_evidence(): void
+    {
+        $manager = $this->manager();
+        $service = $this->serviceWithApprovedBia($manager, 60, 5);
+        $plan = RecoveryPlan::factory()->approved()->create(['business_service_id' => $service->id, 'owner_id' => $manager->id]);
+        $exercise = RecoveryExercise::factory()->create(['recovery_plan_id' => $plan->id, 'facilitator_id' => $manager->id]);
+
+        try {
+            app(ResilienceManager::class)->completeExercise($exercise, User::factory()->create(), [
+                'actual_recovery_time_minutes' => 50, 'actual_recovery_point_minutes' => 4,
+                'observations' => 'Unauthorized direct service call.',
+            ]);
+            $this->fail('The completion service must enforce current resilience permission.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertNull($exercise->fresh()->completed_at);
+        $this->assertDatabaseCount('recovery_exercise_evidence', 0);
+    }
+
     public function test_service_owner_can_discover_but_not_edit_resilience_workspace(): void
     {
         $owner = User::factory()->create();
@@ -279,5 +384,23 @@ class OperationalResilienceTest extends TestCase
         ]);
 
         return $service;
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $auditManager->id, 'assigned_to_id' => $auditManager->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $auditManager->id, 'requestee_id' => $auditManager->id,
+        ]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed recovery exercise evidence', 'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

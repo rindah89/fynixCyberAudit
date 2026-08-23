@@ -9,12 +9,14 @@ use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
+use App\Models\RecoveryExerciseEvidence;
 use App\Models\SurveyAttachment;
 use App\Models\TrustCenterDocument;
 use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorRiskReviewEvidence;
 use App\Models\VendorUser;
+use App\Support\Enterprise;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -170,6 +172,24 @@ class FileAccess
         );
     }
 
+    public function streamRecoveryExerciseEvidence(User $actor, RecoveryExerciseEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['exercise.recoveryPlan.businessService', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $service = $evidence->exercise?->recoveryPlan?->businessService;
+        $canViewWorkspace = Enterprise::enabled('resilience') && $service
+            && ($actor->can('Manage Resilience') || (int) $service->owner_id === (int) $actor->id);
+        if (! $canViewWorkspace
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed recovery-exercise evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
@@ -177,7 +197,8 @@ class FileAccess
             ->where(fn ($query) => $query->whereHas('closureEvidence')
                 ->orWhereHas('controlTestEvidence')
                 ->orWhereHas('aiMonitoringEvidence')
-                ->orWhereHas('vendorRiskReviewEvidence'))
+                ->orWhereHas('vendorRiskReviewEvidence')
+                ->orWhereHas('recoveryExerciseEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

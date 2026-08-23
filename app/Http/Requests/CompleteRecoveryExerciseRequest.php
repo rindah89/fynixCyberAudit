@@ -18,6 +18,8 @@ class CompleteRecoveryExerciseRequest extends FormRequest
             'actual_recovery_time_minutes' => 'required|integer|min:0|max:525600',
             'actual_recovery_point_minutes' => 'required|integer|min:0|max:525600',
             'observations' => 'required|string|max:30000', 'evidence_reference' => 'nullable|string|max:255',
+            'evidence_attachment_ids' => 'sometimes|array|max:20',
+            'evidence_attachment_ids.*' => 'required|integer|distinct|exists:file_attachments,id',
             'outcome' => 'prohibited', 'rto_objective_minutes' => 'prohibited', 'rpo_objective_minutes' => 'prohibited',
         ];
     }
