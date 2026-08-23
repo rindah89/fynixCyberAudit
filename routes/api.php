@@ -20,6 +20,7 @@ use App\Http\Controllers\API\PolicyComplianceController;
 use App\Http\Controllers\API\PolicyController;
 use App\Http\Controllers\API\ProgramController;
 use App\Http\Controllers\API\RiskController;
+use App\Http\Controllers\API\RiskPortfolioController;
 use App\Http\Controllers\API\StandardController;
 use App\Http\Controllers\API\SupportChangeEvidenceController;
 use App\Http\Controllers\API\ThirdPartyRiskController;
@@ -81,6 +82,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::apiResource('audit-items', AuditItemController::class);
     Route::apiResource('programs', ProgramController::class);
     Route::apiResource('risks', RiskController::class);
+    Route::put('/risks/{risk}/governance-profile', [RiskPortfolioController::class, 'profile']);
+    Route::post('/risks/{risk}/governance-reviews', [RiskPortfolioController::class, 'review']);
     Route::apiResource('vendors', VendorController::class);
     Route::apiResource('applications', ApplicationController::class);
     Route::post('/ai-systems', [AiGovernanceController::class, 'storeSystem']);

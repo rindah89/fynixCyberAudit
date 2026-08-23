@@ -80,6 +80,7 @@ class RolePermissionSeeder extends Seeder
             'Manage Resilience',
             'Manage AI Governance',
             'Manage Third Party Risk',
+            'Manage Risk Portfolio',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -118,6 +119,7 @@ class RolePermissionSeeder extends Seeder
             'Manage Resilience',
             'Manage AI Governance',
             'Manage Third Party Risk',
+            'Manage Risk Portfolio',
         ]);
 
         // Assign specific Permissions to Internal Auditor

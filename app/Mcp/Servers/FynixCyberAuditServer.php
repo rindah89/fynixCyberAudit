@@ -7,6 +7,7 @@ use App\Mcp\Prompts\ComplianceSummaryPrompt;
 use App\Mcp\Prompts\GapAnalysisPrompt;
 use App\Mcp\Prompts\PolicyDraftPrompt;
 use App\Mcp\Prompts\RiskAssessmentPrompt;
+use App\Mcp\Tools\InspectRiskPortfolioTool;
 use App\Mcp\Tools\ManageApplicationTool;
 use App\Mcp\Tools\ManageAssetTool;
 use App\Mcp\Tools\ManageAuditItemTool;
@@ -65,6 +66,7 @@ class FynixCyberAuditServer extends Server
      * @var array<int, class-string<Tool>>
      */
     protected array $tools = [
+        InspectRiskPortfolioTool::class,
         ManageApplicationTool::class,
         ManageAssetTool::class,
         ManageAuditTool::class,

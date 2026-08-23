@@ -7,10 +7,14 @@ use App\Enums\MitigationType;
 use App\Enums\RiskDomain;
 use App\Enums\RiskStatus;
 use App\Mcp\Traits\HasMcpSupport;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use LogicException;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
@@ -51,6 +55,11 @@ class Risk extends Model
             $risk->inherent_risk = $risk->inherent_likelihood * $risk->inherent_impact;
             $risk->residual_risk = $risk->residual_likelihood * $risk->residual_impact;
         });
+        static::updating(function (Risk $risk): void {
+            if ($risk->isDirty('domain') && $risk->governanceProfile()->exists()) {
+                throw new LogicException('A risk domain cannot be changed after portfolio governance begins. Create a new risk record instead.');
+            }
+        });
     }
 
     public function implementations(): BelongsToMany
@@ -78,6 +87,86 @@ class Risk extends Model
     public function mitigations(): MorphMany
     {
         return $this->morphMany(Mitigation::class, 'mitigatable');
+    }
+
+    public function governanceProfile(): HasOne
+    {
+        return $this->hasOne(RiskGovernanceProfile::class);
+    }
+
+    public function governanceReviews(): HasMany
+    {
+        return $this->hasMany(RiskGovernanceReview::class);
+    }
+
+    public function latestGovernanceReview(): HasOne
+    {
+        return $this->hasOne(RiskGovernanceReview::class)->latestOfMany('reviewed_at');
+    }
+
+    public function governanceIssues(): HasMany
+    {
+        return $this->hasMany(RiskGovernanceIssue::class);
+    }
+
+    public function openGovernanceIssues(): HasMany
+    {
+        return $this->hasMany(RiskGovernanceIssue::class)->where('status', 'open');
+    }
+
+    public function scopeWithPortfolioGovernanceGraph(Builder $query): Builder
+    {
+        return $query->with([
+            'governanceProfile.owner', 'governanceProfile.businessService', 'latestGovernanceReview',
+            'assets', 'implementations.controls', 'openGovernanceIssues:id,risk_id,severity',
+        ]);
+    }
+
+    public function portfolioGovernanceSnapshot(?RiskGovernanceProfile $profile = null): array
+    {
+        $profile ??= $this->relationLoaded('governanceProfile') ? $this->governanceProfile : $this->governanceProfile()->firstOrFail();
+        $assets = $this->relationLoaded('assets') ? $this->assets->sortBy('id')->values() : $this->assets()->orderBy('assets.id')->get();
+        $implementationsReady = $this->relationLoaded('implementations') && $this->implementations->every(fn (Implementation $implementation): bool => $implementation->relationLoaded('controls'));
+        $implementations = $implementationsReady ? $this->implementations->sortBy('id')->values() : $this->implementations()->with('controls')->orderBy('implementations.id')->get();
+        $service = $profile->relationLoaded('businessService') ? $profile->businessService : $profile->businessService()->first();
+        $payload = [
+            'risk' => $this->only(['id', 'code', 'name', 'description', 'domain', 'status', 'inherent_likelihood', 'inherent_impact', 'inherent_risk', 'residual_likelihood', 'residual_impact', 'residual_risk', 'is_active']),
+            'profile' => $profile->only(['id', 'owner_id', 'appetite_threshold', 'review_frequency', 'strategic_objective', 'business_service_id', 'context_notes']),
+            'business_service' => $service?->only(['id', 'owner_id', 'code', 'name', 'criticality', 'status']),
+            'assets' => $assets->map(fn (Asset $asset): array => $asset->only(['id', 'asset_tag', 'name', 'is_active', 'asset_criticality_id', 'data_classification_id', 'asset_exposure_id']))->all(),
+            'implementations' => $implementations->map(fn (Implementation $implementation): array => $implementation->only(['id', 'code', 'title', 'details', 'status', 'effectiveness']) + [
+                'controls' => $implementation->controls->sortBy('id')->values()->map(fn (Control $control): array => $control->only(['id', 'code', 'title', 'status', 'effectiveness', 'applicability']))->all(),
+            ])->all(),
+        ];
+
+        return $payload + ['fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR))];
+    }
+
+    public function getPortfolioGovernanceStatusAttribute(): string
+    {
+        if (! in_array($this->domain, [RiskDomain::Enterprise, RiskDomain::Operational, RiskDomain::Technology], true)) {
+            return 'not_applicable';
+        }
+        $profile = $this->relationLoaded('governanceProfile') ? $this->governanceProfile : $this->governanceProfile()->with('businessService')->first();
+        if (! $profile) {
+            return 'profile_required';
+        }
+        $review = $this->relationLoaded('latestGovernanceReview') ? $this->latestGovernanceReview : $this->latestGovernanceReview()->first();
+        if (! $review) {
+            return 'review_required';
+        }
+        $issues = $this->relationLoaded('openGovernanceIssues') ? $this->openGovernanceIssues : $this->openGovernanceIssues()->get();
+        if ($issues->isNotEmpty()) {
+            return 'action_required';
+        }
+        if ($review->governance_fingerprint !== $this->portfolioGovernanceSnapshot($profile)['fingerprint']) {
+            return 're_review_required';
+        }
+        if ($review->next_review_at->copy()->endOfDay()->isPast()) {
+            return 'review_overdue';
+        }
+
+        return $review->decision->value;
     }
 
     public function latestMitigation(): ?Mitigation

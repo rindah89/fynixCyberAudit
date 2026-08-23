@@ -574,6 +574,17 @@ Assessments accept 1–5 likelihood, impact, residual likelihood, and residual i
 
 Only existing risks classified as `third_party` may be linked. Decisions are `approved`, `conditionally_approved`, `rejected`, and `terminated`. Approval requires an assessment, at least one linked risk, and future expiration/review dates. Reviews require a current approval; outcomes are `satisfactory`, `needs_action`, and `terminate`. Evidence references are unverified external text. See `docs/THIRD_PARTY_RISK_MANAGEMENT.md` for workflow details and limitations.
 
+### Enterprise, Operational, and Technology Risk Portfolios
+
+Portfolio governance endpoints require `Manage Risk Portfolio`:
+
+- `PUT /api/risks/{risk}/governance-profile`
+- `POST /api/risks/{risk}/governance-reviews`
+
+Profiles require `owner_id`, an `appetite_threshold` from 1–25, `review_frequency` (`monthly`, `quarterly`, `semi_annual`, or `annual`), and a future `next_review_at`. Enterprise risks also require `strategic_objective`; operational risks require an active `business_service_id`; technology risks require risk mappings to an asset and to an implementation linked to a control.
+
+Review decisions are `accepted`, `mitigate`, `transfer`, and `avoid`. The server derives every snapshot field. A residual score above appetite cannot be accepted; treatment decisions open an issue. Evidence references are unverified external text. Third-party and unclassified risks are rejected by these endpoints because they use other workflows. See `docs/RISK_PORTFOLIO_GOVERNANCE.md` for evidence boundaries and limitations.
+
 ### Create a New Standard
 
 ```bash

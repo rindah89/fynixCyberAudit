@@ -7,6 +7,7 @@ use App\Models\Risk;
 use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Exporter;
 use Filament\Actions\Exports\Models\Export;
+use Illuminate\Database\Eloquent\Builder;
 
 class RiskExporter extends Exporter
 {
@@ -39,26 +40,28 @@ class RiskExporter extends Exporter
                 ->label('Residual Impact'),
             ExportColumn::make('residual_risk')
                 ->label('Residual Risk'),
+            ExportColumn::make('portfolio_governance_status')
+                ->label('Portfolio Governance Status'),
+            ExportColumn::make('governanceProfile.owner.name')
+                ->label('Accountable Owner'),
+            ExportColumn::make('governanceProfile.appetite_threshold')
+                ->label('Appetite Threshold'),
+            ExportColumn::make('governanceProfile.review_frequency')
+                ->label('Review Frequency')
+                ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
+            ExportColumn::make('governanceProfile.businessService.name')
+                ->label('Business Service'),
+            ExportColumn::make('latestGovernanceReview.decision')
+                ->label('Latest Governance Decision')
+                ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
+            ExportColumn::make('latestGovernanceReview.next_review_at')
+                ->label('Next Governance Review'),
             ExportColumn::make('department')
                 ->label('Department')
-                ->state(function (Risk $record): ?string {
-                    $parent = Taxonomy::where('slug', 'department')->whereNull('parent_id')->first();
-                    if (! $parent) {
-                        return null;
-                    }
-
-                    return $record->taxonomies()->where('parent_id', $parent->id)->first()?->name;
-                }),
+                ->state(fn (Risk $record): ?string => $record->taxonomies->first(fn (Taxonomy $taxonomy): bool => $taxonomy->parent?->slug === 'department')?->name),
             ExportColumn::make('scope')
                 ->label('Scope')
-                ->state(function (Risk $record): ?string {
-                    $parent = Taxonomy::where('slug', 'scope')->whereNull('parent_id')->first();
-                    if (! $parent) {
-                        return null;
-                    }
-
-                    return $record->taxonomies()->where('parent_id', $parent->id)->first()?->name;
-                }),
+                ->state(fn (Risk $record): ?string => $record->taxonomies->first(fn (Taxonomy $taxonomy): bool => $taxonomy->parent?->slug === 'scope')?->name),
             ExportColumn::make('is_active')
                 ->label('Active'),
             ExportColumn::make('created_at')
@@ -66,6 +69,11 @@ class RiskExporter extends Exporter
             ExportColumn::make('updated_at')
                 ->label('Updated At'),
         ];
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->withPortfolioGovernanceGraph()->with('taxonomies.parent');
     }
 
     public static function getCompletedNotificationBody(Export $export): string
