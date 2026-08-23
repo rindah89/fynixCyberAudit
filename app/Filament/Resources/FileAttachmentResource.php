@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Access\FileAccess;
 use App\Filament\Exports\FileAttachmentExporter;
 use App\Filament\Resources\FileAttachmentResource\Pages\CreateFileAttachment;
 use App\Filament\Resources\FileAttachmentResource\Pages\EditFileAttachment;
@@ -53,6 +54,14 @@ class FileAttachmentResource extends Resource
                     ->visibility('private')
                     ->openable()
                     ->deletable()
+                    ->deleteUploadedFileUsing(function ($state): void {
+                        if ($state) {
+                            app(FileAccess::class)->deleteUnreferencedFileAttachmentPath(
+                                setting('storage.driver', 'private'),
+                                $state,
+                            );
+                        }
+                    })
                     ->reorderable()
                     ->columnSpanFull()
                     ->required(),

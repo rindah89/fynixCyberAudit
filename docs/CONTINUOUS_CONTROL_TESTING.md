@@ -47,4 +47,4 @@ Control detail responses include definitions, owners, latest executions, and gen
 
 ## Explicit limitations
 
-This foundation does not schedule background execution, pull indicators from external systems, verify referenced evidence, aggregate samples, detect anomalies, automatically close findings, or automatically create remediation tasks. Generated control-test findings are separate from audit findings. Do not describe this feature as autonomous continuous monitoring or end-to-end continuous control testing automation.
+This foundation does not schedule background execution, pull indicators from external systems, validate observation-reference authenticity, aggregate samples, detect anomalies, automatically close findings, or automatically create remediation tasks. Generated control-test findings are separate from audit findings; their deliberate shared-lifecycle closure requires content-hashed accepted audit evidence. Do not describe this feature as autonomous continuous monitoring or end-to-end continuous control testing automation.

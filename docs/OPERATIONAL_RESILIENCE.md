@@ -34,7 +34,7 @@ Exercise results use the latest approved impact analysis at completion time and 
 - Completed exercises, approved analyses, and approved plans cannot be changed through product interfaces. Database administrators remain outside this application-level guarantee.
 - Each analysis, plan approval, and exercise records an attributable user and timestamp.
 - `evidence_reference` is optional, unverified operator-supplied text. It neither proves that evidence exists nor grants access to another system.
-- Exercise issues are distinct from audit findings. A nullable remediation-task link supports later coordination, but this foundation does not automatically create remediation work.
+- Exercise issues are distinct from audit findings. They use the shared deliberate remediation lifecycle; closure requires accepted audit attachments with access, presence, size, and SHA-256 checks, but this foundation does not automatically create remediation work.
 
 ## REST interface
 
@@ -49,4 +49,4 @@ All endpoints require authentication, the enabled resilience module, and `Manage
 
 ## Explicit limitations
 
-This foundation does not discover dependencies, ingest uptime or disaster-recovery telemetry, calculate financial loss, run recovery procedures, send crisis communications, schedule exercises automatically, or validate external evidence. Exercise issues use the separately documented governed remediation and independent-closure workflow. It is not a substitute for live availability monitoring, emergency notification, or automated continuity orchestration.
+This foundation does not discover dependencies, ingest uptime or disaster-recovery telemetry, calculate financial loss, run recovery procedures, send crisis communications, schedule exercises automatically, or validate exercise-reference authenticity. Exercise issues use the separately documented governed remediation and independent-closure workflow with content-hashed accepted audit evidence. It is not a substitute for live availability monitoring, emergency notification, or automated continuity orchestration.

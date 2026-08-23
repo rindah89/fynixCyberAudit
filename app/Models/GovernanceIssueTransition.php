@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\GovernanceIssueStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 
 class GovernanceIssueTransition extends Model
@@ -27,5 +28,10 @@ class GovernanceIssueTransition extends Model
     public function actor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'transitioned_by');
+    }
+
+    public function closureEvidence(): HasMany
+    {
+        return $this->hasMany(GovernanceIssueClosureEvidence::class, 'governance_issue_transition_id');
     }
 }

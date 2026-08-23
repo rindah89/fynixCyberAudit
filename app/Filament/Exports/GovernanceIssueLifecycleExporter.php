@@ -28,6 +28,14 @@ class GovernanceIssueLifecycleExporter extends Exporter
             ExportColumn::make('closed_at'),
             ExportColumn::make('verification_summary'),
             ExportColumn::make('evidence_reference')->label('Operator Evidence Reference'),
+            ExportColumn::make('closure_evidence_count')->label('Governed Evidence Files')
+                ->state(fn (GovernanceIssueLifecycle $record): int => $record->closureEvidence->count()),
+            ExportColumn::make('closure_evidence_sha256')->label('Closure Evidence SHA-256')
+                ->state(fn (GovernanceIssueLifecycle $record): string => $record->closureEvidence->pluck('sha256')->implode(', ')),
+            ExportColumn::make('closure_evidence_audit_ids')->label('Closure Evidence Audit IDs')
+                ->state(fn (GovernanceIssueLifecycle $record): string => $record->closureEvidence->pluck('audit_id_snapshot')->implode(', ')),
+            ExportColumn::make('closure_evidence_response_ids')->label('Closure Evidence Response IDs')
+                ->state(fn (GovernanceIssueLifecycle $record): string => $record->closureEvidence->pluck('data_request_response_id_snapshot')->implode(', ')),
         ];
     }
 

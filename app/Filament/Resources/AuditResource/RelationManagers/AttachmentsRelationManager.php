@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AuditResource\RelationManagers;
 
+use App\Access\FileAccess;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions\Action;
@@ -26,7 +27,7 @@ class AttachmentsRelationManager extends RelationManager
     {
         return $schema
             ->components([
-                TextArea::make('description')
+                Textarea::make('description')
                     ->label('Description')
                     ->columnSpanFull()
                     ->required(),
@@ -42,7 +43,10 @@ class AttachmentsRelationManager extends RelationManager
                     ->getUploadedFileNameForStorageUsing(fn ($file) => $file->getClientOriginalName())
                     ->deleteUploadedFileUsing(function ($state) {
                         if ($state) {
-                            Storage::disk(setting('storage.driver', config('filesystems.default')))->delete($state);
+                            app(FileAccess::class)->deleteUnreferencedFileAttachmentPath(
+                                setting('storage.driver', config('filesystems.default')),
+                                $state,
+                            );
                         }
                     }),
                 DateTimePicker::make('updated_at')

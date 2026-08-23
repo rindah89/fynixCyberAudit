@@ -6,9 +6,11 @@ use Eloquent;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Spatie\Activitylog\Support\LogOptions;
+use LogicException;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 /**
  * Class FileAttachment
@@ -19,10 +21,8 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
  * @property int $file_size
  * @property Carbon $uploaded_at
  * @property int $uploaded_by
- * @property int $data_request_id
  * @property int $audit_id
  * @property int $data_request_response_id
- * @property-read DataRequest $dataRequest
  *
  * @method static Builder|FileAttachment newModelQuery()
  * @method static Builder|FileAttachment newQuery()
@@ -32,7 +32,6 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
  * @method static Builder|FileAttachment whereFileSize($value)
  * @method static Builder|FileAttachment whereUploadedAt($value)
  * @method static Builder|FileAttachment whereUploadedBy($value)
- * @method static Builder|FileAttachment whereDataRequestId($value)
  * @method static Builder|FileAttachment whereAuditId($value)
  * @method static Builder|FileAttachment whereDataRequestResponseId($value)
  *
@@ -41,6 +40,21 @@ use Spatie\Activitylog\Models\Concerns\LogsActivity;
 class FileAttachment extends Model
 {
     use LogsActivity;
+
+    protected static function booted(): void
+    {
+        static::updating(function (FileAttachment $attachment): void {
+            if ($attachment->isDirty(['file_path', 'file_name', 'file_size', 'audit_id', 'data_request_response_id'])
+                && $attachment->closureEvidence()->exists()) {
+                throw new LogicException('Files referenced by governed closure evidence cannot change identity through product interfaces.');
+            }
+        });
+        static::deleting(function (FileAttachment $attachment): void {
+            if ($attachment->closureEvidence()->exists()) {
+                throw new LogicException('Files referenced by governed closure evidence cannot be deleted through product interfaces.');
+            }
+        });
+    }
 
     /**
      * The attributes that are mass assignable.
@@ -54,22 +68,18 @@ class FileAttachment extends Model
         'description',
         'uploaded_at',
         'uploaded_by',
-        'data_request_id',
         'audit_id',
         'data_request_response_id',
     ];
 
-    /**
-     * Get the data request that owns the file attachment.
-     */
-    public function dataRequest(): BelongsTo
-    {
-        return $this->belongsTo(DataRequest::class);
-    }
-
     public function dataRequestResponse(): BelongsTo
     {
         return $this->belongsTo(DataRequestResponse::class);
+    }
+
+    public function closureEvidence(): HasMany
+    {
+        return $this->hasMany(GovernanceIssueClosureEvidence::class);
     }
 
     public function auditItem(): BelongsTo
@@ -88,5 +98,25 @@ class FileAttachment extends Model
             ->logOnly(['file_name', 'file_size', 'uploaded_by', 'data_request_id', 'audit_id', 'data_request_response_id'])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
+    }
+
+    public function scopeEligibleClosureEvidenceFor(Builder $query, User $user): Builder
+    {
+        return $query
+            ->whereHas('dataRequestResponse', fn (Builder $response) => $response->where('status', 'Accepted'))
+            ->where(function (Builder $access) use ($user): void {
+                $access->where('uploaded_by', $user->id)
+                    ->orWhereHas('audit', fn (Builder $audit) => $audit
+                        ->where('manager_id', $user->id)
+                        ->orWhereHas('members', fn (Builder $members) => $members->where('users.id', $user->id)))
+                    ->orWhereHas('dataRequestResponse', fn (Builder $response) => $response
+                        ->where('requestee_id', $user->id)
+                        ->orWhereHas('dataRequest', fn (Builder $request) => $request
+                            ->where('created_by_id', $user->id)
+                            ->orWhere('assigned_to_id', $user->id)
+                            ->orWhereHas('audit', fn (Builder $audit) => $audit
+                                ->where('manager_id', $user->id)
+                                ->orWhereHas('members', fn (Builder $members) => $members->where('users.id', $user->id)))));
+            });
     }
 }

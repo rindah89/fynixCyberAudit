@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources;
 
+use App\Access\FileAccess;
 use App\Enums\ResponseStatus;
 use App\Filament\Resources\DataRequestResponseResource\Pages\CreateDataRequestResponse;
 use App\Filament\Resources\DataRequestResponseResource\Pages\EditDataRequestResponse;
 use App\Filament\Resources\DataRequestResponseResource\Pages\ListDataRequestResponses;
 use App\Filament\Resources\DataRequestResponseResource\Pages\ViewDataRequestResponse;
 use App\Models\Control;
+use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\Policy;
 use Exception;
@@ -29,7 +31,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
@@ -254,7 +255,10 @@ class DataRequestResponseResource extends Resource
                                     })
                                     ->deleteUploadedFileUsing(function ($state) {
                                         if ($state) {
-                                            Storage::disk(setting('storage.driver', 'private'))->delete($state);
+                                            app(FileAccess::class)->deleteUnreferencedFileAttachmentPath(
+                                                setting('storage.driver', 'private'),
+                                                $state,
+                                            );
                                         }
                                     }),
 
@@ -264,8 +268,9 @@ class DataRequestResponseResource extends Resource
                                     ->default(function ($livewire) {
                                         /** @var DataRequestResponse|null $drr */
                                         $drr = DataRequestResponse::where('id', $livewire->data['id'])->first();
-                                        /** @var \App\Models\DataRequest|null $dataRequest */
+                                        /** @var DataRequest|null $dataRequest */
                                         $dataRequest = $drr?->dataRequest;
+
                                         return $dataRequest?->audit_id;
                                     }),
                             ]),

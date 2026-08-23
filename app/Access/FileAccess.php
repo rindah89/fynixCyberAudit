@@ -4,6 +4,8 @@ namespace App\Access;
 
 use App\Models\AiJob;
 use App\Models\FileAttachment;
+use App\Models\GovernanceIssueClosureEvidence;
+use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
 use App\Models\SurveyAttachment;
 use App\Models\TrustCenterDocument;
@@ -12,6 +14,7 @@ use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FileAccess
@@ -97,6 +100,37 @@ class FileAccess
         return $this->stream($disk, $path, $downloadName);
     }
 
+    public function streamGovernanceClosureEvidence(User $actor, GovernanceIssueClosureEvidence $evidence): StreamedResponse
+    {
+        $canViewLifecycle = GovernanceIssueLifecycle::query()->visibleTo($actor)
+            ->whereKey($evidence->governance_issue_lifecycle_id)->exists();
+        $attachment = $evidence->attachment()->with([
+            'audit.members',
+            'dataRequestResponse.dataRequest.audit.members',
+        ])->first();
+        if (! $canViewLifecycle || ! $attachment || ! $this->canDownloadFileAttachment($actor, $attachment)) {
+            abort(403, 'You do not have access to this governed closure evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
+    public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
+    {
+        $path = $this->normalizePath($path);
+        if (FileAttachment::query()->where('file_path', $path)->whereHas('closureEvidence')->exists()) {
+            throw ValidationException::withMessages([
+                'file_path' => 'Files referenced by governed closure evidence cannot be removed through product interfaces.',
+            ]);
+        }
+
+        Storage::disk($disk)->delete($path);
+    }
+
     public function canDownloadFileAttachment(Authenticatable $actor, FileAttachment $attachment): bool
     {
         if (! $actor instanceof User) {
@@ -107,19 +141,22 @@ class FileAccess
             return true;
         }
 
-        $audit = $attachment->audit ?? $attachment->dataRequest?->audit ?? $attachment->dataRequestResponse?->dataRequest?->audit;
+        $audit = $attachment->audit ?? $attachment->dataRequestResponse?->dataRequest?->audit;
 
         if ($audit) {
             if ((int) $audit->manager_id === (int) $actor->id) {
                 return true;
             }
 
-            if ($audit->members()->whereKey($actor->id)->exists()) {
+            $isMember = $audit->relationLoaded('members')
+                ? $audit->members->contains(fn (User $member): bool => $member->id === $actor->id)
+                : $audit->members()->whereKey($actor->id)->exists();
+            if ($isMember) {
                 return true;
             }
         }
 
-        $dataRequest = $attachment->dataRequest ?? $attachment->dataRequestResponse?->dataRequest;
+        $dataRequest = $attachment->dataRequestResponse?->dataRequest;
 
         if ($dataRequest && in_array($actor->id, [(int) $dataRequest->created_by_id, (int) $dataRequest->assigned_to_id], true)) {
             return true;

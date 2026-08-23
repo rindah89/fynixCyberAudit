@@ -6,7 +6,9 @@ use App\Enums\GovernanceIssueStatus;
 use App\Filament\Exports\GovernanceIssueLifecycleExporter;
 use App\Filament\Resources\GovernanceIssueLifecycleResource\Pages\ListGovernanceIssueLifecycles;
 use App\Filament\Resources\GovernanceIssueLifecycleResource\Pages\ViewGovernanceIssueLifecycle;
+use App\Filament\Resources\GovernanceIssueLifecycleResource\RelationManagers\ClosureEvidenceRelationManager;
 use App\Filament\Resources\GovernanceIssueLifecycleResource\RelationManagers\TransitionsRelationManager;
+use App\Models\FileAttachment;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\RemediationProject;
 use App\Models\User;
@@ -128,6 +130,11 @@ class GovernanceIssueLifecycleResource extends Resource
                     ->visible(fn (GovernanceIssueLifecycle $record): bool => $record->status === GovernanceIssueStatus::Verification && (auth()->user()?->can('Verify Issue Closure') ?? false))
                     ->schema([
                         Textarea::make('verification_summary')->required()->maxLength(30000),
+                        Select::make('evidence_attachment_ids')->label('Accepted closure evidence')
+                            ->multiple()->required()->minItems(1)->maxItems(20)->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => self::evidenceOptions($search))
+                            ->getOptionLabelsUsing(fn (array $values): array => self::evidenceLabels($values))
+                            ->helperText('Select accepted audit-evidence files you are authorized to access. Fynix verifies content presence and records a SHA-256 snapshot.'),
                         Textarea::make('evidence_reference')->label('Operator evidence reference')->maxLength(255),
                     ])->action(fn (GovernanceIssueLifecycle $record, array $data) => self::runAction(fn () => app(GovernanceIssueLifecycleManager::class)->close($record->issue, auth()->user(), $data), 'Issue independently verified and closed')),
                 Action::make('reopen')->label('Reopen')->icon('heroicon-o-arrow-uturn-left')->color('danger')
@@ -149,7 +156,7 @@ class GovernanceIssueLifecycleResource extends Resource
 
     public static function getRelations(): array
     {
-        return [TransitionsRelationManager::class];
+        return [TransitionsRelationManager::class, ClosureEvidenceRelationManager::class];
     }
 
     public static function getPages(): array
@@ -161,5 +168,28 @@ class GovernanceIssueLifecycleResource extends Resource
     {
         $operation();
         Notification::make()->title($message)->success()->send();
+    }
+
+    private static function evidenceOptions(string $search): array
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return [];
+        }
+
+        return FileAttachment::query()->eligibleClosureEvidenceFor($user)
+            ->where('file_name', 'like', '%'.addcslashes($search, '%_').'%')
+            ->orderByDesc('id')->limit(50)->pluck('file_name', 'id')->all();
+    }
+
+    private static function evidenceLabels(array $values): array
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return [];
+        }
+
+        return FileAttachment::query()->eligibleClosureEvidenceFor($user)
+            ->whereKey($values)->pluck('file_name', 'id')->all();
     }
 }

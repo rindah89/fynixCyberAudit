@@ -41,6 +41,11 @@ class GovernanceIssueLifecycle extends Model
         return $this->hasMany(GovernanceIssueTransition::class);
     }
 
+    public function closureEvidence(): HasMany
+    {
+        return $this->hasMany(GovernanceIssueClosureEvidence::class);
+    }
+
     public function scopeWithIssueGraph(Builder $query): Builder
     {
         return $query->with([
@@ -50,6 +55,7 @@ class GovernanceIssueLifecycle extends Model
                 ControlTestFinding::class => ['owner'],
             ]),
             'remediationTask.project', 'verifier:id,name', 'closer:id,name',
+            'closureEvidence.linkedBy:id,name',
         ]);
     }
 
