@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Aliziodev\LaravelTaxonomy\Traits\HasTaxonomy;
 use App\Enums\MitigationType;
+use App\Enums\RiskDomain;
 use App\Enums\RiskStatus;
 use App\Mcp\Traits\HasMcpSupport;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,6 +21,7 @@ class Risk extends Model
     protected $casts = [
         'id' => 'integer',
         'action' => MitigationType::class,
+        'domain' => RiskDomain::class,
         'status' => RiskStatus::class,
         'is_active' => 'boolean',
     ];
@@ -28,6 +30,7 @@ class Risk extends Model
         'code',
         'name',
         'description',
+        'domain',
         'status',
         'inherent_likelihood',
         'inherent_impact',
@@ -37,6 +40,18 @@ class Risk extends Model
         'residual_risk',
         'is_active',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Risk $risk): void {
+            $risk->inherent_likelihood ??= 3;
+            $risk->inherent_impact ??= 3;
+            $risk->residual_likelihood ??= 3;
+            $risk->residual_impact ??= 3;
+            $risk->inherent_risk = $risk->inherent_likelihood * $risk->inherent_impact;
+            $risk->residual_risk = $risk->residual_likelihood * $risk->residual_impact;
+        });
+    }
 
     public function implementations(): BelongsToMany
     {
@@ -98,6 +113,7 @@ class Risk extends Model
                 'code',
                 'name',
                 'description',
+                'domain',
                 'inherent_likelihood',
                 'inherent_impact',
                 'inherent_risk',

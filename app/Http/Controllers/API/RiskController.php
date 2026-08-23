@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\API;
 
+use App\Enums\RiskDomain;
+use App\Enums\RiskStatus;
 use App\Models\Risk;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class RiskController extends BaseApiController
 {
@@ -13,35 +16,39 @@ class RiskController extends BaseApiController
 
     protected array $showRelations = ['implementations'];
 
-    protected array $searchableFields = ['title', 'description', 'mitigation'];
+    protected array $searchableFields = ['code', 'name', 'description'];
 
-    protected array $sortableFields = ['id', 'title', 'likelihood', 'impact', 'risk_level', 'created_at', 'updated_at'];
+    protected array $sortableFields = ['id', 'code', 'name', 'domain', 'status', 'inherent_risk', 'residual_risk', 'created_at', 'updated_at'];
 
     protected function validateStore(Request $request): array
     {
         return $request->validate([
-            'title' => 'required|string|max:255',
+            'code' => 'required|string|max:255|unique:risks,code',
+            'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'mitigation' => 'nullable|string',
-            'likelihood' => 'nullable|string',
-            'impact' => 'nullable|string',
-            'risk_level' => 'nullable|string',
-            'status' => 'nullable|string',
-            'risk_owner_id' => 'nullable|exists:users,id',
+            'domain' => ['required', Rule::enum(RiskDomain::class)],
+            'status' => ['nullable', Rule::enum(RiskStatus::class)],
+            'inherent_likelihood' => 'required|integer|between:1,5',
+            'inherent_impact' => 'required|integer|between:1,5',
+            'residual_likelihood' => 'required|integer|between:1,5',
+            'residual_impact' => 'required|integer|between:1,5',
+            'is_active' => 'sometimes|boolean',
         ]);
     }
 
     protected function validateUpdate(Request $request, $resource): array
     {
         return $request->validate([
-            'title' => 'sometimes|string|max:255',
+            'code' => 'sometimes|string|max:255|unique:risks,code,'.$resource->id,
+            'name' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
-            'mitigation' => 'nullable|string',
-            'likelihood' => 'nullable|string',
-            'impact' => 'nullable|string',
-            'risk_level' => 'nullable|string',
-            'status' => 'nullable|string',
-            'risk_owner_id' => 'nullable|exists:users,id',
+            'domain' => ['sometimes', Rule::enum(RiskDomain::class)],
+            'status' => ['sometimes', Rule::enum(RiskStatus::class)],
+            'inherent_likelihood' => 'sometimes|integer|between:1,5',
+            'inherent_impact' => 'sometimes|integer|between:1,5',
+            'residual_likelihood' => 'sometimes|integer|between:1,5',
+            'residual_impact' => 'sometimes|integer|between:1,5',
+            'is_active' => 'sometimes|boolean',
         ]);
     }
 }

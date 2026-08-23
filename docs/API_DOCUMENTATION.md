@@ -245,7 +245,25 @@ GET /api/controls/1?with=standard,implementations
 - `DELETE /api/risks/{id}` - Delete a risk
 - `POST /api/risks/{id}/restore` - Restore a soft-deleted risk
 
-**Searchable Fields:** `title`, `description`, `mitigation`
+**Searchable Fields:** `code`, `name`, `description`
+
+**Sortable Fields:** `id`, `code`, `name`, `domain`, `status`, `inherent_risk`, `residual_risk`, `created_at`, `updated_at`
+
+Create requests require `code`, `name`, `domain`, and inherent/residual likelihood and impact values from 1–5. `domain` is one of `enterprise`, `operational`, `technology`, or `third_party`. The server derives both risk scores from their likelihood and impact inputs.
+
+```json
+{
+  "code": "ERM-001",
+  "name": "Strategic concentration risk",
+  "description": "Critical revenue depends on a single market.",
+  "domain": "enterprise",
+  "status": "Not Assessed",
+  "inherent_likelihood": 4,
+  "inherent_impact": 5,
+  "residual_likelihood": 3,
+  "residual_impact": 4
+}
+```
 
 **Relations:** `implementations`
 

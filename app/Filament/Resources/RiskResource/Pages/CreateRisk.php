@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\RiskResource\Pages;
 
+use App\Enums\RiskDomain;
 use App\Filament\Resources\RiskResource;
 use App\Models\Risk;
 use Filament\Forms\Components\Placeholder;
@@ -68,6 +69,13 @@ class CreateRisk extends CreateRecord
                         ->columnSpanFull()
                         ->maxLength(4096)
                         ->helperText('Provide a description of the risk that will help others understand it'),
+                    Select::make('domain')
+                        ->label('Risk domain')
+                        ->enum(RiskDomain::class)
+                        ->options(RiskDomain::class)
+                        ->placeholder('Select a risk domain')
+                        ->required()
+                        ->helperText('Classify this scenario for enterprise, operational, technology, or third-party reporting'),
                     RiskResource::taxonomySelect('Department', 'department')
                         ->nullable()
                         ->columnSpan(2)

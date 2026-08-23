@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Enums\MitigationType;
+use App\Enums\RiskDomain;
 use App\Enums\RiskLevel;
 use App\Enums\RiskStatus;
 use App\Filament\Columns\TaxonomyColumn;
@@ -72,6 +73,12 @@ class RiskResource extends Resource
                 Textarea::make('description')
                     ->columnSpanFull()
                     ->label('Description'),
+                Select::make('domain')
+                    ->label('Risk domain')
+                    ->enum(RiskDomain::class)
+                    ->options(RiskDomain::class)
+                    ->placeholder('Select a risk domain')
+                    ->required(),
                 Section::make('inherent')
                     ->columnSpan(1)
                     ->heading('Inherent Risk Scoring')
@@ -144,6 +151,12 @@ class RiskResource extends Resource
                     ->wrap()
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->limit(250),
+                TextColumn::make('domain')
+                    ->label('Domain')
+                    ->badge()
+                    ->formatStateUsing(fn (?RiskDomain $state) => $state?->getLabel() ?? 'Unclassified')
+                    ->color(fn (?RiskDomain $state) => $state?->getColor() ?? 'gray')
+                    ->sortable(),
                 TextColumn::make('inherent_risk')
                     ->label('Inherent Risk')
                     ->getStateUsing(fn (Risk $record) => RiskLevel::formatRisk($record->inherent_likelihood, $record->inherent_impact))
@@ -179,6 +192,9 @@ class RiskResource extends Resource
                     ->color(fn (string $state) => $state === 'Active' ? 'success' : 'gray'),
             ])
             ->filters([
+                SelectFilter::make('domain')
+                    ->label('Risk domain')
+                    ->options(RiskDomain::class),
                 SelectFilter::make('inherent_likelihood')
                     ->label('Inherent Likelihood')
                     ->options(RiskLevel::options()),

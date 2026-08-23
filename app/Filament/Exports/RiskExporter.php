@@ -21,6 +21,9 @@ class RiskExporter extends Exporter
                 ->label('Name'),
             ExportColumn::make('description')
                 ->label('Description'),
+            ExportColumn::make('domain')
+                ->label('Risk Domain')
+                ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
             ExportColumn::make('status')
                 ->label('Status')
                 ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),

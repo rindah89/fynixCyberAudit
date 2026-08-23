@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\RiskDomain;
 use App\Enums\RiskStatus;
 use App\Models\Risk;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -28,6 +29,7 @@ class RiskFactory extends Factory
             'name' => $this->faker->sentence,
             'code' => $this->faker->unique()->numberBetween(1000, 9999),
             'description' => $this->faker->paragraph,
+            'domain' => $this->faker->randomElement(RiskDomain::cases()),
             'status' => $risk_status,
             'inherent_likelihood' => $inherent_likelihood,
             'inherent_impact' => $inherent_impact,

@@ -1,6 +1,6 @@
 # Welcome to Fynix Cyber Audit
 
-Fynix Cyber Audit is a cyber Governance, Risk, and Compliance web application intended for use by small businesses and teams. This is not intended to replace large-scale GRC Platforms, but it just might for your usecase. Fynix Cyber Audit provides a resource for those who need to manage a security program but can't manage the price tag and complexity of alternatives.
+Fynix Cyber Audit is a cyber Governance, Risk, and Compliance web application intended for small businesses and teams. Its documented product scope is managing risks, controls, audits, findings, evidence, and remediation. Broader IRM capabilities are not product claims until their implementation and verification evidence is recorded in [`docs/IRM_CAPABILITY_EVIDENCE.md`](docs/IRM_CAPABILITY_EVIDENCE.md).
 
 * Simple interface designed to get up and running with very little training
 * Quick imports of common security frameworks
@@ -23,4 +23,3 @@ Fynix Cyber Audit is built on the shoulders of giants. We would like to thank th
 
 * [Laravel](https://laravel.com)
 * [Filament](https://filamentphp.com)
-
