@@ -6,6 +6,7 @@ use App\Models\Vendor;
 use Filament\Actions\Exports\ExportColumn;
 use Filament\Actions\Exports\Exporter;
 use Filament\Actions\Exports\Models\Export;
+use Illuminate\Database\Eloquent\Builder;
 
 class VendorExporter extends Exporter
 {
@@ -24,6 +25,19 @@ class VendorExporter extends Exporter
                 ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
             ExportColumn::make('risk_score')
                 ->label('Risk Score'),
+            ExportColumn::make('third_party_risk_status')
+                ->label('Third-Party Risk Status'),
+            ExportColumn::make('latestRiskAssessment.version')
+                ->label('Latest Assessment Version'),
+            ExportColumn::make('latestRiskAssessment.residual_score')
+                ->label('Latest Residual Score'),
+            ExportColumn::make('latestRiskDecision.decision')
+                ->label('Latest Risk Decision')
+                ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
+            ExportColumn::make('latestRiskDecision.next_review_at')
+                ->label('Next Risk Review'),
+            ExportColumn::make('risks_count')
+                ->label('Linked Third-Party Risks'),
             ExportColumn::make('vendorManager.name')
                 ->label('Vendor Manager'),
             ExportColumn::make('contact_name')
@@ -45,6 +59,11 @@ class VendorExporter extends Exporter
             ExportColumn::make('updated_at')
                 ->label('Updated At'),
         ];
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->withThirdPartyRiskGraph()->with(['vendorManager' => fn ($query) => $query->withTrashed()])->withCount('risks');
     }
 
     public static function getCompletedNotificationBody(Export $export): string

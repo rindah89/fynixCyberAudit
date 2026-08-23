@@ -13,6 +13,10 @@ use App\Filament\Resources\VendorResource\Pages\ListVendors;
 use App\Filament\Resources\VendorResource\Pages\ViewVendor;
 use App\Filament\Resources\VendorResource\RelationManagers\ApplicationsRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\ImplementationsRelationManager;
+use App\Filament\Resources\VendorResource\RelationManagers\RiskAssessmentsRelationManager;
+use App\Filament\Resources\VendorResource\RelationManagers\RiskDecisionsRelationManager;
+use App\Filament\Resources\VendorResource\RelationManagers\RiskReviewsRelationManager;
+use App\Filament\Resources\VendorResource\RelationManagers\RisksRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\SurveysRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\VendorDocumentsRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\VendorUsersRelationManager;
@@ -282,6 +286,10 @@ class VendorResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: false),
                 TextColumn::make('status')->label(__('Status'))->badge()->color(fn ($record) => $record->status->getColor()),
                 TextColumn::make('risk_rating')->label(__('Risk Rating'))->badge()->color(fn ($record) => $record->risk_rating->getColor()),
+                TextColumn::make('third_party_risk_status')->label(__('Third-Party Risk'))->badge()->color(fn (string $state) => match ($state) {
+                    'approved' => 'success', 'conditionally_approved', 'assessment_required', 'risk_link_required', 'decision_required', 'reapproval_required' => 'warning',
+                    'rejected', 'terminated', 'termination_required', 'action_required', 'approval_expired', 'review_overdue' => 'danger', default => 'gray',
+                }),
                 TextColumn::make('url')
                     ->label(__('URL'))
                     ->url(fn ($record) => $record->url, true)
@@ -322,6 +330,7 @@ class VendorResource extends Resource
                     ->label(__('Send Survey'))
                     ->icon('heroicon-o-paper-airplane')
                     ->color('primary')
+                    ->visible(fn (): bool => auth()->user()?->can('Manage Vendor Management') ?? false)
                     ->schema([
                         Select::make('survey_template_id')
                             ->label(__('Survey Template'))
@@ -390,6 +399,10 @@ class VendorResource extends Resource
             SurveysRelationManager::class,
             VendorUsersRelationManager::class,
             VendorDocumentsRelationManager::class,
+            RiskAssessmentsRelationManager::class,
+            RisksRelationManager::class,
+            RiskDecisionsRelationManager::class,
+            RiskReviewsRelationManager::class,
         ];
     }
 
@@ -405,7 +418,14 @@ class VendorResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
+            ->withThirdPartyRiskGraph()
             ->with(['vendorManager' => fn ($q) => $q->withTrashed()]);
+        $user = auth()->user();
+        if ($user && ! $user->can('List Vendors')) {
+            $query->where('vendor_manager_id', $user->id);
+        }
+
+        return $query;
     }
 }

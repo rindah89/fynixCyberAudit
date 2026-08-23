@@ -22,6 +22,7 @@ use App\Http\Controllers\API\ProgramController;
 use App\Http\Controllers\API\RiskController;
 use App\Http\Controllers\API\StandardController;
 use App\Http\Controllers\API\SupportChangeEvidenceController;
+use App\Http\Controllers\API\ThirdPartyRiskController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
 use App\Suite\SuiteInboundController;
@@ -89,6 +90,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/ai-use-cases/{useCase}/risks', [AiGovernanceController::class, 'mapRisk']);
     Route::post('/ai-use-cases/{useCase}/decisions', [AiGovernanceController::class, 'decide']);
     Route::post('/ai-use-cases/{useCase}/monitoring-reviews', [AiGovernanceController::class, 'monitor']);
+    Route::post('/vendors/{vendor}/risk-assessments', [ThirdPartyRiskController::class, 'assess']);
+    Route::post('/vendors/{vendor}/risks', [ThirdPartyRiskController::class, 'mapRisk']);
+    Route::post('/vendors/{vendor}/risk-decisions', [ThirdPartyRiskController::class, 'decide']);
+    Route::post('/vendors/{vendor}/risk-reviews', [ThirdPartyRiskController::class, 'review']);
     Route::apiResource('assets', AssetController::class);
     Route::apiResource('policies', PolicyController::class);
     Route::post('/policies/{policy}/obligations', [PolicyComplianceController::class, 'store']);

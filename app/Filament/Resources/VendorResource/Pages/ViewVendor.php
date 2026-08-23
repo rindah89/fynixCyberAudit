@@ -19,6 +19,7 @@ class ViewVendor extends ViewRecord
                 ->label(__('Assess Risk'))
                 ->icon('heroicon-o-clipboard-document-check')
                 ->color('primary')
+                ->visible(fn (): bool => auth()->user()?->can('Manage Vendor Management') ?? false)
                 ->schema(VendorAssessmentService::getAssessRiskFormSchema())
                 ->action(fn (array $data) => VendorAssessmentService::handleAssessRisk($this->record, $data)),
             EditAction::make(),

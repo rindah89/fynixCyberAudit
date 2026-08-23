@@ -114,6 +114,7 @@ class SurveysRelationManager extends RelationManager
                     ->label(__('Assess Risk'))
                     ->icon('heroicon-o-clipboard-document-check')
                     ->color('primary')
+                    ->visible(fn (): bool => auth()->user()?->can('Manage Vendor Management') ?? false)
                     ->schema(VendorAssessmentService::getAssessRiskFormSchema())
                     ->action(fn (array $data) => VendorAssessmentService::handleAssessRisk($this->ownerRecord, $data)),
             ])
@@ -142,7 +143,7 @@ class SurveysRelationManager extends RelationManager
                                 ->send();
                         }
                     })
-                    ->visible(fn (Survey $record): bool => ! empty($record->respondent_email) && in_array($record->status, [SurveyStatus::SENT, SurveyStatus::IN_PROGRESS])),
+                    ->visible(fn (Survey $record): bool => (auth()->user()?->can('Manage Vendor Management') ?? false) && ! empty($record->respondent_email) && in_array($record->status, [SurveyStatus::SENT, SurveyStatus::IN_PROGRESS])),
                 DeleteAction::make(),
             ])
             ->toolbarActions([

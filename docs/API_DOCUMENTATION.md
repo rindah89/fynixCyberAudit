@@ -561,6 +561,19 @@ Assessment likelihood and impact fields accept integers from 1 through 5. Risk c
 
 Approval requires the current assessment and at least one mapped existing control and risk. Decision values are `approved`, `rejected`, `changes_required`, and `suspended`. An approval also requires future `expires_at` and `next_monitoring_at` dates. Current governance values that differ from the approval snapshot require a new approval; reverting mutable inventory values to that snapshot restores the derived approval state. Monitoring outcomes are `satisfactory`, `needs_action`, and `suspended`; evidence references are unverified external text. See `docs/AI_GOVERNANCE.md` for the workflow and limitations.
 
+### Third-Party Risk Management
+
+Third-party risk endpoints require `Manage Third Party Risk`:
+
+- `POST /api/vendors/{vendor}/risk-assessments`
+- `POST /api/vendors/{vendor}/risks` with `risk_id`
+- `POST /api/vendors/{vendor}/risk-decisions`
+- `POST /api/vendors/{vendor}/risk-reviews`
+
+Assessments accept 1–5 likelihood, impact, residual likelihood, and residual impact values. Categories are `cybersecurity`, `privacy`, `operational`, `financial`, `concentration`, `geographic`, `compliance`, `reputational`, and `subcontractor`. An optional `survey_id` must identify a completed `vendor_assessment` survey for the same vendor with a score and scoring timestamp. The server allocates versions, derives both scores, and snapshots the survey score; clients cannot supply derived fields.
+
+Only existing risks classified as `third_party` may be linked. Decisions are `approved`, `conditionally_approved`, `rejected`, and `terminated`. Approval requires an assessment, at least one linked risk, and future expiration/review dates. Reviews require a current approval; outcomes are `satisfactory`, `needs_action`, and `terminate`. Evidence references are unverified external text. See `docs/THIRD_PARTY_RISK_MANAGEMENT.md` for workflow details and limitations.
+
 ### Create a New Standard
 
 ```bash
