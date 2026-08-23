@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\API\AiGovernanceController;
 use App\Http\Controllers\API\ApplicationController;
 use App\Http\Controllers\API\AssetController;
 use App\Http\Controllers\API\AuditController;
@@ -81,6 +82,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::apiResource('risks', RiskController::class);
     Route::apiResource('vendors', VendorController::class);
     Route::apiResource('applications', ApplicationController::class);
+    Route::post('/ai-systems', [AiGovernanceController::class, 'storeSystem']);
+    Route::post('/ai-systems/{system}/use-cases', [AiGovernanceController::class, 'storeUseCase']);
+    Route::post('/ai-use-cases/{useCase}/assessments', [AiGovernanceController::class, 'storeAssessment']);
+    Route::post('/ai-use-cases/{useCase}/controls', [AiGovernanceController::class, 'mapControl']);
+    Route::post('/ai-use-cases/{useCase}/risks', [AiGovernanceController::class, 'mapRisk']);
+    Route::post('/ai-use-cases/{useCase}/decisions', [AiGovernanceController::class, 'decide']);
+    Route::post('/ai-use-cases/{useCase}/monitoring-reviews', [AiGovernanceController::class, 'monitor']);
     Route::apiResource('assets', AssetController::class);
     Route::apiResource('policies', PolicyController::class);
     Route::post('/policies/{policy}/obligations', [PolicyComplianceController::class, 'store']);

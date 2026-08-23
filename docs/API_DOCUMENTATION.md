@@ -545,6 +545,22 @@ curl -X POST "https://your-domain.com/api/recovery-exercises/9/complete" \
 
 The server prohibits caller-supplied `outcome`, RTO, and RPO snapshots. It uses the latest approved impact analysis, derives the result, snapshots both objectives, and opens an issue when an objective is missed. The evidence reference is unverified external text, not a governed evidence relation. See `docs/OPERATIONAL_RESILIENCE.md` for every route and limitation.
 
+### AI Governance
+
+AI governance endpoints require `Manage AI Governance`. The creation sequence is:
+
+- `POST /api/ai-systems`
+- `POST /api/ai-systems/{system}/use-cases`
+- `POST /api/ai-use-cases/{useCase}/assessments`
+- `POST /api/ai-use-cases/{useCase}/controls` with `control_id`
+- `POST /api/ai-use-cases/{useCase}/risks` with `risk_id`
+- `POST /api/ai-use-cases/{useCase}/decisions`
+- `POST /api/ai-use-cases/{useCase}/monitoring-reviews`
+
+Assessment likelihood and impact fields accept integers from 1 through 5. Risk categories are `fairness`, `privacy`, `security`, `safety`, `transparency`, `accountability`, `human_rights`, and `regulatory`. The server allocates the version and derives both scores; clients may not supply those fields.
+
+Approval requires the current assessment and at least one mapped existing control and risk. Decision values are `approved`, `rejected`, `changes_required`, and `suspended`. An approval also requires future `expires_at` and `next_monitoring_at` dates. Current governance values that differ from the approval snapshot require a new approval; reverting mutable inventory values to that snapshot restores the derived approval state. Monitoring outcomes are `satisfactory`, `needs_action`, and `suspended`; evidence references are unverified external text. See `docs/AI_GOVERNANCE.md` for the workflow and limitations.
+
 ### Create a New Standard
 
 ```bash
