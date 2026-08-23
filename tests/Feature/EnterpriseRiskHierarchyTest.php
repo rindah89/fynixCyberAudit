@@ -171,7 +171,7 @@ class EnterpriseRiskHierarchyTest extends TestCase
 
         $this->deleteJson("/api/risks/{$child->id}")
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Risks with current or historical enterprise hierarchy links cannot be deleted.');
+            ->assertJsonPath('message', 'Risks with enterprise portfolio hierarchy or scenario evidence cannot be deleted.');
         $this->assertDatabaseHas('risks', ['id' => $child->id]);
     }
 

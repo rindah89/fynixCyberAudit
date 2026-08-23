@@ -60,6 +60,15 @@ class RiskExporter extends Exporter
                 ->label('Parent Risk Code'),
             ExportColumn::make('child_risks_count')
                 ->label('Direct Child Risks'),
+            ExportColumn::make('enterprise_scenarios_count')
+                ->label('Enterprise Scenarios'),
+            ExportColumn::make('latestEnterpriseScenario.stressed_score_sum')
+                ->label('Latest Scenario Stressed Score Sum'),
+            ExportColumn::make('latestEnterpriseScenario.score_delta')
+                ->label('Latest Scenario Score Delta'),
+            ExportColumn::make('latestEnterpriseScenario.probability_band')
+                ->label('Latest Scenario Probability Band')
+                ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
             ExportColumn::make('department')
                 ->label('Department')
                 ->state(fn (Risk $record): ?string => $record->taxonomies->first(fn (Taxonomy $taxonomy): bool => $taxonomy->parent?->slug === 'department')?->name),

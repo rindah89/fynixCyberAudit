@@ -15,8 +15,8 @@ class RiskController extends BaseApiController
     {
         $risk = Risk::query()->findOrFail($id);
         $this->authorize('delete', $risk);
-        if ($risk->hasHierarchyEvidence()) {
-            return response()->json(['message' => 'Risks with current or historical enterprise hierarchy links cannot be deleted.'], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        if ($risk->hasEnterprisePortfolioEvidence()) {
+            return response()->json(['message' => 'Risks with enterprise portfolio hierarchy or scenario evidence cannot be deleted.'], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $risk->delete();

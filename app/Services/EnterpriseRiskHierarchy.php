@@ -94,7 +94,7 @@ class EnterpriseRiskHierarchy
     }
 
     /** @return list<int> */
-    private function descendantIds(int $rootId): array
+    public function descendantIds(int $rootId): array
     {
         $all = collect();
         $frontier = collect([$rootId]);

@@ -33,8 +33,8 @@ class Risk extends Model
             'update_fields' => $defaults['update_fields'],
             'field_descriptions' => $defaults['field_descriptions'],
             'list_relations' => array_values(array_diff($defaults['list_relations'], ['parentRisk'])),
-            'list_counts' => array_values(array_diff($defaults['list_counts'], ['childRisks', 'hierarchyChanges'])),
-            'detail_relations' => array_values(array_diff($defaults['detail_relations'], ['parentRisk', 'childRisks', 'hierarchyChanges'])),
+            'list_counts' => array_values(array_diff($defaults['list_counts'], ['childRisks', 'hierarchyChanges', 'enterpriseScenarios', 'enterpriseScenarioItems'])),
+            'detail_relations' => array_values(array_diff($defaults['detail_relations'], ['parentRisk', 'childRisks', 'hierarchyChanges', 'enterpriseScenarios', 'latestEnterpriseScenario', 'enterpriseScenarioItems'])),
         ];
     }
 
@@ -78,8 +78,8 @@ class Risk extends Model
             }
         });
         static::deleting(function (Risk $risk): void {
-            if ($risk->hasHierarchyEvidence()) {
-                throw new LogicException('Risks with current or historical enterprise hierarchy links cannot be deleted.');
+            if ($risk->hasEnterprisePortfolioEvidence()) {
+                throw new LogicException('Risks with enterprise portfolio hierarchy or scenario evidence cannot be deleted.');
             }
         });
     }
@@ -131,11 +131,28 @@ class Risk extends Model
         return $this->hasMany(RiskHierarchyChange::class);
     }
 
-    public function hasHierarchyEvidence(): bool
+    public function enterpriseScenarios(): HasMany
+    {
+        return $this->hasMany(EnterpriseRiskScenario::class, 'root_risk_id');
+    }
+
+    public function latestEnterpriseScenario(): HasOne
+    {
+        return $this->hasOne(EnterpriseRiskScenario::class, 'root_risk_id')->latestOfMany('version');
+    }
+
+    public function enterpriseScenarioItems(): HasMany
+    {
+        return $this->hasMany(EnterpriseRiskScenarioItem::class);
+    }
+
+    public function hasEnterprisePortfolioEvidence(): bool
     {
         return $this->parent_risk_id !== null
             || $this->childRisks()->exists()
             || $this->hierarchyChanges()->exists()
+            || $this->enterpriseScenarios()->exists()
+            || $this->enterpriseScenarioItems()->exists()
             || RiskHierarchyChange::query()->where('previous_parent_risk_id', $this->id)->orWhere('parent_risk_id', $this->id)->exists();
     }
 
@@ -165,7 +182,8 @@ class Risk extends Model
             'governanceProfile.owner', 'governanceProfile.businessService', 'latestGovernanceReview',
             'assets', 'implementations.controls', 'openGovernanceIssues:id,risk_id,severity',
             'parentRisk:id,code,name', 'parentRisk.governanceProfile:id,risk_id,owner_id', 'childRisks:id,parent_risk_id',
-        ])->withCount('childRisks');
+            'latestEnterpriseScenario',
+        ])->withCount(['childRisks', 'enterpriseScenarios']);
     }
 
     public function portfolioGovernanceSnapshot(?RiskGovernanceProfile $profile = null): array

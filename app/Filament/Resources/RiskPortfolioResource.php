@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Enums\RiskDomain;
 use App\Filament\Resources\RiskPortfolioResource\Pages\ListRiskPortfolio;
 use App\Filament\Resources\RiskPortfolioResource\Pages\ViewRiskPortfolio;
+use App\Filament\Resources\RiskPortfolioResource\RelationManagers\EnterpriseScenariosRelationManager;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceIssuesRelationManager;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceReviewsRelationManager;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\HierarchyChangesRelationManager;
@@ -40,7 +41,7 @@ class RiskPortfolioResource extends Resource
             return false;
         }
 
-        return $user->can('Manage Risk Portfolio') || RiskGovernanceProfile::query()->where('owner_id', $user->id)->exists();
+        return $user->can('Manage Risk Portfolio') || $user->can('Read Risks') || RiskGovernanceProfile::query()->where('owner_id', $user->id)->exists();
     }
 
     public static function canView(Model $record): bool
@@ -50,7 +51,7 @@ class RiskPortfolioResource extends Resource
             return false;
         }
 
-        return $user->can('Manage Risk Portfolio') || $record->governanceProfile?->owner_id === $user->id;
+        return $user->can('Manage Risk Portfolio') || $user->can('Read Risks') || $record->governanceProfile?->owner_id === $user->id;
     }
 
     public static function canCreate(): bool
@@ -116,7 +117,7 @@ class RiskPortfolioResource extends Resource
     {
         $query = parent::getEloquentQuery()->whereIn('domain', [RiskDomain::Enterprise, RiskDomain::Operational, RiskDomain::Technology])->withPortfolioGovernanceGraph();
         $user = auth()->user();
-        if ($user && ! $user->can('Manage Risk Portfolio')) {
+        if ($user && ! $user->can('Manage Risk Portfolio') && ! $user->can('Read Risks')) {
             $query->whereHas('governanceProfile', fn (Builder $query) => $query->where('owner_id', $user->id));
         }
 
@@ -125,7 +126,7 @@ class RiskPortfolioResource extends Resource
 
     public static function getRelations(): array
     {
-        return [GovernanceReviewsRelationManager::class, GovernanceIssuesRelationManager::class, HierarchyChangesRelationManager::class];
+        return [GovernanceReviewsRelationManager::class, GovernanceIssuesRelationManager::class, HierarchyChangesRelationManager::class, EnterpriseScenariosRelationManager::class];
     }
 
     public static function getPages(): array

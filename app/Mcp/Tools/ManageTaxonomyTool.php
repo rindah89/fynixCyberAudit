@@ -27,7 +27,7 @@ class ManageTaxonomyTool extends Tool
 {
     protected string $name = 'ManageTaxonomy';
 
-    protected string $description = 'Manage taxonomy types and terms: list_types, list_terms, get, create, update, delete.';
+    protected string $description = 'Manage taxonomy types and terms.';
 
     /**
      * Protected system taxonomy slugs that cannot be deleted.
