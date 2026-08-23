@@ -20,6 +20,8 @@ class ExecuteControlTestRequest extends FormRequest
             'observed_value' => 'required|string|max:255',
             'notes' => 'nullable|string|max:10000',
             'evidence_reference' => 'nullable|string|max:255',
+            'evidence_attachment_ids' => 'sometimes|array|max:20',
+            'evidence_attachment_ids.*' => 'integer|distinct|exists:file_attachments,id',
             'outcome' => 'prohibited',
         ];
     }

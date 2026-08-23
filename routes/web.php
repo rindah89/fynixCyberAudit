@@ -3,6 +3,7 @@
 use App\Access\FileAccess;
 use App\Filament\Vendor\Pages\Auth\SurveyAccess;
 use App\Http\Controllers\Auth\SsoController;
+use App\Http\Controllers\ControlTestExecutionEvidenceController;
 use App\Http\Controllers\GovernanceIssueClosureEvidenceController;
 use App\Http\Controllers\MediaProxyController;
 use App\Http\Controllers\SurveyAttachmentController;
@@ -40,6 +41,8 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/app/governance-closure-evidence/{evidence}/download', [GovernanceIssueClosureEvidenceController::class, 'download'])
         ->name('governance-closure-evidence.download');
+    Route::get('/app/control-test-execution-evidence/{evidence}/download', [ControlTestExecutionEvidenceController::class, 'download'])
+        ->name('control-test-execution-evidence.download');
 
     // Media proxy route for serving private S3/cloud storage files
     Route::get('/media/{path}', [MediaProxyController::class, 'show'])

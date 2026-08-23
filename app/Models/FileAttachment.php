@@ -45,13 +45,13 @@ class FileAttachment extends Model
     {
         static::updating(function (FileAttachment $attachment): void {
             if ($attachment->isDirty(['file_path', 'file_name', 'file_size', 'audit_id', 'data_request_response_id'])
-                && $attachment->closureEvidence()->exists()) {
-                throw new LogicException('Files referenced by governed closure evidence cannot change identity through product interfaces.');
+                && $attachment->hasGovernedEvidenceReferences()) {
+                throw new LogicException('Files referenced by governed evidence cannot change identity through product interfaces.');
             }
         });
         static::deleting(function (FileAttachment $attachment): void {
-            if ($attachment->closureEvidence()->exists()) {
-                throw new LogicException('Files referenced by governed closure evidence cannot be deleted through product interfaces.');
+            if ($attachment->hasGovernedEvidenceReferences()) {
+                throw new LogicException('Files referenced by governed evidence cannot be deleted through product interfaces.');
             }
         });
     }
@@ -82,6 +82,16 @@ class FileAttachment extends Model
         return $this->hasMany(GovernanceIssueClosureEvidence::class);
     }
 
+    public function controlTestEvidence(): HasMany
+    {
+        return $this->hasMany(ControlTestExecutionEvidence::class);
+    }
+
+    public function hasGovernedEvidenceReferences(): bool
+    {
+        return $this->closureEvidence()->exists() || $this->controlTestEvidence()->exists();
+    }
+
     public function auditItem(): BelongsTo
     {
         return $this->belongsTo(AuditItem::class);
@@ -100,7 +110,7 @@ class FileAttachment extends Model
             ->dontLogEmptyChanges();
     }
 
-    public function scopeEligibleClosureEvidenceFor(Builder $query, User $user): Builder
+    public function scopeEligibleGovernedEvidenceFor(Builder $query, User $user): Builder
     {
         return $query
             ->whereHas('dataRequestResponse', fn (Builder $response) => $response->where('status', 'Accepted'))

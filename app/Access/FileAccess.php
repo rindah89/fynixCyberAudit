@@ -3,6 +3,7 @@
 namespace App\Access;
 
 use App\Models\AiJob;
+use App\Models\ControlTestExecutionEvidence;
 use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
 use App\Models\GovernanceIssueLifecycle;
@@ -119,12 +120,29 @@ class FileAccess
         );
     }
 
+    public function streamControlTestExecutionEvidence(User $actor, ControlTestExecutionEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['execution.definition', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        if (! $evidence->execution || ! $actor->can('view', $evidence->execution->definition)
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed control-test evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
-        if (FileAttachment::query()->where('file_path', $path)->whereHas('closureEvidence')->exists()) {
+        if (FileAttachment::query()->where('file_path', $path)
+            ->where(fn ($query) => $query->whereHas('closureEvidence')->orWhereHas('controlTestEvidence'))
+            ->exists()) {
             throw ValidationException::withMessages([
-                'file_path' => 'Files referenced by governed closure evidence cannot be removed through product interfaces.',
+                'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',
             ]);
         }
 

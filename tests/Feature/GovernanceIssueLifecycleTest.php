@@ -184,21 +184,21 @@ class GovernanceIssueLifecycleTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids');
 
         $inaccessible = $this->acceptedEvidence(User::factory()->create(), 'closures/inaccessible.txt', 'other audit bytes');
-        $this->assertFalse(FileAttachment::query()->eligibleClosureEvidenceFor($verifier)->whereKey($inaccessible)->exists());
+        $this->assertFalse(FileAttachment::query()->eligibleGovernedEvidenceFor($verifier)->whereKey($inaccessible)->exists());
         $this->postJson("/api/governance-issues/risk/{$issue->id}/close", [
             'verification_summary' => 'Evidence belongs to an unrelated audit.',
             'evidence_attachment_ids' => [$inaccessible->id],
         ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.0');
 
         $notAccepted = $this->acceptedEvidence($verifier, 'closures/not-accepted.txt', 'unaccepted bytes', false);
-        $this->assertFalse(FileAttachment::query()->eligibleClosureEvidenceFor($verifier)->whereKey($notAccepted)->exists());
+        $this->assertFalse(FileAttachment::query()->eligibleGovernedEvidenceFor($verifier)->whereKey($notAccepted)->exists());
         $this->postJson("/api/governance-issues/risk/{$issue->id}/close", [
             'verification_summary' => 'Response has not been accepted.',
             'evidence_attachment_ids' => [$notAccepted->id],
         ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.0');
 
         $missing = $this->acceptedEvidence($verifier, 'closures/missing.txt', 'temporary bytes');
-        $this->assertTrue(FileAttachment::query()->eligibleClosureEvidenceFor($verifier)->whereKey($missing)->exists());
+        $this->assertTrue(FileAttachment::query()->eligibleGovernedEvidenceFor($verifier)->whereKey($missing)->exists());
         Storage::disk('private')->delete($missing->file_path);
         $this->postJson("/api/governance-issues/risk/{$issue->id}/close", [
             'verification_summary' => 'The evidence content is missing.',

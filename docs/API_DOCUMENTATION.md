@@ -509,7 +509,7 @@ curl -X POST "https://your-domain.com/api/controls/7/test-definitions" \
   }'
 ```
 
-Record an observation. `outcome` is prohibited because the server derives pass/fail from the stored definition. `evidence_reference` is optional unverified external text, not a governed evidence relation.
+Record an observation. `outcome` is prohibited because the server derives pass/fail from the stored definition. `evidence_attachment_ids` optionally accepts up to 20 distinct file-attachment IDs. Each must belong to an accepted data-request response and be downloadable by the caller. The server retains bounded content copies and immutable provenance, size, disk/path, and SHA-256 snapshots; the response includes them under `data.evidence`. `evidence_reference` remains optional unverified external text.
 
 ```bash
 curl -X POST "https://your-domain.com/api/control-test-definitions/12/execute" \
@@ -519,12 +519,14 @@ curl -X POST "https://your-domain.com/api/control-test-definitions/12/execute" \
   -d '{
     "observed_value": "99.2",
     "notes": "Identity provider coverage export reviewed.",
+    "evidence_attachment_ids": [81],
     "evidence_reference": "IDP-MFA-2026-08"
   }'
 ```
 
 Supported `metric_type` values are `boolean` and `numeric`. Supported operators are `equals`, `not_equals`, `greater_than`, `greater_than_or_equal`, `less_than`, and `less_than_or_equal`; boolean tests use only the equality operators. Frequencies are `one_time`, `monthly`, `quarterly`, `semi_annual`, and `annual`.
 Numeric values use decimal-safe comparison and accept up to 15 integer digits and 6 decimal places; exponential notation is rejected. A completed `one_time` definition cannot be executed again.
+Governed evidence is limited to 10 MiB per file and 50 MiB per execution. Hashes establish retained-byte identity, not truth, sufficiency, or authenticity, and the observation value remains operator/integration supplied.
 
 ### Operational Resilience
 

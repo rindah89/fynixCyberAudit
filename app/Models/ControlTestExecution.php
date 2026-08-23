@@ -6,6 +6,7 @@ use App\Enums\ControlTestOutcome;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
@@ -39,5 +40,10 @@ class ControlTestExecution extends Model
     public function finding(): HasOne
     {
         return $this->hasOne(ControlTestFinding::class);
+    }
+
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(ControlTestExecutionEvidence::class);
     }
 }

@@ -177,7 +177,7 @@ class GovernanceIssueLifecycleResource extends Resource
             return [];
         }
 
-        return FileAttachment::query()->eligibleClosureEvidenceFor($user)
+        return FileAttachment::query()->eligibleGovernedEvidenceFor($user)
             ->where('file_name', 'like', '%'.addcslashes($search, '%_').'%')
             ->orderByDesc('id')->limit(50)->pluck('file_name', 'id')->all();
     }
@@ -189,7 +189,7 @@ class GovernanceIssueLifecycleResource extends Resource
             return [];
         }
 
-        return FileAttachment::query()->eligibleClosureEvidenceFor($user)
+        return FileAttachment::query()->eligibleGovernedEvidenceFor($user)
             ->whereKey($values)->pluck('file_name', 'id')->all();
     }
 }

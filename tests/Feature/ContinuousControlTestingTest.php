@@ -2,22 +2,38 @@
 
 namespace Tests\Feature;
 
+use App\ContinuousControlTesting\ControlTestRunner;
+use App\Filament\Exports\ControlTestExecutionExporter;
 use App\Filament\Resources\ControlTestDefinitionResource;
+use App\Models\Audit;
 use App\Models\Control;
 use App\Models\ControlTestDefinition;
 use App\Models\ControlTestExecution;
+use App\Models\ControlTestExecutionEvidence;
 use App\Models\ControlTestFinding;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\Implementation;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
+use Filament\Actions\Exports\Models\Export;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class ContinuousControlTestingTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('private');
+    }
 
     public function test_control_owner_can_define_and_execute_a_recurring_numeric_test(): void
     {
@@ -91,6 +107,67 @@ class ContinuousControlTestingTest extends TestCase
         $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_type' => ControlTestFinding::class, 'issue_id' => $issue->id, 'status' => 'open']);
     }
 
+    public function test_observation_can_bind_authorized_accepted_audit_evidence_with_retained_content(): void
+    {
+        $owner = User::factory()->create();
+        $definition = $this->definition($owner);
+        $attachment = $this->acceptedEvidence($owner, 'control-tests/mfa.csv', 'mfa coverage evidence');
+        Sanctum::actingAs($owner);
+
+        $executionId = $this->postJson("/api/control-test-definitions/{$definition->id}/execute", [
+            'observed_value' => '99',
+            'notes' => 'Accepted audit export supports the observed value.',
+            'evidence_attachment_ids' => [$attachment->id],
+        ])->assertCreated()
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', 'mfa coverage evidence'))
+            ->json('data.id');
+
+        $evidence = ControlTestExecutionEvidence::query()->firstOrFail();
+        $this->assertSame($executionId, $evidence->control_test_execution_id);
+        $this->assertSame('Accepted', $evidence->response_status_snapshot);
+        $migration = require database_path('migrations/2026_08_23_240000_create_control_test_execution_evidence.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('control_test_execution_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+        $this->assertSame('mfa coverage evidence', Storage::disk('private')->get($evidence->file_path_snapshot));
+        Storage::disk('private')->put($attachment->file_path, 'source upload replaced later');
+        $this->assertSame('mfa coverage evidence', Storage::disk('private')->get($evidence->file_path_snapshot));
+
+        $this->actingAs($owner, 'web')->get(route('control-test-execution-evidence.download', $evidence))
+            ->assertSuccessful()->assertStreamedContent('mfa coverage evidence');
+        $this->actingAs($owner, 'web')->get(ControlTestDefinitionResource::getUrl('view', ['record' => $definition]))->assertOk();
+        $exporter = new ControlTestExecutionExporter(new Export, [
+            'evidence_count' => 'Governed Evidence Files',
+            'evidence_sha256' => 'Evidence SHA-256',
+            'evidence_audit_ids' => 'Evidence Audit IDs',
+        ], []);
+        $exportRecord = ControlTestExecutionExporter::modifyQuery(ControlTestExecution::query()->whereKey($executionId))->firstOrFail();
+        $this->assertSame(['1', $evidence->sha256, (string) $evidence->audit_id_snapshot], $exporter($exportRecord));
+        $this->actingAs(User::factory()->create(), 'web')->get(route('control-test-execution-evidence.download', $evidence))
+            ->assertForbidden();
+
+        $unauthorized = $this->acceptedEvidence(User::factory()->create(), 'control-tests/foreign.csv', 'foreign bytes');
+        $retainedBeforeFailure = Storage::disk('private')->allFiles('governed-evidence/control-test-execution');
+        Sanctum::actingAs($owner);
+        $this->postJson("/api/control-test-definitions/{$definition->id}/execute", [
+            'observed_value' => '99',
+            'evidence_attachment_ids' => [$attachment->id, $unauthorized->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertDatabaseCount('control_test_executions', 1);
+        $this->assertSame($retainedBeforeFailure, Storage::disk('private')->allFiles('governed-evidence/control-test-execution'));
+
+        try {
+            $evidence->update(['sha256' => str_repeat('0', 64)]);
+            $this->fail('Governed execution evidence must remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+
+        $this->expectException(\LogicException::class);
+        $attachment->delete();
+    }
+
     public function test_execution_result_is_derived_and_cannot_be_supplied_or_rewritten(): void
     {
         $owner = User::factory()->create();
@@ -130,6 +207,24 @@ class ContinuousControlTestingTest extends TestCase
         $this->postJson("/api/control-test-definitions/{$definition->id}/execute", [
             'observed_value' => '10',
         ])->assertCreated();
+    }
+
+    public function test_runner_reauthorizes_against_locked_current_ownership(): void
+    {
+        $formerOwner = User::factory()->create();
+        $currentOwner = User::factory()->create();
+        $definition = $this->definition($formerOwner);
+        Control::query()->whereKey($definition->control_id)->update(['control_owner_id' => $currentOwner->id]);
+        ControlTestDefinition::query()->whereKey($definition)->update(['owner_id' => $currentOwner->id]);
+
+        try {
+            app(ControlTestRunner::class)->execute($definition, $formerOwner, '10');
+            $this->fail('The runner must not trust stale ownership from its caller.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertDatabaseCount('control_test_executions', 0);
     }
 
     public function test_definition_rejects_an_implementation_not_mapped_to_the_control(): void
@@ -292,5 +387,31 @@ class ContinuousControlTestingTest extends TestCase
             'next_run_at' => now(),
             'is_active' => true,
         ], $attributes));
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id,
+            'created_by_id' => $auditManager->id,
+            'assigned_to_id' => $auditManager->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id,
+            'requester_id' => $auditManager->id,
+            'requestee_id' => $auditManager->id,
+        ]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id,
+            'audit_id' => $audit->id,
+            'file_name' => basename($path),
+            'file_path' => $path,
+            'file_size' => strlen($contents),
+            'description' => 'Governed control-test observation evidence',
+            'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

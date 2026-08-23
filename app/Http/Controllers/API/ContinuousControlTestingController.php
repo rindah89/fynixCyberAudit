@@ -29,6 +29,7 @@ class ContinuousControlTestingController extends Controller
             $data['observed_value'],
             $data['notes'] ?? null,
             $data['evidence_reference'] ?? null,
+            $data['evidence_attachment_ids'] ?? [],
         );
 
         return response()->json(['data' => $execution, 'definition' => $definition->refresh()], JsonResponse::HTTP_CREATED);
