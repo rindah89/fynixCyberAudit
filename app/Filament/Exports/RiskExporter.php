@@ -56,6 +56,10 @@ class RiskExporter extends Exporter
                 ->formatStateUsing(fn ($state) => $state?->getLabel() ?? ''),
             ExportColumn::make('latestGovernanceReview.next_review_at')
                 ->label('Next Governance Review'),
+            ExportColumn::make('parentRisk.code')
+                ->label('Parent Risk Code'),
+            ExportColumn::make('child_risks_count')
+                ->label('Direct Child Risks'),
             ExportColumn::make('department')
                 ->label('Department')
                 ->state(fn (Risk $record): ?string => $record->taxonomies->first(fn (Taxonomy $taxonomy): bool => $taxonomy->parent?->slug === 'department')?->name),

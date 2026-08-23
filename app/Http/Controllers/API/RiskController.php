@@ -5,11 +5,25 @@ namespace App\Http\Controllers\API;
 use App\Enums\RiskDomain;
 use App\Enums\RiskStatus;
 use App\Models\Risk;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class RiskController extends BaseApiController
 {
+    public function destroy(int $id): JsonResponse
+    {
+        $risk = Risk::query()->findOrFail($id);
+        $this->authorize('delete', $risk);
+        if ($risk->hasHierarchyEvidence()) {
+            return response()->json(['message' => 'Risks with current or historical enterprise hierarchy links cannot be deleted.'], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $risk->delete();
+
+        return response()->json(status: JsonResponse::HTTP_NO_CONTENT);
+    }
+
     protected string $modelClass = Risk::class;
 
     protected string $resourceName = 'Risks';

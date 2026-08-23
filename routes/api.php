@@ -84,6 +84,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::apiResource('risks', RiskController::class);
     Route::put('/risks/{risk}/governance-profile', [RiskPortfolioController::class, 'profile']);
     Route::post('/risks/{risk}/governance-reviews', [RiskPortfolioController::class, 'review']);
+    Route::put('/risks/{risk}/parent', [RiskPortfolioController::class, 'parent']);
+    Route::get('/risks/{risk}/rollup', [RiskPortfolioController::class, 'rollup']);
     Route::apiResource('vendors', VendorController::class);
     Route::apiResource('applications', ApplicationController::class);
     Route::post('/ai-systems', [AiGovernanceController::class, 'storeSystem']);

@@ -10,6 +10,7 @@ use App\Mcp\Traits\HasMcpSupport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -21,6 +22,21 @@ use Spatie\Activitylog\Support\LogOptions;
 class Risk extends Model
 {
     use HasFactory, HasMcpSupport, HasTaxonomy, LogsActivity;
+
+    public static function mcpConfig(): array
+    {
+        $defaults = static::buildDefaultMcpConfig(new static);
+        unset($defaults['create_fields']['parent_risk_id'], $defaults['update_fields']['parent_risk_id'], $defaults['field_descriptions']['parent_risk_id']);
+
+        return [
+            'create_fields' => $defaults['create_fields'],
+            'update_fields' => $defaults['update_fields'],
+            'field_descriptions' => $defaults['field_descriptions'],
+            'list_relations' => array_values(array_diff($defaults['list_relations'], ['parentRisk'])),
+            'list_counts' => array_values(array_diff($defaults['list_counts'], ['childRisks', 'hierarchyChanges'])),
+            'detail_relations' => array_values(array_diff($defaults['detail_relations'], ['parentRisk', 'childRisks', 'hierarchyChanges'])),
+        ];
+    }
 
     protected $casts = [
         'id' => 'integer',
@@ -43,6 +59,7 @@ class Risk extends Model
         'residual_impact',
         'residual_risk',
         'is_active',
+        'parent_risk_id',
     ];
 
     protected static function booted(): void
@@ -58,6 +75,11 @@ class Risk extends Model
         static::updating(function (Risk $risk): void {
             if ($risk->isDirty('domain') && $risk->governanceProfile()->exists()) {
                 throw new LogicException('A risk domain cannot be changed after portfolio governance begins. Create a new risk record instead.');
+            }
+        });
+        static::deleting(function (Risk $risk): void {
+            if ($risk->hasHierarchyEvidence()) {
+                throw new LogicException('Risks with current or historical enterprise hierarchy links cannot be deleted.');
             }
         });
     }
@@ -94,6 +116,29 @@ class Risk extends Model
         return $this->hasOne(RiskGovernanceProfile::class);
     }
 
+    public function parentRisk(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_risk_id');
+    }
+
+    public function childRisks(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_risk_id');
+    }
+
+    public function hierarchyChanges(): HasMany
+    {
+        return $this->hasMany(RiskHierarchyChange::class);
+    }
+
+    public function hasHierarchyEvidence(): bool
+    {
+        return $this->parent_risk_id !== null
+            || $this->childRisks()->exists()
+            || $this->hierarchyChanges()->exists()
+            || RiskHierarchyChange::query()->where('previous_parent_risk_id', $this->id)->orWhere('parent_risk_id', $this->id)->exists();
+    }
+
     public function governanceReviews(): HasMany
     {
         return $this->hasMany(RiskGovernanceReview::class);
@@ -119,7 +164,8 @@ class Risk extends Model
         return $query->with([
             'governanceProfile.owner', 'governanceProfile.businessService', 'latestGovernanceReview',
             'assets', 'implementations.controls', 'openGovernanceIssues:id,risk_id,severity',
-        ]);
+            'parentRisk:id,code,name', 'parentRisk.governanceProfile:id,risk_id,owner_id', 'childRisks:id,parent_risk_id',
+        ])->withCount('childRisks');
     }
 
     public function portfolioGovernanceSnapshot(?RiskGovernanceProfile $profile = null): array
@@ -203,6 +249,7 @@ class Risk extends Model
                 'name',
                 'description',
                 'domain',
+                'parent_risk_id',
                 'inherent_likelihood',
                 'inherent_impact',
                 'inherent_risk',

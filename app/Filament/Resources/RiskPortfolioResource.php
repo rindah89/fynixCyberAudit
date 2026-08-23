@@ -7,8 +7,10 @@ use App\Filament\Resources\RiskPortfolioResource\Pages\ListRiskPortfolio;
 use App\Filament\Resources\RiskPortfolioResource\Pages\ViewRiskPortfolio;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceIssuesRelationManager;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceReviewsRelationManager;
+use App\Filament\Resources\RiskPortfolioResource\RelationManagers\HierarchyChangesRelationManager;
 use App\Models\Risk;
 use App\Models\RiskGovernanceProfile;
+use App\Services\EnterpriseRiskHierarchy;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -76,6 +78,19 @@ class RiskPortfolioResource extends Resource
             TextEntry::make('portfolio_governance_status')->label('Governance')->badge()->color(fn (string $state) => self::statusColor($state)),
             TextEntry::make('governanceProfile.strategic_objective')->label('Strategic objective')->placeholder('Not applicable'),
             TextEntry::make('governanceProfile.businessService.name')->label('Business service')->placeholder('Not applicable'),
+            TextEntry::make('parentRisk.name')->label('Parent risk')->state(fn (Risk $record): ?string => self::canInspectParent($record) ? $record->parentRisk?->name : null)->placeholder('Portfolio root or restricted'),
+            TextEntry::make('child_risks_count')->label('Direct child risks'),
+            TextEntry::make('enterprise_rollup')->label('Enterprise exposure roll-up')->state(function (Risk $record): ?string {
+                if ($record->domain !== RiskDomain::Enterprise || ! $record->governanceProfile) {
+                    return null;
+                }
+                $rollup = app(EnterpriseRiskHierarchy::class)->boundedRollup($record);
+                if (! $rollup['available']) {
+                    return 'Unavailable: '.$rollup['error'];
+                }
+
+                return "{$rollup['risk_count']} active risks · residual score sum {$rollup['residual_score_sum']} · {$rollup['above_appetite_count']} above appetite";
+            })->placeholder('Not applicable')->columnSpanFull(),
         ])]);
     }
 
@@ -87,6 +102,8 @@ class RiskPortfolioResource extends Resource
             TextColumn::make('residual_risk')->label('Residual')->badge()->color(fn (int $state) => $state >= 20 ? 'danger' : ($state >= 10 ? 'warning' : 'success'))->sortable(),
             TextColumn::make('governanceProfile.appetite_threshold')->label('Appetite')->placeholder('Not profiled'),
             TextColumn::make('portfolio_governance_status')->label('Governance')->badge()->color(fn (string $state) => self::statusColor($state)),
+            TextColumn::make('parentRisk.code')->label('Parent')->state(fn (Risk $record): ?string => self::canInspectParent($record) ? $record->parentRisk?->code : null)->placeholder('Root or restricted'),
+            TextColumn::make('child_risks_count')->label('Children'),
             TextColumn::make('latestGovernanceReview.next_review_at')->label('Next review')->date()->placeholder('Not scheduled'),
         ])->filters([SelectFilter::make('domain')->options([
             RiskDomain::Enterprise->value => RiskDomain::Enterprise->getLabel(),
@@ -108,7 +125,7 @@ class RiskPortfolioResource extends Resource
 
     public static function getRelations(): array
     {
-        return [GovernanceReviewsRelationManager::class, GovernanceIssuesRelationManager::class];
+        return [GovernanceReviewsRelationManager::class, GovernanceIssuesRelationManager::class, HierarchyChangesRelationManager::class];
     }
 
     public static function getPages(): array
@@ -122,5 +139,13 @@ class RiskPortfolioResource extends Resource
             'accepted' => 'success', 'profile_required', 'review_required', 're_review_required' => 'warning',
             'mitigate', 'transfer', 'avoid', 'action_required', 'review_overdue' => 'danger', default => 'gray',
         };
+    }
+
+    private static function canInspectParent(Risk $record): bool
+    {
+        $user = auth()->user();
+
+        return $record->parent_risk_id === null
+            || ($user && ($user->can('Manage Risk Portfolio') || $user->can('Read Risks') || $record->parentRisk?->governanceProfile?->owner_id === $user->id));
     }
 }

@@ -580,8 +580,12 @@ Portfolio governance endpoints require `Manage Risk Portfolio`:
 
 - `PUT /api/risks/{risk}/governance-profile`
 - `POST /api/risks/{risk}/governance-reviews`
+- `PUT /api/risks/{risk}/parent` with `parent_risk_id` (nullable)
+- `GET /api/risks/{risk}/rollup`
 
-Profiles require `owner_id`, an `appetite_threshold` from 1–25, `review_frequency` (`monthly`, `quarterly`, `semi_annual`, or `annual`), and a future `next_review_at`. Enterprise risks also require `strategic_objective`; operational risks require an active `business_service_id`; technology risks require risk mappings to an asset and to an implementation linked to a control.
+Profiles require `owner_id`, an `appetite_threshold` from 1–25, `review_frequency` (`monthly`, `quarterly`, `semi_annual`, or `annual`), and a future `next_review_at`. Enterprise risks also require `strategic_objective`; operational risks require an active `business_service_id`; technology risks require risk mappings to an active asset and to a fully implemented implementation linked to an applicable control.
+
+Parent assignment requires active, governed enterprise risks and rejects self-links and cycles. Set `parent_risk_id` to `null` to detach an active or inactive governed enterprise risk as a root. Writes are serialized and retried transactionally. Current and historical hierarchy references prevent risk deletion through product interfaces. The roll-up endpoint is also readable by users with `Read Risks` and by the selected root's accountable owner. It returns current active risk/descendant counts; residual-score sum, average, and maximum; above-appetite count; score-band counts; its `current_active_residual_scores` basis; and generation time, with limits of 100 levels and 10,000 descendants. Owner-only aggregates may include other owners' descendants but do not disclose their identities or privileged change history. These ordinal-score aggregates support prioritization and are not quantitative loss, correlation, capital, or saved scenario results.
 
 Review decisions are `accepted`, `mitigate`, `transfer`, and `avoid`. The server derives every snapshot field. A residual score above appetite cannot be accepted; treatment decisions open an issue. Evidence references are unverified external text. Third-party and unclassified risks are rejected by these endpoints because they use other workflows. See `docs/RISK_PORTFOLIO_GOVERNANCE.md` for evidence boundaries and limitations.
 
