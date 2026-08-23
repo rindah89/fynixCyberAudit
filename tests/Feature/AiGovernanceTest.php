@@ -4,18 +4,27 @@ namespace Tests\Feature;
 
 use App\AiGovernance\AiGovernanceManager;
 use App\Enums\AiGovernanceDecisionType;
+use App\Enums\AiMonitoringOutcome;
+use App\Filament\Exports\AiMonitoringReviewExporter;
 use App\Filament\Resources\AiSystemResource;
 use App\Models\AiGovernanceIssue;
+use App\Models\AiMonitoringReviewEvidence;
 use App\Models\AiRiskAssessment;
 use App\Models\AiSystem;
 use App\Models\AiUseCase;
+use App\Models\Audit;
 use App\Models\Control;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\Risk;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class AiGovernanceTest extends TestCase
@@ -26,6 +35,7 @@ class AiGovernanceTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        Storage::fake('private');
     }
 
     public function test_manager_can_inventory_ai_system_and_register_use_case(): void
@@ -157,6 +167,82 @@ class AiGovernanceTest extends TestCase
         ])->assertCreated()->assertJsonPath('use_case.governance_status', 'action_required');
     }
 
+    public function test_monitoring_review_can_bind_authorized_accepted_audit_evidence(): void
+    {
+        $manager = $this->manager();
+        $useCase = $this->approvedUseCase($manager);
+        $attachment = $this->acceptedEvidence($manager, 'ai-monitoring/quality.csv', 'quality sample bytes');
+        Sanctum::actingAs($manager);
+
+        $reviewId = $this->postJson("/api/ai-use-cases/{$useCase->id}/monitoring-reviews", [
+            'outcome' => 'satisfactory',
+            'performance_summary' => 'The accepted quality sample remained within approved tolerance.',
+            'evidence_attachment_ids' => [$attachment->id],
+            'next_review_at' => now()->addMonth(),
+        ])->assertCreated()
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', 'quality sample bytes'))
+            ->json('data.id');
+
+        $evidence = AiMonitoringReviewEvidence::query()->firstOrFail();
+        $this->assertSame($reviewId, $evidence->ai_monitoring_review_id);
+        $this->assertSame('Accepted', $evidence->response_status_snapshot);
+        $migration = require database_path('migrations/2026_08_23_250000_create_ai_monitoring_review_evidence.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('ai_monitoring_review_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+        $this->assertSame('quality sample bytes', Storage::disk('private')->get($evidence->file_path_snapshot));
+        Storage::disk('private')->put($attachment->file_path, 'later source replacement');
+        $this->assertSame('quality sample bytes', Storage::disk('private')->get($evidence->file_path_snapshot));
+        $this->actingAs($manager, 'web')->get(route('ai-monitoring-review-evidence.download', $evidence))
+            ->assertSuccessful()->assertStreamedContent('quality sample bytes');
+        $this->actingAs(User::factory()->create(), 'web')->get(route('ai-monitoring-review-evidence.download', $evidence))
+            ->assertForbidden();
+        $this->actingAs($manager, 'web')->get(AiSystemResource::getUrl('view', ['record' => $useCase->aiSystem]))->assertOk();
+        $exportColumns = collect(AiMonitoringReviewExporter::getColumns())->map(fn ($column) => $column->getName());
+        $this->assertFalse($exportColumns->contains(fn (string $name): bool => str_starts_with($name, 'evidence')));
+
+        $unauthorized = $this->acceptedEvidence(User::factory()->create(), 'ai-monitoring/foreign.csv', 'foreign bytes');
+        $retainedBefore = Storage::disk('private')->allFiles('governed-evidence/ai-monitoring-review');
+        $this->postJson("/api/ai-use-cases/{$useCase->id}/monitoring-reviews", [
+            'outcome' => 'satisfactory',
+            'performance_summary' => 'Unauthorized evidence must reject the entire review.',
+            'evidence_attachment_ids' => [$attachment->id, $unauthorized->id],
+            'next_review_at' => now()->addMonths(2),
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertDatabaseCount('ai_monitoring_reviews', 1);
+        $this->assertSame($retainedBefore, Storage::disk('private')->allFiles('governed-evidence/ai-monitoring-review'));
+
+        try {
+            $evidence->update(['sha256' => str_repeat('0', 64)]);
+            $this->fail('AI monitoring evidence must remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+
+        $this->expectException(\LogicException::class);
+        $attachment->delete();
+    }
+
+    public function test_monitoring_service_reauthorizes_before_creating_review_or_evidence(): void
+    {
+        $manager = $this->manager();
+        $useCase = $this->approvedUseCase($manager);
+        $outsider = User::factory()->create();
+
+        try {
+            app(AiGovernanceManager::class)->monitor($useCase, $outsider, AiMonitoringOutcome::Satisfactory, [
+                'performance_summary' => 'Unauthorized direct service call.',
+                'next_review_at' => now()->addMonth(),
+            ]);
+            $this->fail('The monitoring service must enforce current governance permission.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertDatabaseCount('ai_monitoring_reviews', 0);
+    }
+
     public function test_decisions_are_append_only_through_models(): void
     {
         $manager = $this->manager();
@@ -233,5 +319,23 @@ class AiGovernanceTest extends TestCase
         }
 
         return $useCase;
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $auditManager->id, 'assigned_to_id' => $auditManager->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $auditManager->id, 'requestee_id' => $auditManager->id,
+        ]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed AI monitoring evidence', 'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

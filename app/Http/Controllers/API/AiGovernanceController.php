@@ -16,6 +16,7 @@ use App\Http\Requests\StoreAiUseCaseRequest;
 use App\Models\AiSystem;
 use App\Models\AiUseCase;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class AiGovernanceController extends Controller
 {
@@ -42,16 +43,28 @@ class AiGovernanceController extends Controller
 
     public function mapControl(MapAiUseCaseControlRequest $request, AiUseCase $useCase): JsonResponse
     {
-        $useCase->controls()->syncWithoutDetaching([$request->integer('control_id')]);
+        $controlId = $request->integer('control_id');
+        $useCase = DB::transaction(function () use ($useCase, $controlId): AiUseCase {
+            $locked = AiUseCase::query()->lockForUpdate()->findOrFail($useCase->id);
+            $locked->controls()->syncWithoutDetaching([$controlId]);
 
-        return response()->json(['data' => $useCase->controls()->findOrFail($request->integer('control_id')), 'use_case' => $useCase->refresh()], JsonResponse::HTTP_CREATED);
+            return $locked;
+        });
+
+        return response()->json(['data' => $useCase->controls()->findOrFail($controlId), 'use_case' => $useCase->refresh()], JsonResponse::HTTP_CREATED);
     }
 
     public function mapRisk(MapAiUseCaseRiskRequest $request, AiUseCase $useCase): JsonResponse
     {
-        $useCase->risks()->syncWithoutDetaching([$request->integer('risk_id')]);
+        $riskId = $request->integer('risk_id');
+        $useCase = DB::transaction(function () use ($useCase, $riskId): AiUseCase {
+            $locked = AiUseCase::query()->lockForUpdate()->findOrFail($useCase->id);
+            $locked->risks()->syncWithoutDetaching([$riskId]);
 
-        return response()->json(['data' => $useCase->risks()->findOrFail($request->integer('risk_id')), 'use_case' => $useCase->refresh()], JsonResponse::HTTP_CREATED);
+            return $locked;
+        });
+
+        return response()->json(['data' => $useCase->risks()->findOrFail($riskId), 'use_case' => $useCase->refresh()], JsonResponse::HTTP_CREATED);
     }
 
     public function decide(StoreAiGovernanceDecisionRequest $request, AiUseCase $useCase, AiGovernanceManager $manager): JsonResponse

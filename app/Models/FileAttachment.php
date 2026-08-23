@@ -87,9 +87,16 @@ class FileAttachment extends Model
         return $this->hasMany(ControlTestExecutionEvidence::class);
     }
 
+    public function aiMonitoringEvidence(): HasMany
+    {
+        return $this->hasMany(AiMonitoringReviewEvidence::class);
+    }
+
     public function hasGovernedEvidenceReferences(): bool
     {
-        return $this->closureEvidence()->exists() || $this->controlTestEvidence()->exists();
+        return $this->closureEvidence()->exists()
+            || $this->controlTestEvidence()->exists()
+            || $this->aiMonitoringEvidence()->exists();
     }
 
     public function auditItem(): BelongsTo

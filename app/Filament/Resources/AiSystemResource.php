@@ -8,6 +8,7 @@ use App\Filament\Resources\AiSystemResource\Pages\CreateAiSystem;
 use App\Filament\Resources\AiSystemResource\Pages\EditAiSystem;
 use App\Filament\Resources\AiSystemResource\Pages\ListAiSystems;
 use App\Filament\Resources\AiSystemResource\Pages\ViewAiSystem;
+use App\Filament\Resources\AiSystemResource\RelationManagers\MonitoringReviewsRelationManager;
 use App\Filament\Resources\AiSystemResource\RelationManagers\UseCasesRelationManager;
 use App\Models\AiSystem;
 use Filament\Forms\Components\DatePicker;
@@ -84,7 +85,7 @@ class AiSystemResource extends Resource
 
     public static function getRelations(): array
     {
-        return [UseCasesRelationManager::class];
+        return [UseCasesRelationManager::class, MonitoringReviewsRelationManager::class];
     }
 
     public static function getPages(): array

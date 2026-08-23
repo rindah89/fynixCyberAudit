@@ -3,6 +3,7 @@
 namespace App\Access;
 
 use App\Models\AiJob;
+use App\Models\AiMonitoringReviewEvidence;
 use App\Models\ControlTestExecutionEvidence;
 use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
@@ -135,11 +136,29 @@ class FileAccess
         );
     }
 
+    public function streamAiMonitoringReviewEvidence(User $actor, AiMonitoringReviewEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['review.useCase.aiSystem', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $system = $evidence->review?->useCase?->aiSystem;
+        if (! $system || ! $actor->can('view', $system)
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed AI monitoring evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
         if (FileAttachment::query()->where('file_path', $path)
-            ->where(fn ($query) => $query->whereHas('closureEvidence')->orWhereHas('controlTestEvidence'))
+            ->where(fn ($query) => $query->whereHas('closureEvidence')
+                ->orWhereHas('controlTestEvidence')
+                ->orWhereHas('aiMonitoringEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',
