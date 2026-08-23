@@ -171,6 +171,11 @@ class Risk extends Model
         return $this->hasMany(RiskGovernanceIssue::class);
     }
 
+    public function operationalLossEvents(): HasMany
+    {
+        return $this->hasMany(OperationalLossEvent::class);
+    }
+
     public function openGovernanceIssues(): HasMany
     {
         return $this->hasMany(RiskGovernanceIssue::class)->where('status', '!=', 'closed');

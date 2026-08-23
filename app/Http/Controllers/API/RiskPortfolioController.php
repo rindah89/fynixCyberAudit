@@ -5,21 +5,37 @@ namespace App\Http\Controllers\API;
 use App\Enums\RiskGovernanceDecision;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListEnterpriseRiskScenariosRequest;
+use App\Http\Requests\ListOperationalLossEventsRequest;
 use App\Http\Requests\ShowEnterpriseRiskRollupRequest;
 use App\Http\Requests\ShowEnterpriseRiskScenarioRequest;
 use App\Http\Requests\StoreEnterpriseRiskParentRequest;
 use App\Http\Requests\StoreEnterpriseRiskScenarioRequest;
+use App\Http\Requests\StoreOperationalLossEventRequest;
 use App\Http\Requests\StoreRiskGovernanceProfileRequest;
 use App\Http\Requests\StoreRiskGovernanceReviewRequest;
 use App\Models\EnterpriseRiskScenario;
 use App\Models\Risk;
 use App\Services\EnterpriseRiskHierarchy;
 use App\Services\EnterpriseRiskScenarioAnalyzer;
+use App\Services\OperationalLossEventManager;
 use App\Services\RiskPortfolioManager;
 use Illuminate\Http\JsonResponse;
 
 class RiskPortfolioController extends Controller
 {
+    public function recordLossEvent(StoreOperationalLossEventRequest $request, Risk $risk, OperationalLossEventManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->record($risk, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function lossEvents(ListOperationalLossEventsRequest $request, Risk $risk): JsonResponse
+    {
+        return response()->json($risk->operationalLossEvents()
+            ->with(['reporter:id,name', 'businessService:id,code,name'])
+            ->latest('occurred_at')->latest('id')
+            ->paginate($request->integer('per_page', 50)));
+    }
+
     public function scenario(StoreEnterpriseRiskScenarioRequest $request, Risk $risk, EnterpriseRiskScenarioAnalyzer $analyzer): JsonResponse
     {
         return response()->json(['data' => $analyzer->analyze($risk, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
