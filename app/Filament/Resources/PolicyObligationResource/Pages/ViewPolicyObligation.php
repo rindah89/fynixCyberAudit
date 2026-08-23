@@ -4,6 +4,7 @@ namespace App\Filament\Resources\PolicyObligationResource\Pages;
 
 use App\Enums\PolicyAttestationOutcome;
 use App\Filament\Resources\PolicyObligationResource;
+use App\Models\FileAttachment;
 use App\Models\PolicyException;
 use App\PolicyCompliance\PolicyCompliance;
 use Filament\Actions\Action;
@@ -31,6 +32,11 @@ class ViewPolicyObligation extends ViewRecord
                     TextInput::make('evidence_reference')
                         ->label('Evidence reference')
                         ->helperText('Reference an evidence record, data request, audit item, or governed external repository.'),
+                    Select::make('evidence_attachment_ids')->label('Governed attestation evidence')
+                        ->multiple()->maxItems(20)->searchable()
+                        ->getSearchResultsUsing(fn (string $search): array => $this->evidenceOptions($search))
+                        ->getOptionLabelsUsing(fn (array $values): array => $this->evidenceLabels($values))
+                        ->helperText('Optional accepted audit-evidence files you are authorized to access. Fynix retains content and SHA-256 snapshots.'),
                     Select::make('policy_exception_id')
                         ->label('Policy exception')
                         ->options(fn () => PolicyException::query()
@@ -47,6 +53,7 @@ class ViewPolicyObligation extends ViewRecord
                         $data['statement'],
                         $data['evidence_reference'] ?? null,
                         isset($data['policy_exception_id']) ? PolicyException::findOrFail($data['policy_exception_id']) : null,
+                        evidenceAttachmentIds: $data['evidence_attachment_ids'] ?? [],
                     );
 
                     $this->record->refresh();
@@ -54,5 +61,18 @@ class ViewPolicyObligation extends ViewRecord
                 }),
             EditAction::make(),
         ];
+    }
+
+    private function evidenceOptions(string $search): array
+    {
+        return FileAttachment::query()->eligibleGovernedEvidenceFor(auth()->user())
+            ->where('file_name', 'like', '%'.addcslashes($search, '%_').'%')
+            ->orderByDesc('id')->limit(50)->pluck('file_name', 'id')->all();
+    }
+
+    private function evidenceLabels(array $values): array
+    {
+        return FileAttachment::query()->eligibleGovernedEvidenceFor(auth()->user())
+            ->whereKey($values)->pluck('file_name', 'id')->all();
     }
 }

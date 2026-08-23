@@ -286,11 +286,12 @@ Required fields: `code`, `title`, `owner_id`, `frequency`, and `next_due_at`. Op
   "outcome": "compliant",
   "statement": "All privileged accounts were reviewed.",
   "evidence_reference": "EVIDENCE-2026-Q3-ACCESS",
+  "evidence_attachment_ids": [42],
   "policy_exception_id": null
 }
 ```
 
-Outcomes are `compliant`, `non_compliant`, or `not_applicable`. The evidence reference is optional operator-supplied text; Fynix does not verify the referenced record or grant access to it. The optional exception must belong to the obligation's policy and be approved and currently in effect. Product interfaces append history rather than modifying attestations, and recurring obligations calculate their next due date from the attestation timestamp. Inactive obligations cannot be attested.
+Outcomes are `compliant`, `non_compliant`, or `not_applicable`. The evidence reference is optional operator-supplied text; Fynix does not verify the referenced record or grant access to it. `evidence_attachment_ids` optionally accepts up to 20 distinct accepted data-request attachments downloadable by the attestor. The server retains copies bounded to 10 MiB per file and 50 MiB per attestation and returns append-only provenance, size, disk/path, and SHA-256 snapshots under `data.evidence`; hashes prove byte identity rather than truth, sufficiency, authenticity, or outcome inference. The optional exception must belong to the obligation's policy and be approved and currently in effect. Product interfaces append history rather than modifying attestations, and recurring obligations calculate their next due date from the attestation timestamp. Inactive obligations cannot be attested.
 
 ### Vendors
 

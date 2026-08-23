@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\PolicyAttestationOutcome;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 
 class PolicyAttestation extends Model
@@ -43,5 +44,10 @@ class PolicyAttestation extends Model
     public function policyException(): BelongsTo
     {
         return $this->belongsTo(PolicyException::class);
+    }
+
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(PolicyAttestationEvidence::class);
     }
 }

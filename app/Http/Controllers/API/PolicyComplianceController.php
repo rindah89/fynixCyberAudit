@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Enums\PolicyAttestationOutcome;
 use App\Enums\PolicyObligationFrequency;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StorePolicyAttestationRequest;
 use App\Models\Policy;
 use App\Models\PolicyException;
 use App\Models\PolicyObligation;
@@ -35,19 +36,9 @@ class PolicyComplianceController extends Controller
         return response()->json(['data' => $obligation->load(['owner', 'control'])], JsonResponse::HTTP_CREATED);
     }
 
-    public function attest(Request $request, PolicyObligation $obligation, PolicyCompliance $compliance): JsonResponse
+    public function attest(StorePolicyAttestationRequest $request, PolicyObligation $obligation, PolicyCompliance $compliance): JsonResponse
     {
-        $this->authorize('attest', $obligation);
-
-        $data = $request->validate([
-            'outcome' => ['required', Rule::enum(PolicyAttestationOutcome::class)],
-            'statement' => 'required|string|max:10000',
-            'evidence_reference' => 'nullable|string|max:255',
-            'policy_exception_id' => [
-                'nullable',
-                Rule::exists('policy_exceptions', 'id')->where('policy_id', $obligation->policy_id),
-            ],
-        ]);
+        $data = $request->validated();
 
         $attestation = $compliance->attest(
             $obligation,
@@ -56,6 +47,7 @@ class PolicyComplianceController extends Controller
             $data['statement'],
             $data['evidence_reference'] ?? null,
             isset($data['policy_exception_id']) ? PolicyException::findOrFail($data['policy_exception_id']) : null,
+            evidenceAttachmentIds: $data['evidence_attachment_ids'] ?? [],
         );
 
         return response()->json([

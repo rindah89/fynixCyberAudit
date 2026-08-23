@@ -9,6 +9,7 @@ use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
+use App\Models\PolicyAttestationEvidence;
 use App\Models\RecoveryExerciseEvidence;
 use App\Models\SurveyAttachment;
 use App\Models\TrustCenterDocument;
@@ -190,6 +191,22 @@ class FileAccess
         );
     }
 
+    public function streamPolicyAttestationEvidence(User $actor, PolicyAttestationEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['attestation.obligation.policy', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $obligation = $evidence->attestation?->obligation;
+        if (! $obligation || ! $actor->can('view', $obligation)
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed policy-attestation evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
@@ -198,7 +215,8 @@ class FileAccess
                 ->orWhereHas('controlTestEvidence')
                 ->orWhereHas('aiMonitoringEvidence')
                 ->orWhereHas('vendorRiskReviewEvidence')
-                ->orWhereHas('recoveryExerciseEvidence'))
+                ->orWhereHas('recoveryExerciseEvidence')
+                ->orWhereHas('policyAttestationEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

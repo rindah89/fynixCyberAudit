@@ -30,6 +30,8 @@ class PolicyObligation extends Model
         'frequency',
         'next_due_at',
         'is_active',
+        'last_outcome',
+        'last_attested_at',
     ];
 
     protected $casts = [

@@ -7,10 +7,12 @@ Fynix Cyber Audit tracks policy compliance as attributable attestations against 
 1. Open **Compliance → Policy Obligations**.
 2. Create an obligation with a policy, accountable owner, unique code, cadence, and next due date. A related control is optional.
 3. The accountable owner, the policy owner, or an operator with `Update Policies` submits an attestation.
-4. Record an outcome, a required statement, and optionally an external evidence reference and policy exception.
-5. Review the read-only attestation history on the obligation. A correction is a new attestation; existing attestations cannot be changed through product interfaces.
+4. Record an outcome, a required statement, and optionally an external evidence reference, policy exception, and one to 20 accepted audit-evidence attachments you are authorized to access. Fynix retains bounded copies and snapshots provenance, metadata, actual size, disk/path, SHA-256, actor, and time.
+5. Review the read-only attestation history on the obligation. Governed evidence count, action, metadata, and downloads appear only when the viewer also passes the exact attachment ACL. A correction is a new attestation; existing attestations and linked evidence cannot be changed through product interfaces.
 
 An evidence reference is operator-supplied text for locating a record in a data request, audit item, governed repository, or other evidence system. Fynix does not verify that the referenced record exists or grant access to it. It is not a file upload and does not bypass the referenced system's access rules.
+
+Governed attachment selection is separate from that text reference. A retained-copy SHA-256 value proves byte identity, not truth, sufficiency, authenticity, or that the attestation outcome was derived from the file.
 
 ## Compliance status
 
@@ -51,4 +53,4 @@ Policy detail responses include obligations, owners, related controls, current d
 
 ## Explicit limitations
 
-This workflow does not yet provide regulatory content feeds, automated policy-to-law change detection, or employee acknowledgement campaigns. Control-test results must not be inferred from policy attestations; they are recorded through the separate control-testing workflow.
+This workflow does not provide regulatory content feeds, automated policy-to-law change detection, employee acknowledgement campaigns, automatic evidence collection, authenticity/sufficiency validation, or inference from file content. Control-test results must not be inferred from policy attestations; they are recorded through the separate control-testing workflow.
