@@ -13,6 +13,7 @@ use App\Models\SurveyAttachment;
 use App\Models\TrustCenterDocument;
 use App\Models\User;
 use App\Models\VendorDocument;
+use App\Models\VendorRiskReviewEvidence;
 use App\Models\VendorUser;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Storage;
@@ -152,13 +153,31 @@ class FileAccess
         );
     }
 
+    public function streamVendorRiskReviewEvidence(User $actor, VendorRiskReviewEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['review.vendor', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $vendor = $evidence->review?->vendor;
+        $canViewWorkspace = $vendor && ($actor->can('Manage Third Party Risk') || (int) $vendor->vendor_manager_id === (int) $actor->id);
+        if (! $canViewWorkspace
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed third-party review evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
         if (FileAttachment::query()->where('file_path', $path)
             ->where(fn ($query) => $query->whereHas('closureEvidence')
                 ->orWhereHas('controlTestEvidence')
-                ->orWhereHas('aiMonitoringEvidence'))
+                ->orWhereHas('aiMonitoringEvidence')
+                ->orWhereHas('vendorRiskReviewEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

@@ -6,19 +6,30 @@ use App\Enums\RiskDomain;
 use App\Enums\SurveyStatus;
 use App\Enums\SurveyType;
 use App\Enums\ThirdPartyRiskDecisionType;
+use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Filament\Exports\VendorExporter;
 use App\Filament\Resources\ThirdPartyRiskResource;
+use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
+use App\Filament\Resources\VendorResource\RelationManagers\RiskReviewsRelationManager;
+use App\Models\Audit;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\Risk;
 use App\Models\Survey;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorRiskAssessment;
 use App\Models\VendorRiskIssue;
+use App\Models\VendorRiskReviewEvidence;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
+use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class ThirdPartyRiskManagementTest extends TestCase
@@ -29,6 +40,7 @@ class ThirdPartyRiskManagementTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        Storage::fake('private');
     }
 
     public function test_manager_records_versioned_vendor_risk_assessment_with_server_scores(): void
@@ -135,6 +147,86 @@ class ThirdPartyRiskManagementTest extends TestCase
         ])->assertCreated()->assertJsonPath('vendor.third_party_risk_status', 'action_required');
     }
 
+    public function test_periodic_review_can_bind_authorized_accepted_audit_evidence(): void
+    {
+        $manager = $this->manager();
+        $vendor = $this->approvedVendor($manager);
+        $attachment = $this->acceptedEvidence($manager, 'vendor-review/assurance.pdf', 'vendor assurance bytes');
+        Sanctum::actingAs($manager);
+
+        $reviewId = $this->postJson("/api/vendors/{$vendor->id}/risk-reviews", [
+            'outcome' => 'satisfactory', 'summary' => 'Accepted assurance evidence supports the periodic review.',
+            'evidence_attachment_ids' => [$attachment->id], 'next_review_at' => now()->addMonth(),
+        ])->assertCreated()
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', 'vendor assurance bytes'))
+            ->json('data.id');
+
+        $evidence = VendorRiskReviewEvidence::query()->firstOrFail();
+        $this->assertSame($reviewId, $evidence->vendor_risk_review_id);
+        $this->assertSame('Accepted', $evidence->response_status_snapshot);
+        $migration = require database_path('migrations/2026_08_23_260000_create_vendor_risk_review_evidence.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('vendor_risk_review_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+        Storage::disk('private')->put($attachment->file_path, 'later source replacement');
+        $this->actingAs($manager, 'web')->get(route('vendor-risk-review-evidence.download', $evidence))
+            ->assertSuccessful()->assertStreamedContent('vendor assurance bytes');
+        $this->actingAs(User::factory()->create(), 'web')->get(route('vendor-risk-review-evidence.download', $evidence))
+            ->assertForbidden();
+
+        $foreign = $this->acceptedEvidence(User::factory()->create(), 'vendor-review/foreign.pdf', 'foreign bytes');
+        $retainedBefore = Storage::disk('private')->allFiles('governed-evidence/vendor-risk-review');
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/vendors/{$vendor->id}/risk-reviews", [
+            'outcome' => 'satisfactory', 'summary' => 'The mixed evidence set must reject atomically.',
+            'evidence_attachment_ids' => [$attachment->id, $foreign->id], 'next_review_at' => now()->addMonths(2),
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertDatabaseCount('vendor_risk_reviews', 1);
+        $this->assertSame($retainedBefore, Storage::disk('private')->allFiles('governed-evidence/vendor-risk-review'));
+
+        try {
+            $evidence->delete();
+            $this->fail('Vendor review evidence was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('vendor_risk_review_evidence', ['id' => $evidence->id]);
+        }
+        try {
+            $attachment->delete();
+            $this->fail('A governed source attachment was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('file_attachments', ['id' => $attachment->id]);
+        }
+
+        $viewer = User::factory()->create();
+        $vendor->update(['vendor_manager_id' => $viewer->id]);
+        $this->actingAs($viewer, 'web');
+        Livewire::test(RiskReviewsRelationManager::class, [
+            'ownerRecord' => $vendor->fresh(), 'pageClass' => ViewThirdPartyRisk::class,
+        ])->assertCanSeeTableRecords([$vendor->riskReviews()->firstOrFail()])
+            ->assertTableColumnStateSet('evidence_count', 0, $vendor->riskReviews()->firstOrFail())
+            ->assertTableActionHidden('inspect_evidence', $vendor->riskReviews()->firstOrFail());
+        $vendor->update(['vendor_manager_id' => $manager->id]);
+    }
+
+    public function test_review_service_reauthorizes_before_creating_review_or_evidence(): void
+    {
+        $manager = $this->manager();
+        $vendor = $this->approvedVendor($manager);
+        $outsider = User::factory()->create();
+
+        try {
+            app(ThirdPartyRiskManager::class)->review($vendor, $outsider, ThirdPartyRiskReviewOutcome::Satisfactory, [
+                'summary' => 'Unauthorized direct service call.', 'next_review_at' => now()->addMonth(),
+            ]);
+            $this->fail('The review service must enforce current governance permission.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertDatabaseCount('vendor_risk_reviews', 0);
+    }
+
     public function test_terminal_decision_remains_visible_after_inventory_changes(): void
     {
         $manager = $this->manager();
@@ -230,5 +322,23 @@ class ThirdPartyRiskManagementTest extends TestCase
         ]);
 
         return $vendor;
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $auditManager->id, 'assigned_to_id' => $auditManager->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $auditManager->id, 'requestee_id' => $auditManager->id,
+        ]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed third-party review evidence', 'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

@@ -11,6 +11,7 @@ use App\Http\Controllers\SurveyAttachmentController;
 use App\Http\Controllers\TrustCenterController;
 use App\Http\Controllers\Vendor\VendorAuthController;
 use App\Http\Controllers\Vendor\VendorDocumentController;
+use App\Http\Controllers\VendorRiskReviewEvidenceController;
 use App\Livewire\PasswordResetPage;
 use App\Models\Survey;
 use Illuminate\Support\Facades\Route;
@@ -46,6 +47,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('control-test-execution-evidence.download');
     Route::get('/app/ai-monitoring-review-evidence/{evidence}/download', [AiMonitoringReviewEvidenceController::class, 'download'])
         ->name('ai-monitoring-review-evidence.download');
+    Route::get('/app/vendor-risk-review-evidence/{evidence}/download', [VendorRiskReviewEvidenceController::class, 'download'])
+        ->name('vendor-risk-review-evidence.download');
 
     // Media proxy route for serving private S3/cloud storage files
     Route::get('/media/{path}', [MediaProxyController::class, 'show'])

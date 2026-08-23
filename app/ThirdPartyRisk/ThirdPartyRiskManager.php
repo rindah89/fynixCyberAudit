@@ -15,7 +15,9 @@ use App\Models\VendorRiskAssessment;
 use App\Models\VendorRiskDecision;
 use App\Models\VendorRiskReview;
 use App\Services\GovernanceIssueLifecycleManager;
+use App\Services\GovernedEvidenceSnapshotter;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ThirdPartyRiskManager
@@ -93,33 +95,55 @@ class ThirdPartyRiskManager
 
     public function review(Vendor $vendor, User $actor, ThirdPartyRiskReviewOutcome $outcome, array $data): VendorRiskReview
     {
-        return DB::transaction(function () use ($vendor, $actor, $outcome, $data) {
-            $locked = Vendor::query()->lockForUpdate()->findOrFail($vendor->id);
-            $decision = $locked->latestRiskDecision()->lockForUpdate()->first();
-            if (! $decision || ! in_array($decision->decision, [ThirdPartyRiskDecisionType::Approved, ThirdPartyRiskDecisionType::ConditionallyApproved], true) || $decision->expires_at?->copy()->endOfDay()->isPast()) {
-                throw ValidationException::withMessages(['approval' => 'A current vendor risk approval is required before review.']);
-            }
-            if ($decision->governance_fingerprint !== $locked->thirdPartyRiskSnapshot()['fingerprint']) {
-                throw ValidationException::withMessages(['approval' => 'Vendor governance inputs changed after approval. Record a new decision before review.']);
-            }
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-            $review = $locked->riskReviews()->create([
-                'vendor_risk_decision_id' => $decision->id, 'reviewed_by' => $actor->id,
-                'outcome' => $outcome, 'summary' => $data['summary'], 'evidence_reference' => $data['evidence_reference'] ?? null,
-                'assessment_version' => $decision->assessment_version, 'governance_fingerprint' => $decision->governance_fingerprint,
-                'next_review_at' => $data['next_review_at'], 'reviewed_at' => now(),
-            ]);
-            if ($outcome !== ThirdPartyRiskReviewOutcome::Satisfactory) {
-                $issue = $review->issue()->create([
-                    'vendor_id' => $locked->id, 'owner_id' => $locked->vendor_manager_id,
-                    'title' => $outcome === ThirdPartyRiskReviewOutcome::Terminate ? 'Third-party relationship requires termination review' : 'Third-party risk review requires action',
-                    'description' => $data['summary'], 'severity' => $outcome === ThirdPartyRiskReviewOutcome::Terminate ? 'critical' : 'high',
-                    'status' => 'open',
+        try {
+            return DB::transaction(function () use ($vendor, $actor, $outcome, $data, $snapshotter, $snapshotBatch, &$retainedCopies) {
+                $locked = Vendor::query()->lockForUpdate()->findOrFail($vendor->id);
+                if (! $actor->can('Manage Third Party Risk')) {
+                    abort(403, 'You cannot record third-party risk reviews.');
+                }
+                $decision = $locked->latestRiskDecision()->lockForUpdate()->first();
+                if (! $decision || ! in_array($decision->decision, [ThirdPartyRiskDecisionType::Approved, ThirdPartyRiskDecisionType::ConditionallyApproved], true) || $decision->expires_at?->copy()->endOfDay()->isPast()) {
+                    throw ValidationException::withMessages(['approval' => 'A current vendor risk approval is required before review.']);
+                }
+                $assessment = $locked->latestRiskAssessment()->lockForUpdate()->firstOrFail();
+                $risks = $locked->risks()->lockForUpdate()->orderBy('risks.id')->get();
+                $locked->setRelation('risks', $risks);
+                if ($decision->governance_fingerprint !== $locked->thirdPartyRiskSnapshot($assessment)['fingerprint']) {
+                    throw ValidationException::withMessages(['approval' => 'Vendor governance inputs changed after approval. Record a new decision before review.']);
+                }
+                $evidenceSnapshots = empty($data['evidence_attachment_ids']) ? [] : $snapshotter->snapshot(
+                    $data['evidence_attachment_ids'], $actor, 'vendor-risk-review', $snapshotBatch, $retainedCopies,
+                );
+                $reviewedAt = now();
+                $review = $locked->riskReviews()->create([
+                    'vendor_risk_decision_id' => $decision->id, 'reviewed_by' => $actor->id,
+                    'outcome' => $outcome, 'summary' => $data['summary'], 'evidence_reference' => $data['evidence_reference'] ?? null,
+                    'assessment_version' => $decision->assessment_version, 'governance_fingerprint' => $decision->governance_fingerprint,
+                    'next_review_at' => $data['next_review_at'], 'reviewed_at' => $reviewedAt,
                 ]);
-                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
-            }
+                foreach ($evidenceSnapshots as $snapshot) {
+                    $review->evidence()->create($snapshot + ['linked_by' => $actor->id, 'linked_at' => $reviewedAt]);
+                }
+                if ($outcome !== ThirdPartyRiskReviewOutcome::Satisfactory) {
+                    $issue = $review->issue()->create([
+                        'vendor_id' => $locked->id, 'owner_id' => $locked->vendor_manager_id,
+                        'title' => $outcome === ThirdPartyRiskReviewOutcome::Terminate ? 'Third-party relationship requires termination review' : 'Third-party risk review requires action',
+                        'description' => $data['summary'], 'severity' => $outcome === ThirdPartyRiskReviewOutcome::Terminate ? 'critical' : 'high',
+                        'status' => 'open',
+                    ]);
+                    app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
+                }
 
-            return $review->load('issue');
-        });
+                return $review->load(['issue', 'evidence.linkedBy:id,name']);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+
+            throw $exception;
+        }
     }
 }
