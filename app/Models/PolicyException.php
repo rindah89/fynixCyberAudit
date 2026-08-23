@@ -158,11 +158,11 @@ class PolicyException extends Model
         return $query->where('status', PolicyExceptionStatus::Approved)
             ->where(function ($q) {
                 $q->whereNull('effective_date')
-                    ->orWhere('effective_date', '<=', now());
+                    ->orWhereDate('effective_date', '<=', today());
             })
             ->where(function ($q) {
                 $q->whereNull('expiration_date')
-                    ->orWhere('expiration_date', '>=', now());
+                    ->orWhereDate('expiration_date', '>=', today());
             });
     }
 

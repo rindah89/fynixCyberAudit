@@ -13,6 +13,7 @@ use App\Http\Controllers\API\EvidenceAuthorizationController;
 use App\Http\Controllers\API\ExecutiveAuthorityBindingController;
 use App\Http\Controllers\API\FileAttachmentController;
 use App\Http\Controllers\API\ImplementationController;
+use App\Http\Controllers\API\PolicyComplianceController;
 use App\Http\Controllers\API\PolicyController;
 use App\Http\Controllers\API\ProgramController;
 use App\Http\Controllers\API\RiskController;
@@ -72,6 +73,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::apiResource('applications', ApplicationController::class);
     Route::apiResource('assets', AssetController::class);
     Route::apiResource('policies', PolicyController::class);
+    Route::post('/policies/{policy}/obligations', [PolicyComplianceController::class, 'store']);
+    Route::post('/policy-obligations/{obligation}/attest', [PolicyComplianceController::class, 'attest']);
     Route::apiResource('data-requests', DataRequestController::class);
     Route::apiResource('data-request-responses', DataRequestResponseController::class);
     Route::apiResource('file-attachments', FileAttachmentController::class);

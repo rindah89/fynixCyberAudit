@@ -13,7 +13,7 @@ class PolicyController extends BaseApiController
 
     protected array $indexRelations = ['status', 'scope', 'department', 'owner', 'creator', 'updater'];
 
-    protected array $showRelations = ['status', 'scope', 'department', 'owner', 'creator', 'updater', 'controls', 'implementations', 'risks'];
+    protected array $showRelations = ['status', 'scope', 'department', 'owner', 'creator', 'updater', 'controls', 'implementations', 'risks', 'obligations.owner', 'obligations.control', 'obligations.latestAttestation'];
 
     protected array $searchableFields = ['code', 'name', 'policy_scope', 'purpose', 'body'];
 
@@ -45,7 +45,7 @@ class PolicyController extends BaseApiController
     protected function validateUpdate(Request $request, $resource): array
     {
         return $request->validate([
-            'code' => 'sometimes|string|max:255|unique:policies,code,' . $resource->id,
+            'code' => 'sometimes|string|max:255|unique:policies,code,'.$resource->id,
             'name' => 'sometimes|string|max:255',
             'policy_scope' => 'nullable|string',
             'purpose' => 'nullable|string',

@@ -179,6 +179,11 @@ class Policy extends Model
         return $this->hasMany(PolicyException::class);
     }
 
+    public function obligations(): HasMany
+    {
+        return $this->hasMany(PolicyObligation::class);
+    }
+
     /**
      * Get the scope name accessor.
      */
