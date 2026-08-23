@@ -526,6 +526,25 @@ curl -X POST "https://your-domain.com/api/control-test-definitions/12/execute" \
 Supported `metric_type` values are `boolean` and `numeric`. Supported operators are `equals`, `not_equals`, `greater_than`, `greater_than_or_equal`, `less_than`, and `less_than_or_equal`; boolean tests use only the equality operators. Frequencies are `one_time`, `monthly`, `quarterly`, `semi_annual`, and `annual`.
 Numeric values use decimal-safe comparison and accept up to 15 integer digits and 6 decimal places; exponential notation is rejected. A completed `one_time` definition cannot be executed again.
 
+### Operational Resilience
+
+The resilience endpoints require `MODULE_RESILIENCE_ENABLED=true` and `Manage Resilience`. Create the service, then add an impact analysis, dependencies, recovery plan, and exercises through their nested routes. Complete an exercise with measured recovery values:
+
+```bash
+curl -X POST "https://your-domain.com/api/recovery-exercises/9/complete" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "actual_recovery_time_minutes": 90,
+    "actual_recovery_point_minutes": 10,
+    "observations": "Standby processing and settlement validation succeeded.",
+    "evidence_reference": "EXERCISE-PAY-2026-08"
+  }'
+```
+
+The server prohibits caller-supplied `outcome`, RTO, and RPO snapshots. It uses the latest approved impact analysis, derives the result, snapshots both objectives, and opens an issue when an objective is missed. The evidence reference is unverified external text, not a governed evidence relation. See `docs/OPERATIONAL_RESILIENCE.md` for every route and limitation.
+
 ### Create a New Standard
 
 ```bash

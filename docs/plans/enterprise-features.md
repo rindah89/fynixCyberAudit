@@ -62,6 +62,7 @@ Env (and settings) per module, default **off** until the module ships:
 - `MODULE_RISK_ASSESSOR_ENABLED`
 - `MODULE_REMEDIATION_ENABLED`
 - `MODULE_INCIDENTS_ENABLED`
+- `MODULE_RESILIENCE_ENABLED`
 
 Spatie permissions per module (list/create/read/update/delete + manage). Super Admin gets all; Security Admin operate; Regular User read where it makes sense.
 

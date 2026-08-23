@@ -77,6 +77,7 @@ class RolePermissionSeeder extends Seeder
             'Manage Incident Evidence',
             'Manage Breach Notifications',
             'Manage Incident Tasks',
+            'Manage Resilience',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -112,6 +113,7 @@ class RolePermissionSeeder extends Seeder
             'Manage Incident Evidence',
             'Manage Breach Notifications',
             'Manage Incident Tasks',
+            'Manage Resilience',
         ]);
 
         // Assign specific Permissions to Internal Auditor

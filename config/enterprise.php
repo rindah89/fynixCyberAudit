@@ -7,6 +7,7 @@ return [
         'risk_assessor' => (bool) env('MODULE_RISK_ASSESSOR_ENABLED', false),
         'remediation' => (bool) env('MODULE_REMEDIATION_ENABLED', false),
         'incidents' => (bool) env('MODULE_INCIDENTS_ENABLED', false),
+        'resilience' => (bool) env('MODULE_RESILIENCE_ENABLED', false),
     ],
     'surveyor' => [
         'max_file_size' => (int) env('SURVEYOR_MAX_FILE_SIZE', 10 * 1024 * 1024),
