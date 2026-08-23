@@ -1,6 +1,6 @@
 # Policy compliance workflow
 
-Fynix Cyber Audit tracks policy compliance as attributable attestations against discrete policy obligations. This workflow does not claim automated regulatory-change management or continuous control testing.
+Fynix Cyber Audit tracks policy compliance as attributable attestations against discrete policy obligations. This workflow does not claim automated regulatory-change management; control testing is documented separately in `docs/CONTINUOUS_CONTROL_TESTING.md`.
 
 ## Operator workflow
 
@@ -51,4 +51,4 @@ Policy detail responses include obligations, owners, related controls, current d
 
 ## Explicit limitations
 
-This workflow does not yet provide regulatory content feeds, automated policy-to-law change detection, employee acknowledgement campaigns, or continuous control tests. Those capabilities remain separate parity work and must not be inferred from policy attestations.
+This workflow does not yet provide regulatory content feeds, automated policy-to-law change detection, or employee acknowledgement campaigns. Control-test results must not be inferred from policy attestations; they are recorded through the separate control-testing workflow.

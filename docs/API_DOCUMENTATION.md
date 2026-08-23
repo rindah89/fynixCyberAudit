@@ -488,6 +488,44 @@ curl -X GET "https://your-domain.com/api/controls?search=encryption&per_page=10&
   -H "Accept: application/json"
 ```
 
+### Define and Execute a Control Test
+
+Create a recurring boolean or numeric threshold definition. The caller needs `Update Controls`; an optional `implementation_id` must already be mapped to the control.
+
+```bash
+curl -X POST "https://your-domain.com/api/controls/7/test-definitions" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "CCT-MFA-01",
+    "name": "MFA coverage",
+    "owner_id": 4,
+    "metric_type": "numeric",
+    "operator": "greater_than_or_equal",
+    "expected_value": "98",
+    "frequency": "monthly",
+    "next_run_at": "2026-08-31T12:00:00Z"
+  }'
+```
+
+Record an observation. `outcome` is prohibited because the server derives pass/fail from the stored definition. `evidence_reference` is optional unverified external text, not a governed evidence relation.
+
+```bash
+curl -X POST "https://your-domain.com/api/control-test-definitions/12/execute" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "observed_value": "99.2",
+    "notes": "Identity provider coverage export reviewed.",
+    "evidence_reference": "IDP-MFA-2026-08"
+  }'
+```
+
+Supported `metric_type` values are `boolean` and `numeric`. Supported operators are `equals`, `not_equals`, `greater_than`, `greater_than_or_equal`, `less_than`, and `less_than_or_equal`; boolean tests use only the equality operators. Frequencies are `one_time`, `monthly`, `quarterly`, `semi_annual`, and `annual`.
+Numeric values use decimal-safe comparison and accept up to 15 integer digits and 6 decimal places; exponential notation is rejected. A completed `one_time` definition cannot be executed again.
+
 ### Create a New Standard
 
 ```bash

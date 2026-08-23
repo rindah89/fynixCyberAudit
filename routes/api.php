@@ -6,6 +6,7 @@ use App\Http\Controllers\API\AuditController;
 use App\Http\Controllers\API\AuditItemController;
 use App\Http\Controllers\API\ChecklistController;
 use App\Http\Controllers\API\ChecklistTemplateController;
+use App\Http\Controllers\API\ContinuousControlTestingController;
 use App\Http\Controllers\API\ControlController;
 use App\Http\Controllers\API\DataRequestController;
 use App\Http\Controllers\API\DataRequestResponseController;
@@ -64,6 +65,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::apiResource('users', UserController::class);
     Route::apiResource('standards', StandardController::class);
     Route::apiResource('controls', ControlController::class);
+    Route::post('/controls/{control}/test-definitions', [ContinuousControlTestingController::class, 'store']);
+    Route::post('/control-test-definitions/{definition}/execute', [ContinuousControlTestingController::class, 'execute']);
     Route::apiResource('implementations', ImplementationController::class);
     Route::apiResource('audits', AuditController::class);
     Route::apiResource('audit-items', AuditItemController::class);

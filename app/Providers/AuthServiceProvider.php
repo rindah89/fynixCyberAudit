@@ -4,11 +4,13 @@ namespace App\Providers;
 
 // use Illuminate\Support\Facades\Gate;
 use Aliziodev\LaravelTaxonomy\Models\Taxonomy;
+use App\Models\ControlTestDefinition;
 use App\Models\Policy;
 use App\Models\PolicyObligation;
 use App\Models\Survey;
 use App\Models\SurveyTemplate;
 use App\Models\VendorDocument;
+use App\Policies\ControlTestDefinitionPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\PolicyObligationPolicy;
 use App\Policies\PolicyPolicy;
@@ -37,6 +39,7 @@ class AuthServiceProvider extends ServiceProvider
         Taxonomy::class => TaxonomyPolicy::class,
         Policy::class => PolicyPolicy::class,
         PolicyObligation::class => PolicyObligationPolicy::class,
+        ControlTestDefinition::class => ControlTestDefinitionPolicy::class,
         Survey::class => SurveyPolicy::class,
         SurveyTemplate::class => SurveyTemplatePolicy::class,
         VendorDocument::class => VendorDocumentPolicy::class,

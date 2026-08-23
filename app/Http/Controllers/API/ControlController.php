@@ -13,7 +13,7 @@ class ControlController extends BaseApiController
 
     protected array $indexRelations = ['standard'];
 
-    protected array $showRelations = ['standard', 'implementations', 'controlOwner'];
+    protected array $showRelations = ['standard', 'implementations', 'controlOwner', 'testDefinitions.owner', 'testDefinitions.latestExecution.finding'];
 
     protected array $searchableFields = ['identifier', 'title', 'description', 'standard.code', 'standard.title'];
 
