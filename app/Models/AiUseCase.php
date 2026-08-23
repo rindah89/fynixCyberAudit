@@ -84,7 +84,7 @@ class AiUseCase extends Model
 
     public function openGovernanceIssues(): HasMany
     {
-        return $this->hasMany(AiGovernanceIssue::class)->where('status', 'open');
+        return $this->hasMany(AiGovernanceIssue::class)->where('status', '!=', 'closed');
     }
 
     public function scopeWithGovernanceGraph(Builder $query): Builder

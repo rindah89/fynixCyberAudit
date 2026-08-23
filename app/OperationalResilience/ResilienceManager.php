@@ -8,6 +8,7 @@ use App\Models\BusinessService;
 use App\Models\RecoveryExercise;
 use App\Models\RecoveryPlan;
 use App\Models\User;
+use App\Services\GovernanceIssueLifecycleManager;
 use App\Support\Enterprise;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -76,7 +77,7 @@ class ResilienceManager
             ]);
 
             if ($outcome !== RecoveryExerciseOutcome::Passed) {
-                $locked->issue()->create([
+                $issue = $locked->issue()->create([
                     'business_service_id' => $plan->business_service_id,
                     'owner_id' => $plan->owner_id,
                     'title' => 'Recovery exercise missed resilience objectives',
@@ -88,6 +89,7 @@ class ResilienceManager
                     'severity' => $outcome === RecoveryExerciseOutcome::Failed ? 'critical' : 'high',
                     'status' => 'open',
                 ]);
+                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
             }
 
             return $locked->fresh(['issue']);

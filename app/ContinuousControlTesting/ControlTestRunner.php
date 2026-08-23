@@ -9,6 +9,7 @@ use App\Enums\ControlTestOutcome;
 use App\Models\ControlTestDefinition;
 use App\Models\ControlTestExecution;
 use App\Models\User;
+use App\Services\GovernanceIssueLifecycleManager;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -58,7 +59,7 @@ class ControlTestRunner
             ]);
 
             if (! $passed) {
-                $execution->finding()->create([
+                $issue = $execution->finding()->create([
                     'control_id' => $locked->control_id,
                     'owner_id' => $locked->owner_id,
                     'title' => "Control test failed: {$locked->name}",
@@ -66,6 +67,7 @@ class ControlTestRunner
                     'status' => 'open',
                     'detected_at' => $executedAt,
                 ]);
+                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
             }
 
             $locked->forceFill([

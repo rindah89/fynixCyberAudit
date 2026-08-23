@@ -13,6 +13,7 @@ use App\Models\Survey;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorRiskAssessment;
+use App\Models\VendorRiskIssue;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -125,6 +126,8 @@ class ThirdPartyRiskManagementTest extends TestCase
             'evidence_reference' => 'TPRM-REVIEW-2026-Q3', 'next_review_at' => now()->addMonth(),
         ])->assertCreated()->assertJsonPath('data.assessment_version', 1)
             ->assertJsonPath('data.issue.status', 'open')->assertJsonPath('vendor.third_party_risk_status', 'action_required');
+        $issue = VendorRiskIssue::query()->where('vendor_id', $vendor->id)->firstOrFail();
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_type' => VendorRiskIssue::class, 'issue_id' => $issue->id, 'status' => 'open']);
 
         $this->postJson("/api/vendors/{$vendor->id}/risk-reviews", [
             'outcome' => 'satisfactory', 'summary' => 'Follow-up evidence was reviewed; the issue remains open.',

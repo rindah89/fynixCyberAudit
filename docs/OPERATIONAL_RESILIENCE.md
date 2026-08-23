@@ -22,8 +22,8 @@ The enterprise module is enabled with `MODULE_RESILIENCE_ENABLED=true`. This con
 | `recovery_plan_required` | An approved analysis exists but no approved recovery plan exists. |
 | `plan_review_overdue` | The latest approved plan is past its review date. |
 | `exercise_required` | The approved plan has no completed exercise. |
-| `ready` | The latest completed exercise met both RTO and RPO. |
-| `action_required` | The latest completed exercise missed one or both objectives. |
+| `ready` | The latest completed exercise met both objectives, or every issue opened by a missed objective has been independently verified and closed. |
+| `action_required` | At least one resilience issue remains `open`, `in_remediation`, or `verification`; this takes priority over other active-service readiness states. A failed exercise without a matching governed issue also fails closed to this state. |
 | `inactive` | The business service is not actively governed. |
 
 Exercise results use the latest approved impact analysis at completion time and persist the objective snapshot. Later BIA versions do not rewrite historical exercise results.
@@ -49,4 +49,4 @@ All endpoints require authentication, the enabled resilience module, and `Manage
 
 ## Explicit limitations
 
-This foundation does not discover dependencies, ingest uptime or disaster-recovery telemetry, calculate financial loss, run recovery procedures, send crisis communications, schedule exercises automatically, close issues, or validate external evidence. It is not a substitute for live availability monitoring, emergency notification, or automated continuity orchestration.
+This foundation does not discover dependencies, ingest uptime or disaster-recovery telemetry, calculate financial loss, run recovery procedures, send crisis communications, schedule exercises automatically, or validate external evidence. Exercise issues use the separately documented governed remediation and independent-closure workflow. It is not a substitute for live availability monitoring, emergency notification, or automated continuity orchestration.

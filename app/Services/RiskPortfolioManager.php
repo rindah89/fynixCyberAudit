@@ -57,12 +57,13 @@ class RiskPortfolioManager
             ]);
 
             if ($decision !== RiskGovernanceDecision::Accepted) {
-                $review->issue()->create([
+                $issue = $review->issue()->create([
                     'risk_id' => $locked->id, 'owner_id' => $profile->owner_id,
                     'title' => 'Risk treatment requires action', 'description' => $data['summary'],
                     'severity' => $locked->residual_risk >= 20 ? 'critical' : ($locked->residual_risk >= 12 ? 'high' : 'medium'),
                     'status' => 'open',
                 ]);
+                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
             }
 
             return $review->load('issue');

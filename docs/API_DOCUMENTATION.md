@@ -594,6 +594,20 @@ Scenario creation requires `name`, `narrative`, `horizon_months` from 1–120, a
 
 Review decisions are `accepted`, `mitigate`, `transfer`, and `avoid`. The server derives every snapshot field. A residual score above appetite cannot be accepted; treatment decisions open an issue. Evidence references are unverified external text. Third-party and unclassified risks are rejected by these endpoints because they use other workflows. See `docs/RISK_PORTFOLIO_GOVERNANCE.md` for evidence boundaries and limitations.
 
+### Governance Issue and Remediation Lifecycle
+
+Issue lifecycle endpoints use source type `risk`, `vendor`, `ai`, `resilience`, or `control_test`:
+
+- `GET /api/governance-issues/{type}/{issue}`
+- `POST /api/governance-issues/{type}/{issue}/remediation`
+- `POST /api/governance-issues/{type}/{issue}/request-verification`
+- `POST /api/governance-issues/{type}/{issue}/close`
+- `POST /api/governance-issues/{type}/{issue}/reopen`
+
+Issue owners may read their own lifecycle. `Manage Issue Lifecycle` is required to create a remediation handoff, request verification, or reopen. Handoff requires `remediation_project_id`, `priority` (`Low`, `Medium`, `High`, or `Critical`), a current-or-future `due_date`, and `rationale`; `assignee_id` is optional. The caller must also belong to the selected remediation project, and the server creates and links the task transactionally.
+
+Requesting verification requires a completed linked task and `rationale`. Closure requires `Verify Issue Closure`, `verification_summary`, a still-completed task, and a verifier independent of the issue owner and task owner/assignee; `evidence_reference` is optional operator-supplied external text and is not verified. Reopening requires `rationale`. The only accepted sequence is `open` → `in_remediation` → `verification` → `closed`, with `closed` → `open` for regression or invalidated closure. See `docs/GOVERNANCE_ISSUE_LIFECYCLE.md` for workflow and evidence boundaries.
+
 ### Create a New Standard
 
 ```bash

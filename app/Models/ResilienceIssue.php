@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Enums\GovernanceIssueStatus;
+use App\Models\Concerns\HasGovernanceIssueLifecycle;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ResilienceIssue extends Model
 {
+    use HasGovernanceIssueLifecycle;
+
     protected $fillable = ['recovery_exercise_id', 'business_service_id', 'owner_id', 'title', 'description', 'severity', 'status', 'due_at', 'remediation_task_id'];
 
-    protected $casts = ['due_at' => 'date'];
+    protected $casts = ['due_at' => 'date', 'status' => GovernanceIssueStatus::class];
 
     public function recoveryExercise(): BelongsTo
     {

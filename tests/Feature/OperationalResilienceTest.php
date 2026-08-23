@@ -8,6 +8,7 @@ use App\Models\BusinessImpactAnalysis;
 use App\Models\BusinessService;
 use App\Models\RecoveryExercise;
 use App\Models\RecoveryPlan;
+use App\Models\ResilienceIssue;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -168,6 +169,23 @@ class OperationalResilienceTest extends TestCase
             'owner_id' => $manager->id,
             'status' => 'open',
         ]);
+        $issue = ResilienceIssue::query()->where('recovery_exercise_id', $exercise->id)->firstOrFail();
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_type' => ResilienceIssue::class, 'issue_id' => $issue->id, 'status' => 'open']);
+        $this->assertSame('action_required', $service->fresh()->readiness_status);
+        RecoveryPlan::query()->whereKey($plan)->update(['review_due_at' => now()->subDay()]);
+        $this->assertSame('action_required', $service->fresh()->readiness_status);
+        RecoveryPlan::query()->whereKey($plan)->update(['review_due_at' => now()->addYear()]);
+
+        $passingExercise = RecoveryExercise::factory()->create(['recovery_plan_id' => $plan->id, 'facilitator_id' => $manager->id]);
+        $this->postJson("/api/recovery-exercises/{$passingExercise->id}/complete", [
+            'actual_recovery_time_minutes' => 50,
+            'actual_recovery_point_minutes' => 4,
+            'observations' => 'The later exercise met both objectives.',
+        ])->assertOk()->assertJsonPath('data.outcome', 'passed')
+            ->assertJsonPath('service.readiness_status', 'action_required');
+
+        $issue->updateQuietly(['status' => 'closed']);
+        $this->assertSame('ready', $service->fresh()->readiness_status);
     }
 
     public function test_completed_exercise_is_immutable_and_cannot_be_completed_twice(): void

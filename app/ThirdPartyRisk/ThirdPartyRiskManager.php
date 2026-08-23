@@ -14,6 +14,7 @@ use App\Models\Vendor;
 use App\Models\VendorRiskAssessment;
 use App\Models\VendorRiskDecision;
 use App\Models\VendorRiskReview;
+use App\Services\GovernanceIssueLifecycleManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -109,12 +110,13 @@ class ThirdPartyRiskManager
                 'next_review_at' => $data['next_review_at'], 'reviewed_at' => now(),
             ]);
             if ($outcome !== ThirdPartyRiskReviewOutcome::Satisfactory) {
-                $review->issue()->create([
+                $issue = $review->issue()->create([
                     'vendor_id' => $locked->id, 'owner_id' => $locked->vendor_manager_id,
                     'title' => $outcome === ThirdPartyRiskReviewOutcome::Terminate ? 'Third-party relationship requires termination review' : 'Third-party risk review requires action',
                     'description' => $data['summary'], 'severity' => $outcome === ThirdPartyRiskReviewOutcome::Terminate ? 'critical' : 'high',
                     'status' => 'open',
                 ]);
+                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
             }
 
             return $review->load('issue');

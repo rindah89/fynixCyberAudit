@@ -62,6 +62,12 @@ class BusinessService extends Model
         if ($this->status !== 'active') {
             return 'inactive';
         }
+        $issues = $this->relationLoaded('resilienceIssues')
+            ? $this->resilienceIssues
+            : $this->resilienceIssues()->get();
+        if ($issues->contains(fn (ResilienceIssue $issue): bool => $issue->status->value !== 'closed')) {
+            return 'action_required';
+        }
         $analysis = $this->relationLoaded('latestApprovedImpactAnalysis')
             ? $this->latestApprovedImpactAnalysis
             : $this->latestApprovedImpactAnalysis()->first();
@@ -84,7 +90,11 @@ class BusinessService extends Model
             return 'exercise_required';
         }
 
-        return $exercise->outcome->value === 'passed' ? 'ready' : 'action_required';
+        if ($exercise->outcome->value !== 'passed' && ! $issues->contains('recovery_exercise_id', $exercise->id)) {
+            return 'action_required';
+        }
+
+        return 'ready';
     }
 
     public function getLatestExerciseOutcomeAttribute(): ?string

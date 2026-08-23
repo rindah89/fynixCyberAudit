@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Enums\GovernanceIssueStatus;
+use App\Models\Concerns\HasGovernanceIssueLifecycle;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ControlTestFinding extends Model
 {
-    protected $fillable = ['control_test_execution_id', 'control_id', 'owner_id', 'title', 'description', 'status', 'detected_at'];
+    use HasGovernanceIssueLifecycle;
 
-    protected $casts = ['detected_at' => 'datetime'];
+    protected $fillable = ['control_test_execution_id', 'control_id', 'owner_id', 'title', 'description', 'status', 'remediation_task_id', 'detected_at'];
+
+    protected $casts = ['detected_at' => 'datetime', 'status' => GovernanceIssueStatus::class];
 
     public function execution(): BelongsTo
     {
@@ -24,5 +28,10 @@ class ControlTestFinding extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    public function remediationTask(): BelongsTo
+    {
+        return $this->belongsTo(RemediationTask::class);
     }
 }

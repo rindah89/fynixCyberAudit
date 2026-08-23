@@ -69,6 +69,7 @@ class BusinessServiceResource extends Resource
         $query = parent::getEloquentQuery()->with([
             'latestApprovedImpactAnalysis',
             'latestApprovedRecoveryPlan.latestCompletedExercise',
+            'resilienceIssues',
         ]);
         $user = auth()->user();
         if ($user && ! $user->can('Manage Resilience')) {

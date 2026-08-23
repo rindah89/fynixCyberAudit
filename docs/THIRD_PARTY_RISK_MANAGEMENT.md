@@ -18,6 +18,6 @@ The vendor workspace derives assessment-required, risk-link-required, decision-r
 
 ## Limitations
 
-This foundation does not provide supplier discovery, sanctions or financial feeds, attack-surface telemetry, fourth-party mapping, regulatory content, contract lifecycle management, verified evidence ingestion, automatic reassessment, issue closure, or automated remediation. Vendor surveys and documents remain separately governed workflows. This is not a claim of complete ServiceNow third-party risk management parity.
+This foundation does not provide supplier discovery, sanctions or financial feeds, attack-surface telemetry, fourth-party mapping, regulatory content, contract lifecycle management, verified evidence ingestion, automatic reassessment, or automated remediation. Review issues use the separately documented governed remediation and independent-closure workflow. Vendor surveys and documents remain separately governed workflows. This is not a claim of complete ServiceNow third-party risk management parity.
 
 See the third-party risk section of `docs/API_DOCUMENTATION.md` for routes and payload constraints.

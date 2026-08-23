@@ -2,12 +2,18 @@
 
 namespace App\Models;
 
+use App\Enums\GovernanceIssueStatus;
+use App\Models\Concerns\HasGovernanceIssueLifecycle;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AiGovernanceIssue extends Model
 {
+    use HasGovernanceIssueLifecycle;
+
     protected $fillable = ['ai_use_case_id', 'ai_monitoring_review_id', 'owner_id', 'title', 'description', 'severity', 'status', 'remediation_task_id'];
+
+    protected $casts = ['status' => GovernanceIssueStatus::class];
 
     public function useCase(): BelongsTo
     {

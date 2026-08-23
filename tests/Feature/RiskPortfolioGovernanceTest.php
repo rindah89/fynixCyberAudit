@@ -15,6 +15,7 @@ use App\Models\BusinessService;
 use App\Models\Control;
 use App\Models\Implementation;
 use App\Models\Risk;
+use App\Models\RiskGovernanceIssue;
 use App\Models\User;
 use App\Services\RiskPortfolioManager;
 use Database\Seeders\RolePermissionSeeder;
@@ -104,6 +105,8 @@ class RiskPortfolioGovernanceTest extends TestCase
         $this->postJson("/api/risks/{$risk->id}/governance-reviews", $this->reviewPayload('mitigate'))
             ->assertCreated()->assertJsonPath('data.issue.status', 'open')
             ->assertJsonPath('risk.portfolio_governance_status', 'action_required');
+        $issue = RiskGovernanceIssue::query()->where('risk_id', $risk->id)->firstOrFail();
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_type' => RiskGovernanceIssue::class, 'issue_id' => $issue->id, 'status' => 'open']);
     }
 
     public function test_material_risk_or_profile_change_requires_new_review(): void

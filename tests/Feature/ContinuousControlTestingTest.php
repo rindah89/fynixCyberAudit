@@ -6,6 +6,7 @@ use App\Filament\Resources\ControlTestDefinitionResource;
 use App\Models\Control;
 use App\Models\ControlTestDefinition;
 use App\Models\ControlTestExecution;
+use App\Models\ControlTestFinding;
 use App\Models\Implementation;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
@@ -86,6 +87,8 @@ class ContinuousControlTestingTest extends TestCase
 
         $this->assertDatabaseCount('control_test_executions', 2);
         $this->assertDatabaseHas('control_test_findings', ['control_test_execution_id' => $firstId, 'status' => 'open']);
+        $issue = ControlTestFinding::query()->where('control_test_execution_id', $firstId)->firstOrFail();
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_type' => ControlTestFinding::class, 'issue_id' => $issue->id, 'status' => 'open']);
     }
 
     public function test_execution_result_is_derived_and_cannot_be_supplied_or_rewritten(): void

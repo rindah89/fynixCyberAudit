@@ -9,6 +9,7 @@ use App\Models\AiMonitoringReview;
 use App\Models\AiRiskAssessment;
 use App\Models\AiUseCase;
 use App\Models\User;
+use App\Services\GovernanceIssueLifecycleManager;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -93,12 +94,13 @@ class AiGovernanceManager
             $locked->update(['next_monitoring_at' => $data['next_review_at']]);
 
             if ($outcome !== AiMonitoringOutcome::Satisfactory) {
-                $review->issue()->create([
+                $issue = $review->issue()->create([
                     'ai_use_case_id' => $locked->id, 'owner_id' => $locked->owner_id,
                     'title' => $outcome === AiMonitoringOutcome::Suspended ? 'AI use case suspended by monitoring review' : 'AI monitoring review requires action',
                     'description' => $data['performance_summary'],
                     'severity' => $outcome === AiMonitoringOutcome::Suspended ? 'critical' : 'high', 'status' => 'open',
                 ]);
+                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
             }
 
             return $review->load('issue');

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\AiGovernance\AiGovernanceManager;
 use App\Enums\AiGovernanceDecisionType;
 use App\Filament\Resources\AiSystemResource;
+use App\Models\AiGovernanceIssue;
 use App\Models\AiRiskAssessment;
 use App\Models\AiSystem;
 use App\Models\AiUseCase;
@@ -147,6 +148,8 @@ class AiGovernanceTest extends TestCase
             ->assertJsonPath('use_case.governance_status', 'action_required');
 
         $this->assertDatabaseHas('ai_governance_issues', ['ai_use_case_id' => $useCase->id, 'owner_id' => $manager->id, 'status' => 'open']);
+        $issue = AiGovernanceIssue::query()->where('ai_use_case_id', $useCase->id)->firstOrFail();
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_type' => AiGovernanceIssue::class, 'issue_id' => $issue->id, 'status' => 'open']);
 
         $this->postJson("/api/ai-use-cases/{$useCase->id}/monitoring-reviews", [
             'outcome' => 'satisfactory', 'performance_summary' => 'A follow-up sample met tolerance, but the issue remains open.',

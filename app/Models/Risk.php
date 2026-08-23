@@ -173,7 +173,7 @@ class Risk extends Model
 
     public function openGovernanceIssues(): HasMany
     {
-        return $this->hasMany(RiskGovernanceIssue::class)->where('status', 'open');
+        return $this->hasMany(RiskGovernanceIssue::class)->where('status', '!=', 'closed');
     }
 
     public function scopeWithPortfolioGovernanceGraph(Builder $query): Builder

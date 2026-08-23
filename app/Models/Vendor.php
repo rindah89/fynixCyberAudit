@@ -119,7 +119,7 @@ class Vendor extends Model
 
     public function openRiskIssues(): HasMany
     {
-        return $this->hasMany(VendorRiskIssue::class)->where('status', 'open');
+        return $this->hasMany(VendorRiskIssue::class)->where('status', '!=', 'closed');
     }
 
     public function scopeWithThirdPartyRiskGraph(Builder $query): Builder

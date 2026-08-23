@@ -8,6 +8,8 @@ use App\Models\RemediationTask;
 use App\Models\User;
 use App\Suite\PpmGateway;
 use App\Support\Enterprise;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Remediation
 {
@@ -80,6 +82,46 @@ class Remediation
                 report($exception);
             }
         }
+
+        return $task;
+    }
+
+    /**
+     * @param  array{priority?: string, assignee_id?: int|null, due_date: mixed}  $data
+     */
+    public function createTaskFromGovernanceIssue(User $actor, Model $issue, RemediationProject $project, array $data): RemediationTask
+    {
+        Enterprise::assertEnabled('remediation');
+        if (! $actor->isSuperAdmin() && ! $actor->can('Manage Remediation') && ! $actor->can('Manage Issue Lifecycle')) {
+            abort(403, 'You cannot manage governance issue remediation.');
+        }
+        if (! $project->isMember($actor)) {
+            abort(403, 'You are not a member of this remediation project.');
+        }
+
+        $task = RemediationTask::query()->create([
+            'remediation_project_id' => $project->id,
+            'number' => $this->nextTaskNumber($project),
+            'title' => $issue->title,
+            'status' => 'Open',
+            'priority' => $data['priority'] ?? 'Medium',
+            'type' => 'Governance Issue',
+            'owner_id' => $actor->id,
+            'assignee_id' => $data['assignee_id'] ?? null,
+            'due_date' => $data['due_date'],
+            'weakness_description' => $issue->description,
+        ]);
+
+        DB::afterCommit(function () use ($actor, $task): void {
+            $gateway = app(PpmGateway::class);
+            if ($gateway->enabled()) {
+                try {
+                    $gateway->publishTask($actor, $task);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
+        });
 
         return $task;
     }

@@ -10,6 +10,7 @@ Fynix Cyber Audit supports recurring, threshold-based control tests submitted by
 4. Record a boolean or numeric observation, notes, and an optional external evidence reference.
 5. Fynix derives the result from the stored threshold. Callers cannot submit or override the outcome.
 6. Review append-only execution history. A failed result automatically opens a control-test finding assigned to the definition owner.
+7. Route that finding through the shared [governance issue and remediation lifecycle](GOVERNANCE_ISSUE_LIFECYCLE.md) for deliberate remediation handoff, independent verification, closure, and reopening.
 
 The schedule communicates when another observation is due; it does not run a connector or collect source-system data by itself. Recurring schedules advance from the execution timestamp.
 
@@ -46,4 +47,4 @@ Control detail responses include definitions, owners, latest executions, and gen
 
 ## Explicit limitations
 
-This foundation does not schedule background execution, pull indicators from external systems, verify referenced evidence, aggregate samples, detect anomalies, close findings, or create remediation tasks. Generated control-test findings are separate from audit findings. Do not describe this feature as autonomous continuous monitoring or end-to-end continuous control testing automation.
+This foundation does not schedule background execution, pull indicators from external systems, verify referenced evidence, aggregate samples, detect anomalies, automatically close findings, or automatically create remediation tasks. Generated control-test findings are separate from audit findings. Do not describe this feature as autonomous continuous monitoring or end-to-end continuous control testing automation.

@@ -16,6 +16,6 @@ The workspace derives missing assessment, control mapping, risk mapping, approva
 
 ## Limitations
 
-This foundation does not discover models, classify regulations, verify evidence, ingest fairness or model-performance telemetry, generate model cards, connect to external AI registries, enforce runtime policy, close issues, or automate remediation. It is not a claim of full AI governance or ServiceNow IRM parity.
+This foundation does not discover models, classify regulations, verify evidence, ingest fairness or model-performance telemetry, generate model cards, connect to external AI registries, enforce runtime policy, or automate remediation. Monitoring issues use the separately documented governed remediation and independent-closure workflow. It is not a claim of full AI governance or ServiceNow IRM parity.
 
 See the AI governance section of `docs/API_DOCUMENTATION.md` for routes and payload rules.
