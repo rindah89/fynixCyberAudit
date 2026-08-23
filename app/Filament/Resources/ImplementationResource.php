@@ -24,6 +24,7 @@ use App\Models\Control;
 use App\Models\Implementation;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\RiskPortfolioContextManager;
 use Exception;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -110,6 +111,8 @@ class ImplementationResource extends Resource
                     )
                     ->searchable()
                     ->multiple()
+                    ->saveRelationshipsUsing(fn (Select $component): mixed => app(RiskPortfolioContextManager::class)
+                        ->syncControls($component->getRecord(), $component->getState() ?? []))
                     ->default(function (Select $component) {
                         $livewire = $component->getLivewire();
                         if ($livewire instanceof RelationManager) {

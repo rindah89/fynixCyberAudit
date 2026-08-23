@@ -11,6 +11,7 @@ use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
 use App\Models\PolicyAttestationEvidence;
 use App\Models\RecoveryExerciseEvidence;
+use App\Models\RiskGovernanceReviewEvidence;
 use App\Models\SurveyAttachment;
 use App\Models\TrustCenterDocument;
 use App\Models\User;
@@ -207,6 +208,24 @@ class FileAccess
         );
     }
 
+    public function streamRiskGovernanceReviewEvidence(User $actor, RiskGovernanceReviewEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['review.risk.governanceProfile', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $risk = $evidence->review?->risk;
+        $canViewWorkspace = $risk && ($actor->can('Manage Risk Portfolio') || $actor->can('Read Risks')
+            || (int) $risk->governanceProfile?->owner_id === (int) $actor->id);
+        if (! $canViewWorkspace
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed risk-review evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
@@ -216,7 +235,8 @@ class FileAccess
                 ->orWhereHas('aiMonitoringEvidence')
                 ->orWhereHas('vendorRiskReviewEvidence')
                 ->orWhereHas('recoveryExerciseEvidence')
-                ->orWhereHas('policyAttestationEvidence'))
+                ->orWhereHas('policyAttestationEvidence')
+                ->orWhereHas('riskGovernanceReviewEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

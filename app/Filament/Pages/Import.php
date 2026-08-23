@@ -6,6 +6,7 @@ use App\Models\Control;
 use App\Models\Implementation;
 use App\Models\Standard;
 use App\Models\User;
+use App\Services\RiskPortfolioContextManager;
 use Exception;
 use Filament\Actions\Concerns\HasWizard;
 use Filament\Forms\Components\FileUpload;
@@ -307,9 +308,9 @@ class Import extends Page
                     $implementation->implementation_owner_id = $owner->id ?? null;
                     $implementation->save();
                     if (empty($mappedControls)) {
-                        $implementation->controls()->detach();
+                        app(RiskPortfolioContextManager::class)->syncControls($implementation, []);
                     } else {
-                        $implementation->controls()->syncWithoutDetaching($mappedControls);
+                        app(RiskPortfolioContextManager::class)->attachControls($implementation, $mappedControls);
                     }
                 }
 
@@ -333,9 +334,9 @@ class Import extends Page
                     $implementation->test_plan = $row['test_plan'];
                     $implementation->implementation_owner_id = $owner->id ?? null;
                     if (empty($mappedControls)) {
-                        $implementation->controls()->detach();
+                        app(RiskPortfolioContextManager::class)->syncControls($implementation, []);
                     } else {
-                        $implementation->controls()->syncWithoutDetaching($mappedControls);
+                        app(RiskPortfolioContextManager::class)->attachControls($implementation, $mappedControls);
                     }
                     $implementation->update();
                 }

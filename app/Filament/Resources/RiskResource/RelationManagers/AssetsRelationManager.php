@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\RiskResource\RelationManagers;
 
+use App\Models\Asset;
+use App\Services\RiskPortfolioContextManager;
 use Filament\Actions\AttachAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DetachAction;
@@ -11,6 +13,8 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class AssetsRelationManager extends RelationManager
 {
@@ -62,16 +66,25 @@ class AssetsRelationManager extends RelationManager
                             ? strip_tags("({$record->asset_tag}) {$record->name}")
                             : strip_tags($record->name);
                     })
-                    ->recordSelectSearchColumns(['asset_tag', 'name']),
+                    ->recordSelectSearchColumns(['asset_tag', 'name'])
+                    ->using(function (BelongsToMany $relationship, Asset $record): void {
+                        app(RiskPortfolioContextManager::class)->attachAsset($relationship->getParent(), $record);
+                    }),
             ])
             ->recordActions([
                 ViewAction::make()
                     ->url(fn ($record) => route('filament.app.resources.assets.view', $record)),
-                DetachAction::make(),
+                DetachAction::make()->using(function (Asset $record, Table $table): void {
+                    app(RiskPortfolioContextManager::class)->detachAssets($table->getRelationship()->getParent(), [$record]);
+                }),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DetachBulkAction::make()->label('Detach from Risk'),
+                    DetachBulkAction::make()->label('Detach from Risk')
+                        ->using(function (DetachBulkAction $action, EloquentCollection $records, Table $table): void {
+                            $count = app(RiskPortfolioContextManager::class)->detachAssets($table->getRelationship()->getParent(), $records);
+                            $action->reportBulkProcessingSuccessfulRecordsCount($count);
+                        }),
                 ]),
             ]);
     }

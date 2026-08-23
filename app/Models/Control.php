@@ -9,6 +9,7 @@ use App\Enums\ControlEnforcementCategory;
 use App\Enums\ControlType;
 use App\Enums\Effectiveness;
 use App\Mcp\Traits\HasMcpSupport;
+use App\Models\Concerns\SerializesRiskPortfolioContextDeletion;
 use Eloquent;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -19,7 +20,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
@@ -60,7 +60,7 @@ use Spatie\Activitylog\Support\LogOptions;
  */
 class Control extends Model
 {
-    use HasFactory, HasMcpSupport, HasTaxonomy, LogsActivity, SoftDeletes;
+    use HasFactory, HasMcpSupport, HasTaxonomy, LogsActivity, SerializesRiskPortfolioContextDeletion;
 
     /**
      * Indicates if the model should be indexed as you type.

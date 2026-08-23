@@ -5,6 +5,8 @@ namespace App\Filament\Resources\ControlResource\RelationManagers;
 use App\Enums\Effectiveness;
 use App\Enums\ImplementationStatus;
 use App\Filament\Resources\ImplementationResource;
+use App\Models\Implementation;
+use App\Services\RiskPortfolioContextManager;
 use Filament\Actions\AttachAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
@@ -18,7 +20,9 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ImplementationRelationManager extends RelationManager
 {
@@ -63,7 +67,14 @@ class ImplementationRelationManager extends RelationManager
             ])
             ->headerActions([
                 CreateAction::make()
-                    ->label('New implementation'),
+                    ->label('New implementation')
+                    ->using(function (array $data): Implementation {
+                        $implementation = new Implementation;
+                        $implementation->fill($data)->save();
+                        app(RiskPortfolioContextManager::class)->attachControl($implementation, $this->getOwnerRecord());
+
+                        return $implementation;
+                    }),
                 AttachAction::make()
                     ->label('Add Existing Implementation')
                     ->preloadRecordSelect()
@@ -74,7 +85,10 @@ class ImplementationRelationManager extends RelationManager
                         // Concatenate code and title for the option label
                         return strip_tags("({$record->code}) {$record->title}");
                     })
-                    ->recordSelectSearchColumns(['code', 'title']),
+                    ->recordSelectSearchColumns(['code', 'title'])
+                    ->using(function (BelongsToMany $relationship, Implementation $record): void {
+                        app(RiskPortfolioContextManager::class)->attachControl($record, $relationship->getParent());
+                    }),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -84,7 +98,12 @@ class ImplementationRelationManager extends RelationManager
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
-                    DetachBulkAction::make()->label('Detach from this Control'),
+                    DetachBulkAction::make()->label('Detach from this Control')
+                        ->using(function (DetachBulkAction $action, EloquentCollection $records, Table $table): void {
+                            $control = $table->getRelationship()->getParent();
+                            $records->each(fn (Implementation $implementation) => app(RiskPortfolioContextManager::class)->detachControls($implementation, [$control]));
+                            $action->reportBulkProcessingSuccessfulRecordsCount($records->count());
+                        }),
                 ]),
             ]);
     }

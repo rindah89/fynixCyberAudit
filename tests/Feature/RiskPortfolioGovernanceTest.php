@@ -8,20 +8,31 @@ use App\Enums\RiskDomain;
 use App\Enums\RiskGovernanceDecision;
 use App\Filament\Exports\RiskExporter;
 use App\Filament\Resources\RiskPortfolioResource;
+use App\Filament\Resources\RiskPortfolioResource\Pages\ViewRiskPortfolio;
+use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceReviewsRelationManager;
 use App\Mcp\EntityConfig;
 use App\Mcp\Tools\InspectRiskPortfolioTool;
 use App\Models\Asset;
+use App\Models\Audit;
 use App\Models\BusinessService;
 use App\Models\Control;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\Implementation;
 use App\Models\Risk;
 use App\Models\RiskGovernanceIssue;
+use App\Models\RiskGovernanceReviewEvidence;
 use App\Models\User;
+use App\Services\RiskPortfolioContextManager;
 use App\Services\RiskPortfolioManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Mcp\Request;
 use Laravel\Sanctum\Sanctum;
+use Livewire\Livewire;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class RiskPortfolioGovernanceTest extends TestCase
@@ -33,6 +44,7 @@ class RiskPortfolioGovernanceTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         EntityConfig::clearCache();
+        Storage::fake('private');
     }
 
     public function test_enterprise_risk_profile_requires_strategic_context_and_supports_acceptance(): void
@@ -122,6 +134,29 @@ class RiskPortfolioGovernanceTest extends TestCase
         $this->assertSame('re_review_required', $risk->fresh()->portfolio_governance_status);
     }
 
+    public function test_governed_context_mapping_mutations_invalidate_and_restore_the_review(): void
+    {
+        $manager = $this->manager();
+        $risk = $this->reviewedEnterpriseRisk($manager);
+        $asset = Asset::factory()->create(['asset_tag' => 'ERM-CTX-001', 'name' => 'Enterprise context asset']);
+        $context = app(RiskPortfolioContextManager::class);
+
+        $context->attachAsset($risk, $asset);
+        $this->assertSame('re_review_required', $risk->fresh()->portfolio_governance_status);
+        $context->detachAssets($risk, [$asset]);
+        $this->assertSame('accepted', $risk->fresh()->portfolio_governance_status);
+
+        $implementation = Implementation::factory()->create();
+        $firstControl = Control::factory()->create();
+        $secondControl = Control::factory()->create();
+        $implementation->controls()->attach($firstControl);
+        $context->attachControls($implementation, [$secondControl]);
+        $this->assertEqualsCanonicalizing(
+            [$firstControl->id, $secondControl->id],
+            $implementation->controls()->pluck('controls.id')->all(),
+        );
+    }
+
     public function test_reviews_are_append_only_and_attributable(): void
     {
         $manager = $this->manager();
@@ -134,6 +169,87 @@ class RiskPortfolioGovernanceTest extends TestCase
         $this->assertSame('Protect recurring revenue.', $review->fresh()->governance_snapshot['profile']['strategic_objective']);
         $this->expectException(\LogicException::class);
         $review->delete();
+    }
+
+    public function test_governance_review_can_bind_authorized_accepted_audit_evidence(): void
+    {
+        $manager = $this->manager();
+        $attachment = $this->acceptedEvidence($manager, 'risk-review/appetite.pdf', 'risk review evidence bytes');
+        $risk = Risk::factory()->create(['domain' => RiskDomain::Enterprise, 'residual_likelihood' => 2, 'residual_impact' => 3]);
+        $risk->governanceProfile()->create(array_merge($this->profilePayload(), ['owner_id' => $manager->id, 'strategic_objective' => 'Protect recurring revenue.']));
+        Sanctum::actingAs($manager);
+
+        $reviewId = $this->postJson("/api/risks/{$risk->id}/governance-reviews", $this->reviewPayload('accepted') + [
+            'evidence_attachment_ids' => [$attachment->id],
+        ])->assertCreated()
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', 'risk review evidence bytes'))
+            ->json('data.id');
+
+        $evidence = RiskGovernanceReviewEvidence::query()->firstOrFail();
+        $this->assertSame($reviewId, $evidence->risk_governance_review_id);
+        $this->assertSame('Accepted', $evidence->response_status_snapshot);
+        $migration = require database_path('migrations/2026_08_24_290000_create_risk_governance_review_evidence.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('risk_governance_review_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+
+        Storage::disk('private')->put($attachment->file_path, 'later source replacement');
+        $this->actingAs($manager, 'web')->get(route('risk-governance-review-evidence.download', $evidence))
+            ->assertSuccessful()->assertStreamedContent('risk review evidence bytes');
+        $this->actingAs(User::factory()->create(), 'web')->get(route('risk-governance-review-evidence.download', $evidence))
+            ->assertForbidden();
+
+        $foreign = $this->acceptedEvidence(User::factory()->create(), 'risk-review/foreign.pdf', 'foreign bytes');
+        $retainedBefore = Storage::disk('private')->allFiles('governed-evidence/risk-governance-review');
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/risks/{$risk->id}/governance-reviews", $this->reviewPayload('accepted') + [
+            'evidence_attachment_ids' => [$attachment->id, $foreign->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertDatabaseCount('risk_governance_reviews', 1);
+        $this->assertSame($retainedBefore, Storage::disk('private')->allFiles('governed-evidence/risk-governance-review'));
+
+        try {
+            $evidence->delete();
+            $this->fail('Risk-review evidence was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('risk_governance_review_evidence', ['id' => $evidence->id]);
+        }
+        try {
+            $attachment->delete();
+            $this->fail('A governed source attachment was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('file_attachments', ['id' => $attachment->id]);
+        }
+
+        $owner = User::factory()->create();
+        $risk->governanceProfile->update(['owner_id' => $owner->id]);
+        $review = $risk->governanceReviews()->firstOrFail();
+        $this->actingAs($owner, 'web');
+        Livewire::test(GovernanceReviewsRelationManager::class, [
+            'ownerRecord' => $risk->fresh(), 'pageClass' => ViewRiskPortfolio::class,
+        ])->assertCanSeeTableRecords([$review])
+            ->assertTableColumnStateSet('evidence_count', 0, $review)
+            ->assertTableActionHidden('inspect_evidence', $review);
+    }
+
+    public function test_review_service_reauthorizes_before_creating_review_or_evidence(): void
+    {
+        $manager = $this->manager();
+        $risk = Risk::factory()->create(['domain' => RiskDomain::Enterprise]);
+        $risk->governanceProfile()->create(array_merge($this->profilePayload(), ['owner_id' => $manager->id, 'strategic_objective' => 'Protect recurring revenue.']));
+
+        try {
+            app(RiskPortfolioManager::class)->review(
+                $risk, User::factory()->create(), RiskGovernanceDecision::Accepted, $this->reviewPayload('accepted'),
+            );
+            $this->fail('Unauthorized direct service review was accepted.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->assertDatabaseCount('risk_governance_reviews', 0);
+        $this->assertDatabaseCount('risk_governance_review_evidence', 0);
     }
 
     public function test_governed_risk_domain_cannot_be_reclassified(): void
@@ -220,5 +336,23 @@ class RiskPortfolioGovernanceTest extends TestCase
         app(RiskPortfolioManager::class)->review($risk, $manager, RiskGovernanceDecision::Accepted, $this->reviewPayload('accepted'));
 
         return $risk;
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $auditManager->id, 'assigned_to_id' => $auditManager->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $auditManager->id, 'requestee_id' => $auditManager->id,
+        ]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed risk-review evidence', 'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

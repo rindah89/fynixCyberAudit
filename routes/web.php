@@ -9,6 +9,7 @@ use App\Http\Controllers\GovernanceIssueClosureEvidenceController;
 use App\Http\Controllers\MediaProxyController;
 use App\Http\Controllers\PolicyAttestationEvidenceController;
 use App\Http\Controllers\RecoveryExerciseEvidenceController;
+use App\Http\Controllers\RiskGovernanceReviewEvidenceController;
 use App\Http\Controllers\SurveyAttachmentController;
 use App\Http\Controllers\TrustCenterController;
 use App\Http\Controllers\Vendor\VendorAuthController;
@@ -55,6 +56,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('recovery-exercise-evidence.download');
     Route::get('/app/policy-attestation-evidence/{evidence}/download', [PolicyAttestationEvidenceController::class, 'download'])
         ->name('policy-attestation-evidence.download');
+    Route::get('/app/risk-governance-review-evidence/{evidence}/download', [RiskGovernanceReviewEvidenceController::class, 'download'])
+        ->name('risk-governance-review-evidence.download');
 
     // Media proxy route for serving private S3/cloud storage files
     Route::get('/media/{path}', [MediaProxyController::class, 'show'])

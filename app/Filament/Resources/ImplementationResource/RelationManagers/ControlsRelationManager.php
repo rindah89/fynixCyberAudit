@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\ImplementationResource\RelationManagers;
 
+use App\Models\Control;
+use App\Services\RiskPortfolioContextManager;
 use Filament\Actions\AttachAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\CreateAction;
@@ -12,6 +14,8 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ControlsRelationManager extends RelationManager
 {
@@ -50,7 +54,10 @@ class ControlsRelationManager extends RelationManager
                         // Concatenate code and title for the option label
                         return strip_tags("({$record->code}) {$record->title}");
                     })
-                    ->recordSelectSearchColumns(['code', 'title']),
+                    ->recordSelectSearchColumns(['code', 'title'])
+                    ->using(function (BelongsToMany $relationship, Control $record): void {
+                        app(RiskPortfolioContextManager::class)->attachControl($relationship->getParent(), $record);
+                    }),
             ])
             ->recordActions([
                 ViewAction::make()
@@ -60,7 +67,11 @@ class ControlsRelationManager extends RelationManager
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
-                    DetachBulkAction::make()->label('Detach from this Control'),
+                    DetachBulkAction::make()->label('Detach from this Control')
+                        ->using(function (DetachBulkAction $action, EloquentCollection $records, Table $table): void {
+                            $count = app(RiskPortfolioContextManager::class)->detachControls($table->getRelationship()->getParent(), $records);
+                            $action->reportBulkProcessingSuccessfulRecordsCount($count);
+                        }),
                 ]),
             ]);
     }

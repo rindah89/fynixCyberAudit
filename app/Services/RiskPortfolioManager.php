@@ -15,6 +15,7 @@ use App\Models\RiskGovernanceProfile;
 use App\Models\RiskGovernanceReview;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RiskPortfolioManager
@@ -22,6 +23,7 @@ class RiskPortfolioManager
     public function profile(Risk $risk, array $data): RiskGovernanceProfile
     {
         return DB::transaction(function () use ($risk, $data) {
+            app(RiskPortfolioContextManager::class)->lockSnapshotBoundary();
             $locked = Risk::query()->lockForUpdate()->findOrFail($risk->id);
             $this->validateContext($locked, $data);
 
@@ -31,43 +33,64 @@ class RiskPortfolioManager
 
     public function review(Risk $risk, User $actor, RiskGovernanceDecision $decision, array $data): RiskGovernanceReview
     {
-        return DB::transaction(function () use ($risk, $actor, $decision, $data) {
-            $locked = Risk::query()->lockForUpdate()->findOrFail($risk->id);
-            $profile = $locked->governanceProfile()->lockForUpdate()->first();
-            if (! $profile) {
-                throw ValidationException::withMessages(['profile' => 'A governance profile is required before review.']);
-            }
-            $this->lockContextGraph($locked, $profile);
-            $this->validateContext($locked, $profile->toArray());
-            if ($decision === RiskGovernanceDecision::Accepted && $locked->residual_risk > $profile->appetite_threshold) {
-                throw ValidationException::withMessages(['decision' => 'A risk above appetite cannot be accepted. Select a treatment decision.']);
-            }
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-            $snapshot = $locked->portfolioGovernanceSnapshot($profile);
-            $review = $locked->governanceReviews()->create([
-                'risk_governance_profile_id' => $profile->id, 'reviewed_by' => $actor->id,
-                'decision' => $decision, 'summary' => $data['summary'], 'evidence_reference' => $data['evidence_reference'] ?? null,
-                'domain_snapshot' => $locked->domain, 'inherent_score_snapshot' => $locked->inherent_risk,
-                'residual_score_snapshot' => $locked->residual_risk, 'appetite_threshold_snapshot' => $profile->appetite_threshold,
-                'asset_ids_snapshot' => collect($snapshot['assets'])->pluck('id')->all(),
-                'implementation_ids_snapshot' => collect($snapshot['implementations'])->pluck('id')->all(),
-                'business_service_id_snapshot' => $profile->business_service_id,
-                'governance_snapshot' => $snapshot,
-                'governance_fingerprint' => $snapshot['fingerprint'], 'next_review_at' => $data['next_review_at'], 'reviewed_at' => now(),
-            ]);
+        try {
+            return DB::transaction(function () use ($risk, $actor, $decision, $data, $snapshotter, $snapshotBatch, &$retainedCopies) {
+                app(RiskPortfolioContextManager::class)->lockSnapshotBoundary();
+                $locked = Risk::query()->lockForUpdate()->findOrFail($risk->id);
+                if (! $actor->can('Manage Risk Portfolio')) {
+                    abort(403, 'You cannot record risk governance reviews.');
+                }
+                $profile = $locked->governanceProfile()->lockForUpdate()->first();
+                if (! $profile) {
+                    throw ValidationException::withMessages(['profile' => 'A governance profile is required before review.']);
+                }
+                $this->lockContextGraph($locked, $profile);
+                $this->validateContext($locked, $profile->toArray());
+                if ($decision === RiskGovernanceDecision::Accepted && $locked->residual_risk > $profile->appetite_threshold) {
+                    throw ValidationException::withMessages(['decision' => 'A risk above appetite cannot be accepted. Select a treatment decision.']);
+                }
 
-            if ($decision !== RiskGovernanceDecision::Accepted) {
-                $issue = $review->issue()->create([
-                    'risk_id' => $locked->id, 'owner_id' => $profile->owner_id,
-                    'title' => 'Risk treatment requires action', 'description' => $data['summary'],
-                    'severity' => $locked->residual_risk >= 20 ? 'critical' : ($locked->residual_risk >= 12 ? 'high' : 'medium'),
-                    'status' => 'open',
+                $evidenceSnapshots = empty($data['evidence_attachment_ids']) ? [] : $snapshotter->snapshot(
+                    $data['evidence_attachment_ids'], $actor, 'risk-governance-review', $snapshotBatch, $retainedCopies,
+                );
+                $snapshot = $locked->portfolioGovernanceSnapshot($profile);
+                $reviewedAt = now();
+                $review = $locked->governanceReviews()->create([
+                    'risk_governance_profile_id' => $profile->id, 'reviewed_by' => $actor->id,
+                    'decision' => $decision, 'summary' => $data['summary'], 'evidence_reference' => $data['evidence_reference'] ?? null,
+                    'domain_snapshot' => $locked->domain, 'inherent_score_snapshot' => $locked->inherent_risk,
+                    'residual_score_snapshot' => $locked->residual_risk, 'appetite_threshold_snapshot' => $profile->appetite_threshold,
+                    'asset_ids_snapshot' => collect($snapshot['assets'])->pluck('id')->all(),
+                    'implementation_ids_snapshot' => collect($snapshot['implementations'])->pluck('id')->all(),
+                    'business_service_id_snapshot' => $profile->business_service_id,
+                    'governance_snapshot' => $snapshot,
+                    'governance_fingerprint' => $snapshot['fingerprint'], 'next_review_at' => $data['next_review_at'], 'reviewed_at' => $reviewedAt,
                 ]);
-                app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
-            }
+                foreach ($evidenceSnapshots as $evidenceSnapshot) {
+                    $review->evidence()->create($evidenceSnapshot + ['linked_by' => $actor->id, 'linked_at' => $reviewedAt]);
+                }
 
-            return $review->load('issue');
-        });
+                if ($decision !== RiskGovernanceDecision::Accepted) {
+                    $issue = $review->issue()->create([
+                        'risk_id' => $locked->id, 'owner_id' => $profile->owner_id,
+                        'title' => 'Risk treatment requires action', 'description' => $data['summary'],
+                        'severity' => $locked->residual_risk >= 20 ? 'critical' : ($locked->residual_risk >= 12 ? 'high' : 'medium'),
+                        'status' => 'open',
+                    ]);
+                    app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
+                }
+
+                return $review->load(['issue', 'evidence.linkedBy:id,name']);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+
+            throw $exception;
+        }
     }
 
     private function validateContext(Risk $risk, array $data): void
@@ -98,7 +121,7 @@ class RiskPortfolioManager
         }
     }
 
-    private function lockContextGraph(Risk $risk, RiskGovernanceProfile $profile): void
+    protected function lockContextGraph(Risk $risk, RiskGovernanceProfile $profile): void
     {
         $assetIds = DB::table('asset_risk')->where('risk_id', $risk->id)->lockForUpdate()->pluck('asset_id');
         Asset::query()->whereKey($assetIds)->lockForUpdate()->get();

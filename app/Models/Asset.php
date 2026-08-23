@@ -5,13 +5,13 @@ namespace App\Models;
 use Aliziodev\LaravelTaxonomy\Models\Taxonomy;
 use Aliziodev\LaravelTaxonomy\Traits\HasTaxonomy;
 use App\Mcp\Traits\HasMcpSupport;
+use App\Models\Concerns\SerializesRiskPortfolioContextDeletion;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class Asset
@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Asset extends Model
 {
-    use HasFactory, HasMcpSupport, HasTaxonomy, SoftDeletes;
+    use HasFactory, HasMcpSupport, HasTaxonomy, SerializesRiskPortfolioContextDeletion;
 
     /**
      * The attributes that are mass assignable.

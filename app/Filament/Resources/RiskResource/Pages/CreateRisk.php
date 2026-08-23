@@ -5,6 +5,7 @@ namespace App\Filament\Resources\RiskResource\Pages;
 use App\Enums\RiskDomain;
 use App\Filament\Resources\RiskResource;
 use App\Models\Risk;
+use App\Services\RiskPortfolioContextManager;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -266,7 +267,9 @@ class CreateRisk extends CreateRecord
                                 ->helperText('What are we doing to mitigate this risk?')
                                 ->relationship('implementations', 'title')
                                 ->searchable(['title', 'code'])
-                                ->multiple(),
+                                ->multiple()
+                                ->saveRelationshipsUsing(fn (Select $component): mixed => app(RiskPortfolioContextManager::class)
+                                    ->syncImplementations($component->getRecord(), $component->getState() ?? [])),
 
                         ]),
 
@@ -286,7 +289,9 @@ class CreateRisk extends CreateRecord
                                     ? "({$record->asset_tag}) {$record->name}"
                                     : $record->name)
                                 ->searchable(['name', 'asset_tag'])
-                                ->multiple(),
+                                ->multiple()
+                                ->saveRelationshipsUsing(fn (Select $component): mixed => app(RiskPortfolioContextManager::class)
+                                    ->syncAssets($component->getRecord(), $component->getState() ?? [])),
 
                         ]),
 

@@ -19,6 +19,7 @@ use App\Filament\Resources\RiskResource\RelationManagers\ImplementationsRelation
 use App\Filament\Resources\RiskResource\RelationManagers\MitigationsRelationManager;
 use App\Filament\Resources\RiskResource\RelationManagers\PoliciesRelationManager;
 use App\Models\Risk;
+use App\Services\RiskPortfolioContextManager;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -116,7 +117,9 @@ class RiskResource extends Resource
                     ->relationship(name: 'implementations')
                     ->getOptionLabelFromRecordUsing(fn ($record) => "({$record->code}) {$record->title}")
                     ->searchable(['title', 'code'])
-                    ->multiple(),
+                    ->multiple()
+                    ->saveRelationshipsUsing(fn (Select $component): mixed => app(RiskPortfolioContextManager::class)
+                        ->syncImplementations($component->getRecord(), $component->getState() ?? [])),
 
                 Select::make('status')
                     ->label('Status')

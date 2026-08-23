@@ -6,6 +6,7 @@ use App\Enums\RiskDomain;
 use App\Enums\RiskGovernanceDecision;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
@@ -44,5 +45,10 @@ class RiskGovernanceReview extends Model
     public function issue(): HasOne
     {
         return $this->hasOne(RiskGovernanceIssue::class);
+    }
+
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(RiskGovernanceReviewEvidence::class);
     }
 }

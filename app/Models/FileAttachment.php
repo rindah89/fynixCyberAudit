@@ -107,6 +107,11 @@ class FileAttachment extends Model
         return $this->hasMany(PolicyAttestationEvidence::class);
     }
 
+    public function riskGovernanceReviewEvidence(): HasMany
+    {
+        return $this->hasMany(RiskGovernanceReviewEvidence::class);
+    }
+
     public function hasGovernedEvidenceReferences(): bool
     {
         return $this->closureEvidence()->exists()
@@ -114,7 +119,8 @@ class FileAttachment extends Model
             || $this->aiMonitoringEvidence()->exists()
             || $this->vendorRiskReviewEvidence()->exists()
             || $this->recoveryExerciseEvidence()->exists()
-            || $this->policyAttestationEvidence()->exists();
+            || $this->policyAttestationEvidence()->exists()
+            || $this->riskGovernanceReviewEvidence()->exists();
     }
 
     public function auditItem(): BelongsTo

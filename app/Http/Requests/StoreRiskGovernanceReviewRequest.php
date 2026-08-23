@@ -18,6 +18,8 @@ class StoreRiskGovernanceReviewRequest extends FormRequest
         return [
             'decision' => ['required', Rule::enum(RiskGovernanceDecision::class)], 'summary' => 'required|string|max:30000',
             'evidence_reference' => 'nullable|string|max:255', 'next_review_at' => 'required|date|after:today',
+            'evidence_attachment_ids' => ['sometimes', 'array', 'max:20'],
+            'evidence_attachment_ids.*' => ['integer', 'distinct', 'exists:file_attachments,id'],
             'domain_snapshot' => 'prohibited', 'inherent_score_snapshot' => 'prohibited', 'residual_score_snapshot' => 'prohibited',
             'appetite_threshold_snapshot' => 'prohibited', 'asset_ids_snapshot' => 'prohibited', 'implementation_ids_snapshot' => 'prohibited',
             'business_service_id_snapshot' => 'prohibited', 'governance_fingerprint' => 'prohibited',
