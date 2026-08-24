@@ -2,6 +2,7 @@
 
 namespace App\Filament\Vendor\Resources;
 
+use App\Enums\ThirdPartyCollaborationEscalationStatus;
 use App\Enums\ThirdPartyCollaborationStatus;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
@@ -54,6 +55,13 @@ class CollaborationRequestResource extends Resource
                 'latestEvent',
                 'reminders',
                 'escalation:id,third_party_engagement_collaboration_request_id,channel,delivered_at,fingerprint',
+                'escalation.latestAction' => fn ($query) => $query->select([
+                    'third_party_engagement_collaboration_escalation_actions.id',
+                    'third_party_engagement_collaboration_escalation_actions.third_party_engagement_collaboration_escalation_id',
+                    'third_party_engagement_collaboration_escalation_actions.status',
+                    'third_party_engagement_collaboration_escalation_actions.recorded_at',
+                    'third_party_engagement_collaboration_escalation_actions.fingerprint',
+                ]),
             ]);
     }
 
@@ -111,9 +119,12 @@ class CollaborationRequestResource extends Resource
                     TextEntry::make('fingerprint')->columnSpanFull(),
                 ])->columns(3),
             ]),
-            Section::make('Escalated internally')->schema([
+            Section::make(fn (ThirdPartyEngagementCollaborationRequest $record): string => $record->escalation?->latestAction?->status === ThirdPartyCollaborationEscalationStatus::Resolved ? 'Resolved internally' : 'Escalated internally')->schema([
                 TextEntry::make('escalation.channel')->label('Channel'),
                 TextEntry::make('escalation.delivered_at')->label('Delivered')->dateTime(),
+                TextEntry::make('escalation.latestAction.status')->label('Internal status')->badge(),
+                TextEntry::make('escalation.latestAction.recorded_at')->label('Internal status recorded')->dateTime(),
+                TextEntry::make('escalation.latestAction.fingerprint')->label('Internal status fingerprint')->columnSpanFull(),
                 TextEntry::make('escalation.fingerprint')->label('Evidence fingerprint')->columnSpanFull(),
             ])->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->escalation !== null),
         ]);

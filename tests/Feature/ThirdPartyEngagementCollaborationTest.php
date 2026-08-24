@@ -8,6 +8,7 @@ use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
+use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
 use App\Models\ThirdPartyEngagementCollaborationReminder;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
@@ -18,6 +19,7 @@ use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationReminderManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationResolutionManager;
 use Database\Seeders\RolePermissionSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -397,6 +399,94 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $migration = require database_path('migrations/2026_08_24_840000_create_third_party_collaboration_escalations.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_engagement_collaboration_escalations', ['id' => $escalation->id]);
+        Carbon::setTestNow();
+    }
+
+    public function test_internal_accountability_acknowledges_and_independently_resolves_escalation_after_accepted_response(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $businessOwner = User::factory()->create();
+        $vendorManager = User::factory()->create();
+        $engagement->update(['business_owner_id' => $businessOwner->id]);
+        $engagement->vendor->update(['vendor_manager_id' => $vendorManager->id]);
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($opener, $engagement, [
+            'category' => 'assurance', 'subject' => 'Close overdue assurance request', 'request_text' => 'Provide the overdue response.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-27',
+        ]);
+        $reminders = app(ThirdPartyEngagementCollaborationReminderManager::class);
+        $reminders->reconcile(now());
+        Carbon::setTestNow('2026-08-28 00:00:01');
+        $reminders->reconcile(now());
+        Carbon::setTestNow('2026-08-31 00:00:00');
+        app(ThirdPartyEngagementCollaborationEscalationManager::class)->reconcile(now());
+        $escalation = $request->escalation()->firstOrFail();
+        $resolution = app(ThirdPartyEngagementCollaborationResolutionManager::class);
+
+        Sanctum::actingAs(User::factory()->create());
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/acknowledge", [
+            'summary' => 'Unauthorized.', 'action_plan' => 'Probe.', 'target_resolution_at' => '2026-09-05',
+        ])->assertForbidden();
+        Sanctum::actingAs($businessOwner);
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/acknowledge", [
+            'summary' => 'Ownership accepted.', 'action_plan' => 'Coordinate the provider response.', 'target_resolution_at' => '2026-09-05',
+            'status' => 'resolved', 'actor_snapshot' => ['id' => $businessOwner->id],
+        ])->assertUnprocessable();
+        $acknowledgement = $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/acknowledge", [
+            'summary' => 'Ownership accepted.', 'action_plan' => 'Coordinate the provider response.', 'target_resolution_at' => '2026-09-05',
+        ])->assertCreated()->assertJsonPath('data.status', 'acknowledged')->json('data');
+
+        try {
+            $resolution->resolve($businessOwner, $escalation, ['summary' => 'Premature resolution.']);
+            $this->fail('Resolution requires a later accepted provider response and a separated actor.');
+        } catch (\Throwable $exception) {
+            $status = $exception instanceof ValidationException ? 422 : (method_exists($exception, 'getStatusCode') ? $exception->getStatusCode() : $exception->getCode());
+            $this->assertContains($status, [403, 422]);
+        }
+        Carbon::setTestNow('2026-08-31 00:00:01');
+        app(ThirdPartyEngagementCollaborationManager::class)->respond($contact, $request, ['response_text' => 'The requested assurance response.']);
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        app(ThirdPartyEngagementCollaborationManager::class)->decide($reviewer, $request, ['decision' => 'accepted', 'summary' => 'Response accepted.']);
+        Sanctum::actingAs($reviewer);
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/resolve", [
+            'summary' => 'Self-reviewed resolution.',
+        ])->assertForbidden();
+        $resolved = $resolution->resolve($vendorManager, $escalation, ['summary' => 'Internal escalation resolved after acceptance.']);
+        $this->assertSame('resolved', $resolved->status->value);
+        $this->assertCount(2, $escalation->actions()->get());
+        $this->assertSame($acknowledgement['fingerprint'], $escalation->actions()->first()->fingerprint);
+        Sanctum::actingAs($businessOwner);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.0.escalation.actions')
+            ->assertJsonPath('data.0.escalation.actions.1.status', 'resolved');
+        foreach ($escalation->actions()->get() as $action) {
+            $payload = $action->only(['third_party_engagement_collaboration_escalation_id', 'version', 'status', 'summary', 'action_plan', 'target_resolution_at', 'actor_id', 'actor_snapshot', 'escalation_snapshot', 'accepted_event_snapshot']);
+            $payload['status'] = $action->status->value;
+            $payload['target_resolution_at'] = $action->target_resolution_at?->toDateString();
+            $payload['recorded_at'] = $action->recorded_at->toIso8601String();
+            $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $action->fingerprint);
+        }
+        $this->assertThrows(fn () => ThirdPartyEngagementCollaborationEscalationAction::query()->firstOrFail()->update(['summary' => 'Rewrite']), \LogicException::class);
+
+        $operatorEvidence = view('filament.third-party-engagement', [
+            'engagement' => $engagement->fresh()->load(['collaborationRequests.recipient', 'collaborationRequests.opener', 'collaborationRequests.events.evidence', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor']),
+        ])->render();
+        $this->assertStringContainsString('Ownership accepted.', $operatorEvidence);
+        $this->assertStringContainsString('Internal escalation resolved after acceptance.', $operatorEvidence);
+
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($contact, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee('Resolved internally')
+            ->assertSee($resolved->fingerprint)
+            ->assertDontSee('Ownership accepted.')
+            ->assertDontSee($businessOwner->email);
+        $migration = require database_path('migrations/2026_08_24_850000_create_third_party_collaboration_escalation_actions.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_engagement_collaboration_escalation_actions', ['id' => $resolved->id]);
         Carbon::setTestNow();
     }
 }

@@ -262,6 +262,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/third-party-engagements/{engagement}/collaboration-requests', [ThirdPartyRiskController::class, 'openCollaborationRequest']);
     Route::get('/third-party-engagements/{engagement}/collaboration-requests', [ThirdPartyRiskController::class, 'collaborationRequests']);
     Route::post('/third-party-engagement-collaboration-requests/{collaborationRequest}/decisions', [ThirdPartyRiskController::class, 'decideCollaborationRequest']);
+    Route::post('/third-party-engagement-collaboration-escalations/{escalation}/acknowledge', [ThirdPartyRiskController::class, 'acknowledgeCollaborationEscalation']);
+    Route::post('/third-party-engagement-collaboration-escalations/{escalation}/resolve', [ThirdPartyRiskController::class, 'resolveCollaborationEscalation']);
     Route::get('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'monitoringIndicators']);
     Route::post('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'defineMonitoringIndicator']);
     Route::get('/third-party-engagement-monitoring-indicators/{indicator}/observations', [ThirdPartyRiskController::class, 'monitoringObservations']);

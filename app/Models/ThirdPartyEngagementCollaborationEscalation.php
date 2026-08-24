@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 class ThirdPartyEngagementCollaborationEscalation extends Model
@@ -31,5 +33,15 @@ class ThirdPartyEngagementCollaborationEscalation extends Model
     public function vendorRecipient(): BelongsTo
     {
         return $this->belongsTo(VendorUser::class, 'vendor_user_id')->withTrashed();
+    }
+
+    public function actions(): HasMany
+    {
+        return $this->hasMany(ThirdPartyEngagementCollaborationEscalationAction::class)->orderBy('version');
+    }
+
+    public function latestAction(): HasOne
+    {
+        return $this->hasOne(ThirdPartyEngagementCollaborationEscalationAction::class)->latestOfMany('version');
     }
 }

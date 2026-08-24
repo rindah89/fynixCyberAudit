@@ -5,14 +5,17 @@ namespace App\Http\Controllers\API;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AcknowledgeThirdPartyCollaborationEscalationRequest;
 use App\Http\Requests\CompleteThirdPartyOffboardingRequirementRequest;
 use App\Http\Requests\CompleteThirdPartyOnboardingRequirementRequest;
 use App\Http\Requests\DecideThirdPartyCollaborationRequest;
 use App\Http\Requests\ListFourthPartyConcentrationsRequest;
+use App\Http\Requests\ListThirdPartyCollaborationRequestsRequest;
 use App\Http\Requests\ListThirdPartyEngagementMonitoringRequest;
 use App\Http\Requests\ListThirdPartyEngagementsRequest;
 use App\Http\Requests\ListVendorFourthPartyDependenciesRequest;
 use App\Http\Requests\MapVendorRiskRequest;
+use App\Http\Requests\ResolveThirdPartyCollaborationEscalationRequest;
 use App\Http\Requests\ShowThirdPartyEngagementRequest;
 use App\Http\Requests\StoreFourthPartyDependencyRequest;
 use App\Http\Requests\StoreThirdPartyCollaborationRequest;
@@ -31,6 +34,7 @@ use App\Http\Requests\StoreVendorRiskReviewRequest;
 use App\Http\Requests\TransitionThirdPartyEngagementRequest;
 use App\Models\Risk;
 use App\Models\ThirdPartyEngagement;
+use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\ThirdPartyEngagementOffboardingRequirement;
@@ -39,6 +43,7 @@ use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationResolutionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
@@ -184,12 +189,22 @@ class ThirdPartyRiskController extends Controller
         return response()->json(['data' => $manager->decide($request->user(), $collaborationRequest, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 
-    public function collaborationRequests(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    public function collaborationRequests(ListThirdPartyCollaborationRequestsRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'events.evidence.document', 'reminders', 'escalation'])->latest('version')->paginate($request->integer('per_page', 50));
+        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'events.evidence.document', 'reminders', 'escalation.actions.actor:id,name,email'])->latest('version')->paginate($request->integer('per_page', 50));
         $history->setCollection(app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($history->getCollection(), $request->user()));
 
         return response()->json($history);
+    }
+
+    public function acknowledgeCollaborationEscalation(AcknowledgeThirdPartyCollaborationEscalationRequest $request, ThirdPartyEngagementCollaborationEscalation $escalation, ThirdPartyEngagementCollaborationResolutionManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->acknowledge($request->user(), $escalation, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function resolveCollaborationEscalation(ResolveThirdPartyCollaborationEscalationRequest $request, ThirdPartyEngagementCollaborationEscalation $escalation, ThirdPartyEngagementCollaborationResolutionManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->resolve($request->user(), $escalation, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 
     public function fourthPartyDependencies(ListVendorFourthPartyDependenciesRequest $request, Vendor $vendor, FourthPartyDependencyManager $manager): JsonResponse

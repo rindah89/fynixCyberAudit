@@ -191,6 +191,15 @@
                     <div>Notifications: {{ implode(', ', $request->escalation->notification_ids) }}</div>
                     <details class="mt-1"><summary class="font-medium">Retained recipients, request, event, and overdue reminder</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipients' => $request->escalation->recipient_snapshots, 'request' => $request->escalation->request_snapshot, 'event' => $request->escalation->event_snapshot, 'overdue_reminder' => $request->escalation->overdue_reminder_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
                     <div class="break-all font-mono text-xs">{{ $request->escalation->fingerprint }}</div>
+                    @foreach ($request->escalation->actions->sortBy('version') as $action)
+                        <div class="mt-2 rounded-lg border p-2">
+                            <div>Internal action v{{ $action->version }} · {{ $action->status->getLabel() }} · {{ $action->actor?->name }} · {{ $action->recorded_at?->toDayDateTimeString() }}</div>
+                            <div class="whitespace-pre-wrap">{{ $action->summary }}</div>
+                            @if ($action->action_plan)<div class="whitespace-pre-wrap"><span class="font-medium">Action plan:</span> {{ $action->action_plan }} · target {{ $action->target_resolution_at?->toDateString() }}</div>@endif
+                            <details class="mt-1"><summary class="font-medium">Retained escalation and accepted-response evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['escalation' => $action->escalation_snapshot, 'accepted_event' => $action->accepted_event_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                            <div class="break-all font-mono text-xs">{{ $action->fingerprint }}</div>
+                        </div>
+                    @endforeach
                 </div>
             @endif
             <div class="mt-1 break-all font-mono text-xs">{{ $request->fingerprint }}</div>
