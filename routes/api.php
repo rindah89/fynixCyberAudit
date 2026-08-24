@@ -24,6 +24,7 @@ use App\Http\Controllers\API\ImplementationController;
 use App\Http\Controllers\API\OperationalResilienceController;
 use App\Http\Controllers\API\PolicyComplianceController;
 use App\Http\Controllers\API\PolicyController;
+use App\Http\Controllers\API\PolicyRevisionController;
 use App\Http\Controllers\API\ProgramController;
 use App\Http\Controllers\API\RegulatoryChangeController;
 use App\Http\Controllers\API\RiskController;
@@ -160,6 +161,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/third-party-risk/fourth-party-concentrations', [ThirdPartyRiskController::class, 'fourthPartyConcentrations']);
     Route::apiResource('assets', AssetController::class);
     Route::apiResource('policies', PolicyController::class);
+    Route::get('/policies/{policy}/revisions', [PolicyRevisionController::class, 'index']);
+    Route::post('/policies/{policy}/revisions', [PolicyRevisionController::class, 'store']);
+    Route::post('/policy-revisions/{revision}/review', [PolicyRevisionController::class, 'review']);
     Route::post('/policies/{policy}/obligations', [PolicyComplianceController::class, 'store']);
     Route::post('/policies/{policy}/acknowledgement-campaigns', [PolicyComplianceController::class, 'launchAcknowledgementCampaign']);
     Route::get('/policy-acknowledgements/mine', [PolicyComplianceController::class, 'myAcknowledgements']);

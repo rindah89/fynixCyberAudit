@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\PolicyResource\RelationManagers;
 
+use App\Models\Implementation;
+use App\PolicyCompliance\PolicyRevisionContextManager;
 use Filament\Actions\AttachAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DetachAction;
@@ -11,6 +13,8 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ImplementationsRelationManager extends RelationManager
 {
@@ -63,16 +67,23 @@ class ImplementationsRelationManager extends RelationManager
                     ->recordTitle(function ($record) {
                         return strip_tags($record->title);
                     })
-                    ->recordSelectSearchColumns(['title']),
+                    ->recordSelectSearchColumns(['title'])
+                    ->using(fn (BelongsToMany $relationship, Implementation $record) => app(PolicyRevisionContextManager::class)
+                        ->attachImplementation($relationship->getParent(), $record)),
             ])
             ->recordActions([
                 ViewAction::make()
                     ->url(fn ($record) => route('filament.app.resources.implementations.view', $record)),
-                DetachAction::make(),
+                DetachAction::make()->using(fn (Implementation $record) => app(PolicyRevisionContextManager::class)
+                    ->detachImplementations($this->getOwnerRecord(), [$record])),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DetachBulkAction::make()->label('Detach from Policy'),
+                    DetachBulkAction::make()->label('Detach from Policy')
+                        ->using(function (DetachBulkAction $action, EloquentCollection $records): void {
+                            app(PolicyRevisionContextManager::class)->detachImplementations($this->getOwnerRecord(), $records);
+                            $action->reportBulkProcessingSuccessfulRecordsCount($records->count());
+                        }),
                 ]),
             ]);
     }

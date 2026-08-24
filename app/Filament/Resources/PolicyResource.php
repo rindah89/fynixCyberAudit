@@ -14,6 +14,7 @@ use App\Filament\Resources\PolicyResource\RelationManagers\AcknowledgementCampai
 use App\Filament\Resources\PolicyResource\RelationManagers\ControlsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\ExceptionsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\ImplementationsRelationManager;
+use App\Filament\Resources\PolicyResource\RelationManagers\RevisionsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\RisksRelationManager;
 use App\Models\Policy;
 use Filament\Actions\BulkAction;
@@ -572,6 +573,7 @@ class PolicyResource extends Resource
     public static function getRelations(): array
     {
         return [
+            RevisionsRelationManager::class,
             AcknowledgementCampaignsRelationManager::class,
             ControlsRelationManager::class,
             ImplementationsRelationManager::class,

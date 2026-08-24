@@ -6,12 +6,14 @@ use Aliziodev\LaravelTaxonomy\Models\Taxonomy;
 use Aliziodev\LaravelTaxonomy\Traits\HasTaxonomy;
 use App\Enums\DocumentType;
 use App\Mcp\Traits\HasMcpSupport;
+use App\PolicyCompliance\PolicyRevisionManager;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -189,6 +191,17 @@ class Policy extends Model
         return $this->hasMany(PolicyAcknowledgementCampaign::class);
     }
 
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(PolicyRevision::class);
+    }
+
+    public function currentApprovedRevision(): HasOne
+    {
+        return $this->hasOne(PolicyRevision::class)
+            ->ofMany(['version' => 'max'], fn (Builder $query): Builder => $query->where('status', 'approved'));
+    }
+
     /**
      * Get the scope name accessor.
      */
@@ -203,6 +216,11 @@ class Policy extends Model
     public function getStatusNameAttribute(): ?string
     {
         return $this->status?->name;
+    }
+
+    public function getRevisionGovernanceStatusAttribute(): string
+    {
+        return app(PolicyRevisionManager::class)->governanceStatus($this);
     }
 
     /**

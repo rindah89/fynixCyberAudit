@@ -2,6 +2,16 @@
 
 Fynix Cyber Audit tracks policy compliance as attributable attestations against discrete policy obligations and provides a deliberately maintained regulatory source and requirement inventory. It does not ingest regulatory feeds or provide legal advice; control testing is documented separately in `docs/CONTINUOUS_CONTROL_TESTING.md`.
 
+## Governed policy revisions and approval
+
+A policy owner or user with `Update Policies` submits the current policy content and governed risk, control, and implementation mappings for review. The server allocates the next version, applies the proposed effective date to the immutable snapshot, and records the change summary, submitter, submission time, and SHA-256 fingerprint. Only one revision may be pending for a policy.
+
+A different user with `Update Policies` approves or rejects the pending latest revision. Review re-locks the policy and mapped records and rejects a revision if current material content or mappings differ from the submitted snapshot. The decision retains the exact revision snapshot, review summary, reviewer/time, and a separate fingerprint. Approval applies the proposed effective date; rejection retains evidence and allows a corrected later version. Revision and review evidence cannot be edited or deleted through product interfaces.
+
+Authorized users inspect complete paginated history under **Policies → Governed revision history** or through REST; `Read Policies` users may export the already scoped relation. Derived state is `unpublished`, `pending_review`, `approved_scheduled`, `current`, or `revision_required`. Drift is a current-state comparison: if mutable values are changed and later restored exactly to the approved snapshot, the approved revision becomes current again. Legacy policy edits and the editable `revision_history` field remain outside this governed lifecycle and do not become approved evidence retroactively.
+
+The workflow records deliberate policy content and human approval. It does not authenticate uploaded documents, provide legal review, prove reviewer competence or organizational independence beyond user separation, deliver qualified electronic signatures, distribute policy changes, infer compliance, or automatically generate or approve revisions.
+
 ## Regulatory change inventory
 
 Policy editors register regulatory sources through REST with authority, jurisdiction, reference URL, accountable owner, and lifecycle status. Editors and assigned source or requirement owners publish append-only requirement versions through REST. The server allocates version numbers, snapshots the source and selected active policy/control records, and fingerprints the complete version content. The first version is a new requirement; later versions explicitly identify an amendment, guidance update, or repeal.
@@ -60,6 +70,12 @@ Recurring attestations calculate their next due date from the attestation time: 
 - Soft-deleted policies and deactivated users remain attributable through retained snapshots and historical relationships; they are not eligible for new campaign audience selection.
 
 ## Integration interface
+
+Submit, inspect, and review governed policy revisions:
+
+- `POST /api/policies/{policy}/revisions`
+- `GET /api/policies/{policy}/revisions?page=1&per_page=50`
+- `POST /api/policy-revisions/{revision}/review`
 
 Create an obligation:
 

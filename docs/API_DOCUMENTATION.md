@@ -293,6 +293,14 @@ Create requests require `code`, `name`, `domain`, and inherent/residual likeliho
 
 Policy detail responses include `obligations` with their accountable owner, related control, derived `compliance_status`, and latest attestation.
 
+#### Governed policy revisions
+
+Policy owners and users with `Update Policies` submit the current policy and mapping state through `POST /api/policies/{policy}/revisions` with `change_summary` and a canonical `proposed_effective_date` (`Y-m-d`). The server owns the policy ID, version, pending status, complete policy/risk/control/implementation snapshot, submitter/time, and SHA-256 fingerprint. Only one revision may remain pending.
+
+A different user with `Update Policies` reviews the latest pending revision through `POST /api/policy-revisions/{revision}/review` with `decision` (`approved` or `rejected`) and `review_summary`. Review rejects stale content or mappings. Approval applies the proposed effective date; both decisions retain an immutable review snapshot, reviewer/time, and fingerprint.
+
+`GET /api/policies/{policy}/revisions?page=1&per_page=50` returns complete newest-first history and is capped at 100 records per page. Policy owners and `Read Policies`/`Update Policies` users may read the scoped history. The operator relation provides inspection and private scoped export. These are attributable human decisions, not legal review, document authentication, qualified electronic signatures, automatic generation/distribution, or compliance inference.
+
 #### Create a policy obligation
 
 `POST /api/policies/{policy}/obligations`

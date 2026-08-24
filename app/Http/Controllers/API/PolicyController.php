@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\Models\Policy;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PolicyController extends BaseApiController
@@ -18,6 +19,14 @@ class PolicyController extends BaseApiController
     protected array $searchableFields = ['code', 'name', 'policy_scope', 'purpose', 'body'];
 
     protected array $sortableFields = ['id', 'code', 'name', 'created_at', 'updated_at'];
+
+    public function show(Request $request, int $id): JsonResponse
+    {
+        $policy = Policy::query()->with($this->showRelations)->findOrFail($id);
+        $this->authorize('view', $policy);
+
+        return response()->json(['data' => $policy->append('revision_governance_status')]);
+    }
 
     protected function validateStore(Request $request): array
     {

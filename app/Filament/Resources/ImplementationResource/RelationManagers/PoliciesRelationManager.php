@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\ImplementationResource\RelationManagers;
 
+use App\Models\Policy;
+use App\PolicyCompliance\PolicyRevisionContextManager;
 use Filament\Actions\AttachAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DetachAction;
@@ -11,6 +13,8 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class PoliciesRelationManager extends RelationManager
 {
@@ -67,16 +71,24 @@ class PoliciesRelationManager extends RelationManager
                     ->recordTitle(function ($record) {
                         return strip_tags("({$record->code}) {$record->name}");
                     })
-                    ->recordSelectSearchColumns(['code', 'name']),
+                    ->recordSelectSearchColumns(['code', 'name'])
+                    ->using(fn (BelongsToMany $relationship, Policy $record) => app(PolicyRevisionContextManager::class)
+                        ->attachImplementation($record, $relationship->getParent())),
             ])
             ->recordActions([
                 ViewAction::make()
                     ->url(fn ($record) => route('filament.app.resources.policies.view', $record)),
-                DetachAction::make(),
+                DetachAction::make()->using(fn (Policy $record) => app(PolicyRevisionContextManager::class)
+                    ->detachImplementations($record, [$this->getOwnerRecord()])),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DetachBulkAction::make()->label('Detach from Implementation'),
+                    DetachBulkAction::make()->label('Detach from Implementation')
+                        ->using(function (DetachBulkAction $action, EloquentCollection $records): void {
+                            $records->each(fn (Policy $policy) => app(PolicyRevisionContextManager::class)
+                                ->detachImplementations($policy, [$this->getOwnerRecord()]));
+                            $action->reportBulkProcessingSuccessfulRecordsCount($records->count());
+                        }),
                 ]),
             ]);
     }
