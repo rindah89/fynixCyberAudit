@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ListThirdPartyRisks;
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
+use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRelationManager;
 use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\FourthPartyDependenciesRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\RiskAssessmentsRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\RiskDecisionsRelationManager;
@@ -101,7 +102,7 @@ class ThirdPartyRiskResource extends Resource
 
     public static function getRelations(): array
     {
-        return [RiskAssessmentsRelationManager::class, RisksRelationManager::class, RiskDecisionsRelationManager::class, RiskReviewsRelationManager::class, FourthPartyDependenciesRelationManager::class];
+        return [RiskAssessmentsRelationManager::class, RisksRelationManager::class, RiskDecisionsRelationManager::class, RiskReviewsRelationManager::class, EngagementsRelationManager::class, FourthPartyDependenciesRelationManager::class];
     }
 
     public static function getPages(): array

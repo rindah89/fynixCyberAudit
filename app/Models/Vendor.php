@@ -122,6 +122,11 @@ class Vendor extends Model
         return $this->hasMany(VendorFourthPartyDependency::class);
     }
 
+    public function engagements(): HasMany
+    {
+        return $this->hasMany(ThirdPartyEngagement::class);
+    }
+
     public function openRiskIssues(): HasMany
     {
         return $this->hasMany(VendorRiskIssue::class)->where('status', '!=', 'closed');

@@ -637,8 +637,12 @@ Third-party risk endpoints require `Manage Third Party Risk`:
 - `POST /api/vendors/{vendor}/risk-decisions`
 - `POST /api/vendors/{vendor}/risk-reviews`
 - `POST /api/vendors/{vendor}/fourth-party-dependencies`
+- `POST /api/vendors/{vendor}/engagements`
+- `POST /api/third-party-engagements/{engagement}/events`
 
 Dependency history is readable through `GET /api/vendors/{vendor}/fourth-party-dependencies` by third-party risk managers, users with `Read Vendors`, and the assigned vendor manager. Cross-vendor concentration is readable through `GET /api/third-party-risk/fourth-party-concentrations` only by third-party risk managers and users with `Read Vendors`. Both reads accept `page` and `per_page` with a maximum page size of 100.
+
+Engagement history is readable by the same scoped vendor readers through `GET /api/vendors/{vendor}/engagements`, `GET /api/third-party-engagements/{engagement}`, and `GET /api/third-party-engagements/{engagement}/events`; list/event history accepts `page` and `per_page` up to 100. A proposal requires code, name, service description, active business owner, criticality, data-access declaration, term dates, and an in-term next-review date. Lifecycle values are `proposed`, `due_diligence`, `approved`, `active`, `renewal_review`, `exited`, and `rejected`. Approval requires the latest exact current vendor-risk assessment/approval and an actor separated from the proposer, assessor, and risk decision maker. Activation rechecks approval currency. Renewal requires an extended term and a newly current risk context. Exit requires a summary and data-disposition statement. The server owns lifecycle state, approval/vendor snapshots, attribution, versions, timestamps, and fingerprints. These records evidence deliberate internal decisions; they do not execute or prove procurement, contracting, onboarding, service delivery, data deletion, or offboarding.
 
 Assessments accept 1–5 likelihood, impact, residual likelihood, and residual impact values. Categories are `cybersecurity`, `privacy`, `operational`, `financial`, `concentration`, `geographic`, `compliance`, `reputational`, and `subcontractor`. An optional `survey_id` must identify a completed `vendor_assessment` survey for the same vendor with a score and scoring timestamp. The server allocates versions, derives both scores, and snapshots the survey score; clients cannot supply derived fields.
 

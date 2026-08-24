@@ -240,6 +240,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/ai-use-cases/{useCase}/decisions', [AiGovernanceController::class, 'decide']);
     Route::post('/ai-use-cases/{useCase}/monitoring-reviews', [AiGovernanceController::class, 'monitor']);
     Route::post('/vendors/{vendor}/risk-assessments', [ThirdPartyRiskController::class, 'assess']);
+    Route::get('/vendors/{vendor}/engagements', [ThirdPartyRiskController::class, 'engagements']);
+    Route::post('/vendors/{vendor}/engagements', [ThirdPartyRiskController::class, 'proposeEngagement']);
+    Route::get('/third-party-engagements/{engagement}', [ThirdPartyRiskController::class, 'showEngagement']);
+    Route::get('/third-party-engagements/{engagement}/events', [ThirdPartyRiskController::class, 'engagementEvents']);
+    Route::post('/third-party-engagements/{engagement}/events', [ThirdPartyRiskController::class, 'transitionEngagement']);
     Route::post('/vendors/{vendor}/risks', [ThirdPartyRiskController::class, 'mapRisk']);
     Route::post('/vendors/{vendor}/risk-decisions', [ThirdPartyRiskController::class, 'decide']);
     Route::post('/vendors/{vendor}/risk-reviews', [ThirdPartyRiskController::class, 'review']);

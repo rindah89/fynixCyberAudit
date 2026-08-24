@@ -6,20 +6,51 @@ use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListFourthPartyConcentrationsRequest;
+use App\Http\Requests\ListThirdPartyEngagementsRequest;
 use App\Http\Requests\ListVendorFourthPartyDependenciesRequest;
 use App\Http\Requests\MapVendorRiskRequest;
+use App\Http\Requests\ShowThirdPartyEngagementRequest;
 use App\Http\Requests\StoreFourthPartyDependencyRequest;
+use App\Http\Requests\StoreThirdPartyEngagementRequest;
 use App\Http\Requests\StoreVendorRiskAssessmentRequest;
 use App\Http\Requests\StoreVendorRiskDecisionRequest;
 use App\Http\Requests\StoreVendorRiskReviewRequest;
+use App\Http\Requests\TransitionThirdPartyEngagementRequest;
 use App\Models\Risk;
+use App\Models\ThirdPartyEngagement;
 use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Illuminate\Http\JsonResponse;
 
 class ThirdPartyRiskController extends Controller
 {
+    public function engagements(ListThirdPartyEngagementsRequest $request, Vendor $vendor): JsonResponse
+    {
+        return response()->json($vendor->engagements()->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name'])->withCount('events')->latest('id')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function proposeEngagement(StoreThirdPartyEngagementRequest $request, Vendor $vendor, ThirdPartyEngagementManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->propose($request->user(), $vendor, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function showEngagement(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    {
+        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name'])]);
+    }
+
+    public function engagementEvents(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    {
+        return response()->json($engagement->events()->with('actor:id,name')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function transitionEngagement(TransitionThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->transition($request->user(), $engagement, $request->validated())]);
+    }
+
     public function fourthPartyDependencies(ListVendorFourthPartyDependenciesRequest $request, Vendor $vendor, FourthPartyDependencyManager $manager): JsonResponse
     {
         return response()->json($manager->history($vendor, $request->user())->paginate($request->integer('per_page', 50)));
