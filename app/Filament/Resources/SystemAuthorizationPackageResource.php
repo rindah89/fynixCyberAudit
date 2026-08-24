@@ -6,6 +6,7 @@ use App\Enums\SystemAuthorizationDecision;
 use App\Filament\Resources\SystemAuthorizationPackageResource\Pages\ListSystemAuthorizationPackages;
 use App\Filament\Resources\SystemAuthorizationPackageResource\Pages\ViewSystemAuthorizationPackage;
 use App\Filament\Resources\SystemAuthorizationPackageResource\RelationManagers\DecisionsRelationManager;
+use App\Filament\Resources\SystemAuthorizationPackageResource\RelationManagers\MonitoringReviewsRelationManager;
 use App\Models\SystemAuthorizationPackage;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -39,7 +40,7 @@ class SystemAuthorizationPackageResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($q) => $q->with(['application:id,name', 'submitter:id,name', 'latestDecision']))->columns([TextColumn::make('application.name')->searchable(), TextColumn::make('version')->sortable(), TextColumn::make('impact_level')->badge(), TextColumn::make('authorization_state')->badge()->color(fn (string $s) => SystemAuthorizationDecision::tryFrom($s)?->getColor() ?? ($s === 'pending_review' ? 'info' : 'gray')), TextColumn::make('submitter.name')->label('Submitted by'), TextColumn::make('submitted_at')->dateTime()])->defaultSort('id', 'desc');
+        return $table->modifyQueryUsing(fn ($q) => $q->with(['application:id,name', 'submitter:id,name', 'latestDecision', 'latestMonitoringReview']))->columns([TextColumn::make('application.name')->searchable(), TextColumn::make('version')->sortable(), TextColumn::make('impact_level')->badge(), TextColumn::make('authorization_state')->badge()->color(fn (string $s) => SystemAuthorizationDecision::tryFrom($s)?->getColor() ?? ($s === 'pending_review' ? 'info' : 'gray')), TextColumn::make('monitoring_state')->badge(), TextColumn::make('submitter.name')->label('Submitted by'), TextColumn::make('submitted_at')->dateTime()])->defaultSort('id', 'desc');
     }
 
     public static function infolist(Schema $schema): Schema
@@ -49,7 +50,7 @@ class SystemAuthorizationPackageResource extends Resource
 
     public static function getRelations(): array
     {
-        return [DecisionsRelationManager::class];
+        return [DecisionsRelationManager::class, MonitoringReviewsRelationManager::class];
     }
 
     public static function getPages(): array

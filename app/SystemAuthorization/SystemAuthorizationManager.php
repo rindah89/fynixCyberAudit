@@ -3,10 +3,12 @@
 namespace App\SystemAuthorization;
 
 use App\Enums\SystemAuthorizationDecision;
+use App\Enums\SystemAuthorizationMonitoringOutcome;
 use App\Models\Application;
 use App\Models\Control;
 use App\Models\Risk;
 use App\Models\SystemAuthorizationDecisionRecord;
+use App\Models\SystemAuthorizationMonitoringReview;
 use App\Models\SystemAuthorizationPackage;
 use App\Models\User;
 use App\Support\Enterprise;
@@ -42,9 +44,54 @@ class SystemAuthorizationManager
             }
             abort_unless($controls->every(fn (Control $control): bool => $actor->can('view', $control)) && $risks->every(fn (Risk $risk): bool => $actor->can('view', $risk)), 403, 'The submitter must be authorized to view every selected governance record.');
             $at = now()->startOfSecond();
-            $payload = ['application_id' => $app->id, 'version' => $packages->count() + 1, 'application_snapshot' => $this->applicationSnapshot($app), 'system_boundary' => $data['system_boundary'], 'impact_level' => $data['impact_level'], 'data_classifications' => array_values($data['data_classifications']), 'control_snapshot' => $controls->map(fn (Control $c) => $c->only(['id', 'code', 'title', 'status', 'effectiveness', 'applicability']))->values()->all(), 'risk_snapshot' => $risks->map(fn (Risk $r) => $r->only(['id', 'code', 'name', 'domain', 'status', 'inherent_risk', 'residual_risk']))->values()->all(), 'open_findings' => array_values($data['open_findings']), 'monitoring_strategy' => $data['monitoring_strategy'], 'poam_reference' => $data['poam_reference'] ?? null, 'change_summary' => $data['change_summary'], 'submitted_by' => $actor->id, 'submitted_at' => $at->toIso8601String()];
+            $payload = ['application_id' => $app->id, 'version' => $packages->count() + 1, 'application_snapshot' => $this->applicationSnapshot($app), 'system_boundary' => $data['system_boundary'], 'impact_level' => $data['impact_level'], 'data_classifications' => array_values($data['data_classifications']), 'control_snapshot' => $controls->map(fn (Control $c) => $c->only(['id', 'code', 'title', 'status', 'effectiveness', 'applicability']))->values()->all(), 'risk_snapshot' => $risks->map(fn (Risk $r) => $r->only(['id', 'code', 'name', 'domain', 'status', 'inherent_risk', 'residual_risk']))->values()->all(), 'open_findings' => array_values($data['open_findings']), 'monitoring_strategy' => $data['monitoring_strategy'], 'review_frequency_days' => $data['review_frequency_days'], 'poam_reference' => $data['poam_reference'] ?? null, 'change_summary' => $data['change_summary'], 'submitted_by' => $actor->id, 'submitted_at' => $at->toIso8601String()];
 
             return SystemAuthorizationPackage::query()->create($payload + ['fingerprint' => $this->fingerprint($payload)])->load(['application.owner:id,name,email', 'submitter:id,name', 'latestDecision']);
+        }, 3);
+    }
+
+    /** @param array<string,mixed> $data */
+    public function monitor(User $actor, SystemAuthorizationPackage $package, array $data): SystemAuthorizationMonitoringReview
+    {
+        Enterprise::assertEnabled('system_authorization');
+
+        return DB::transaction(function () use ($actor, $package, $data): SystemAuthorizationMonitoringReview {
+            $packageApplicationId = SystemAuthorizationPackage::query()->whereKey($package->id)->value('application_id');
+            $app = Application::query()->withTrashed()->lockForUpdate()->findOrFail($packageApplicationId);
+            $locked = SystemAuthorizationPackage::query()->where('application_id', $app->id)->lockForUpdate()->findOrFail($package->id);
+            abort_unless($actor->can('monitor', $locked), 403);
+            $data = Validator::make($data, self::monitoringRules())->validate();
+            $latestPackage = SystemAuthorizationPackage::query()->where('application_id', $app->id)->orderBy('id')->lockForUpdate()->get()->last();
+            if ($latestPackage?->id !== $locked->id) {
+                throw ValidationException::withMessages(['package' => 'Only the latest authorization package may be monitored.']);
+            }
+            $decision = SystemAuthorizationDecisionRecord::query()->where('system_authorization_package_id', $locked->id)->latest('version')->lockForUpdate()->firstOrFail();
+            if (! in_array($decision->decision, [SystemAuthorizationDecision::Authorized, SystemAuthorizationDecision::AuthorizedWithConditions], true) || $decision->valid_until?->copy()->endOfDay()->isPast()) {
+                throw ValidationException::withMessages(['package' => 'Monitoring requires a currently active authorization.']);
+            }
+            abort_if(in_array($actor->id, [$locked->submitted_by, $app->owner_id, $decision->decided_by], true), 403, 'The owner, submitter, and authorizer cannot independently monitor this authorization.');
+            $controlIds = collect($locked->control_snapshot)->pluck('id')->map(fn ($id): int => (int) $id)->all();
+            $riskIds = collect($locked->risk_snapshot)->pluck('id')->map(fn ($id): int => (int) $id)->all();
+            $controls = Control::query()->whereIn('id', $controlIds)->orderBy('id')->lockForUpdate()->get();
+            $risks = Risk::query()->whereIn('id', $riskIds)->orderBy('id')->lockForUpdate()->get();
+            $unchanged = $this->applicationSnapshot($app) === $locked->application_snapshot && $this->canonical($controls->map(fn (Control $c) => $c->only(['id', 'code', 'title', 'status', 'effectiveness', 'applicability']))->values()->all()) === $locked->control_snapshot && $this->canonical($risks->map(fn (Risk $r) => $r->only(['id', 'code', 'name', 'domain', 'status', 'inherent_risk', 'residual_risk']))->values()->all()) === $locked->risk_snapshot;
+            $outcome = SystemAuthorizationMonitoringOutcome::from($data['outcome']);
+            if (! $unchanged && $outcome === SystemAuthorizationMonitoringOutcome::Effective) {
+                throw ValidationException::withMessages(['outcome' => 'Changed authorization context cannot be confirmed effective.']);
+            }
+            if ($outcome !== SystemAuthorizationMonitoringOutcome::Effective && $data['required_actions'] === []) {
+                throw ValidationException::withMessages(['required_actions' => 'An adverse monitoring outcome requires at least one action.']);
+            }
+            $reviews = SystemAuthorizationMonitoringReview::query()->where('system_authorization_package_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            if ($reviews->count() >= 100) {
+                throw ValidationException::withMessages(['package' => 'A package is limited to 100 monitoring reviews.']);
+            }
+            $at = now()->startOfSecond();
+            $next = $at->copy()->addDays($locked->review_frequency_days)->min($decision->valid_until->copy()->endOfDay())->toDateString();
+            $decisionSnapshot = $this->canonical($decision->only(['id', 'system_authorization_package_id', 'version', 'package_snapshot', 'decision', 'conditions', 'rationale', 'decided_by', 'decided_at', 'valid_until', 'fingerprint']));
+            $payload = ['system_authorization_package_id' => $locked->id, 'version' => $reviews->count() + 1, 'package_snapshot' => $this->packageSnapshot($locked), 'decision_snapshot' => $decisionSnapshot, 'metrics' => array_values($data['metrics']), 'findings' => array_values($data['findings']), 'outcome' => $outcome->value, 'required_actions' => array_values($data['required_actions']), 'summary' => $data['summary'], 'reviewed_by' => $actor->id, 'reviewed_at' => $at->toIso8601String(), 'next_review_at' => $next];
+
+            return SystemAuthorizationMonitoringReview::query()->create($payload + ['fingerprint' => $this->fingerprint($payload)])->load(['reviewer:id,name', 'package']);
         }, 3);
     }
 
@@ -54,8 +101,9 @@ class SystemAuthorizationManager
         Enterprise::assertEnabled('system_authorization');
 
         return DB::transaction(function () use ($actor, $package, $data): SystemAuthorizationDecisionRecord {
-            $locked = SystemAuthorizationPackage::query()->lockForUpdate()->findOrFail($package->id);
-            $app = Application::query()->withTrashed()->lockForUpdate()->findOrFail($locked->application_id);
+            $packageApplicationId = SystemAuthorizationPackage::query()->whereKey($package->id)->value('application_id');
+            $app = Application::query()->withTrashed()->lockForUpdate()->findOrFail($packageApplicationId);
+            $locked = SystemAuthorizationPackage::query()->where('application_id', $app->id)->lockForUpdate()->findOrFail($package->id);
             abort_unless($actor->can('decide', $locked), 403);
             $data = Validator::make($data, self::decisionRules())->validate();
             $packages = SystemAuthorizationPackage::query()->where('application_id', $app->id)->orderBy('id')->lockForUpdate()->get();
@@ -99,12 +147,17 @@ class SystemAuthorizationManager
 
     public static function packageRules(): array
     {
-        return ['system_boundary' => 'required|string|max:30000', 'impact_level' => ['required', Rule::in(['Low', 'Moderate', 'High'])], 'data_classifications' => 'required|array|min:1|max:50', 'data_classifications.*' => 'string|max:255|distinct', 'control_ids' => 'present|array|max:500', 'control_ids.*' => 'integer|distinct', 'risk_ids' => 'present|array|max:500', 'risk_ids.*' => 'integer|distinct', 'open_findings' => 'present|array|max:100', 'open_findings.*' => 'string|max:2000|distinct', 'monitoring_strategy' => 'required|string|max:30000', 'poam_reference' => 'nullable|string|max:2000', 'change_summary' => 'required|string|max:30000', 'version' => 'prohibited', 'application_snapshot' => 'prohibited', 'control_snapshot' => 'prohibited', 'risk_snapshot' => 'prohibited', 'submitted_by' => 'prohibited', 'submitted_at' => 'prohibited', 'fingerprint' => 'prohibited'];
+        return ['system_boundary' => 'required|string|max:30000', 'impact_level' => ['required', Rule::in(['Low', 'Moderate', 'High'])], 'data_classifications' => 'required|array|min:1|max:50', 'data_classifications.*' => 'string|max:255|distinct', 'control_ids' => 'present|array|max:500', 'control_ids.*' => 'integer|distinct', 'risk_ids' => 'present|array|max:500', 'risk_ids.*' => 'integer|distinct', 'open_findings' => 'present|array|max:100', 'open_findings.*' => 'string|max:2000|distinct', 'monitoring_strategy' => 'required|string|max:30000', 'review_frequency_days' => 'required|integer|min:1|max:365', 'poam_reference' => 'nullable|string|max:2000', 'change_summary' => 'required|string|max:30000', 'version' => 'prohibited', 'application_snapshot' => 'prohibited', 'control_snapshot' => 'prohibited', 'risk_snapshot' => 'prohibited', 'submitted_by' => 'prohibited', 'submitted_at' => 'prohibited', 'fingerprint' => 'prohibited'];
     }
 
     public static function decisionRules(): array
     {
         return ['decision' => ['required', Rule::enum(SystemAuthorizationDecision::class)], 'conditions' => 'present|array|max:100', 'conditions.*' => 'string|max:2000|distinct', 'rationale' => 'required|string|max:30000', 'valid_until' => 'nullable|date|after:today', 'version' => 'prohibited', 'package_snapshot' => 'prohibited', 'decided_by' => 'prohibited', 'decided_at' => 'prohibited', 'fingerprint' => 'prohibited'];
+    }
+
+    public static function monitoringRules(): array
+    {
+        return ['metrics' => 'present|array|max:100', 'metrics.*' => 'string|max:2000|distinct', 'findings' => 'present|array|max:100', 'findings.*' => 'string|max:2000|distinct', 'outcome' => ['required', Rule::enum(SystemAuthorizationMonitoringOutcome::class)], 'required_actions' => 'present|array|max:100', 'required_actions.*' => 'string|max:2000|distinct', 'summary' => 'required|string|max:30000', 'version' => 'prohibited', 'package_snapshot' => 'prohibited', 'decision_snapshot' => 'prohibited', 'reviewed_by' => 'prohibited', 'reviewed_at' => 'prohibited', 'next_review_at' => 'prohibited', 'fingerprint' => 'prohibited'];
     }
 
     private function applicationSnapshot(Application $app): array
@@ -116,7 +169,7 @@ class SystemAuthorizationManager
 
     private function packageSnapshot(SystemAuthorizationPackage $p): array
     {
-        return $this->canonical($p->only(['id', 'application_id', 'version', 'application_snapshot', 'system_boundary', 'impact_level', 'data_classifications', 'control_snapshot', 'risk_snapshot', 'open_findings', 'monitoring_strategy', 'poam_reference', 'change_summary', 'submitted_by', 'submitted_at', 'fingerprint']));
+        return $this->canonical($p->only(['id', 'application_id', 'version', 'application_snapshot', 'system_boundary', 'impact_level', 'data_classifications', 'control_snapshot', 'risk_snapshot', 'open_findings', 'monitoring_strategy', 'review_frequency_days', 'poam_reference', 'change_summary', 'submitted_by', 'submitted_at', 'fingerprint']));
     }
 
     private function canonical(array $value): array

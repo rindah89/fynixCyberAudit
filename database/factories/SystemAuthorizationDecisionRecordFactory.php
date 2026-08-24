@@ -22,6 +22,6 @@ class SystemAuthorizationDecisionRecordFactory extends Factory
 
     public static function packageSnapshot(SystemAuthorizationPackage $package): array
     {
-        return json_decode(json_encode($package->only(['id', 'application_id', 'version', 'application_snapshot', 'system_boundary', 'impact_level', 'data_classifications', 'control_snapshot', 'risk_snapshot', 'open_findings', 'monitoring_strategy', 'poam_reference', 'change_summary', 'submitted_by', 'submitted_at', 'fingerprint']), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), true, flags: JSON_THROW_ON_ERROR);
+        return json_decode(json_encode($package->only(['id', 'application_id', 'version', 'application_snapshot', 'system_boundary', 'impact_level', 'data_classifications', 'control_snapshot', 'risk_snapshot', 'open_findings', 'monitoring_strategy', 'review_frequency_days', 'poam_reference', 'change_summary', 'submitted_by', 'submitted_at', 'fingerprint']), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), true, flags: JSON_THROW_ON_ERROR);
     }
 }

@@ -3,13 +3,16 @@
 namespace Tests\Feature;
 
 use App\Enums\SystemAuthorizationDecision;
+use App\Enums\SystemAuthorizationMonitoringOutcome;
 use App\Filament\Resources\SystemAuthorizationPackageResource;
 use App\Filament\Resources\SystemAuthorizationPackageResource\Pages\ViewSystemAuthorizationPackage;
 use App\Filament\Resources\SystemAuthorizationPackageResource\RelationManagers\DecisionsRelationManager;
+use App\Filament\Resources\SystemAuthorizationPackageResource\RelationManagers\MonitoringReviewsRelationManager;
 use App\Models\Application;
 use App\Models\Control;
 use App\Models\Risk;
 use App\Models\SystemAuthorizationDecisionRecord;
+use App\Models\SystemAuthorizationMonitoringReview;
 use App\Models\SystemAuthorizationPackage;
 use App\Models\User;
 use App\SystemAuthorization\SystemAuthorizationManager;
@@ -34,7 +37,7 @@ class SystemAuthorizationManagementTest extends TestCase
 
     private function packageData(Control $control, Risk $risk): array
     {
-        return ['system_boundary' => 'Customer payments application, production data stores, and managed interfaces.', 'impact_level' => 'High', 'data_classifications' => ['Confidential', 'Personal data'], 'control_ids' => [$control->id], 'risk_ids' => [$risk->id], 'open_findings' => ['Encryption key rotation exception remains tracked in POA&M-42.'], 'monitoring_strategy' => 'Quarterly control review, annual package resubmission, and deliberate review after material change.', 'poam_reference' => 'POA&M-42', 'change_summary' => 'Submit the initial authorization baseline.'];
+        return ['system_boundary' => 'Customer payments application, production data stores, and managed interfaces.', 'impact_level' => 'High', 'data_classifications' => ['Confidential', 'Personal data'], 'control_ids' => [$control->id], 'risk_ids' => [$risk->id], 'open_findings' => ['Encryption key rotation exception remains tracked in POA&M-42.'], 'monitoring_strategy' => 'Quarterly control review, annual package resubmission, and deliberate review after material change.', 'review_frequency_days' => 90, 'poam_reference' => 'POA&M-42', 'change_summary' => 'Submit the initial authorization baseline.'];
     }
 
     private function decisionData(string $decision = SystemAuthorizationDecision::Authorized->value): array
@@ -59,6 +62,8 @@ class SystemAuthorizationManagementTest extends TestCase
         $this->assertSame($control->id, $package->control_snapshot[0]['id']);
         $this->assertSame($risk->id, $package->risk_snapshot[0]['id']);
         $this->assertSame('pending_review', $package->authorization_state);
+        $packagePayload = ['application_id' => $package->application_id, 'version' => $package->version, 'application_snapshot' => $package->application_snapshot, 'system_boundary' => $package->system_boundary, 'impact_level' => $package->impact_level, 'data_classifications' => $package->data_classifications, 'control_snapshot' => $package->control_snapshot, 'risk_snapshot' => $package->risk_snapshot, 'open_findings' => $package->open_findings, 'monitoring_strategy' => $package->monitoring_strategy, 'review_frequency_days' => $package->review_frequency_days, 'poam_reference' => $package->poam_reference, 'change_summary' => $package->change_summary, 'submitted_by' => $package->submitted_by, 'submitted_at' => $package->submitted_at->toIso8601String()];
+        $this->assertSame(hash('sha256', json_encode($packagePayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $package->fingerprint);
         foreach ([$manager, $owner] as $excluded) {
             try {
                 $service->decide($excluded, $package, $this->decisionData());
@@ -162,8 +167,73 @@ class SystemAuthorizationManagementTest extends TestCase
         $factoryDecision = SystemAuthorizationDecisionRecord::factory()->create(['system_authorization_package_id' => $factoryPackage->id]);
         $factoryPayload = ['system_authorization_package_id' => $factoryDecision->system_authorization_package_id, 'version' => $factoryDecision->version, 'package_snapshot' => $factoryDecision->package_snapshot, 'decision' => $factoryDecision->decision->value, 'conditions' => $factoryDecision->conditions, 'rationale' => $factoryDecision->rationale, 'decided_by' => $factoryDecision->decided_by, 'decided_at' => $factoryDecision->decided_at->toIso8601String(), 'valid_until' => $factoryDecision->valid_until->toDateString()];
         $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factoryDecision->fingerprint);
+        $factoryReview = SystemAuthorizationMonitoringReview::factory()->create();
+        $factoryReviewPayload = ['system_authorization_package_id' => $factoryReview->system_authorization_package_id, 'version' => $factoryReview->version, 'package_snapshot' => $factoryReview->package_snapshot, 'decision_snapshot' => $factoryReview->decision_snapshot, 'metrics' => $factoryReview->metrics, 'findings' => $factoryReview->findings, 'outcome' => $factoryReview->outcome->value, 'required_actions' => $factoryReview->required_actions, 'summary' => $factoryReview->summary, 'reviewed_by' => $factoryReview->reviewed_by, 'reviewed_at' => $factoryReview->reviewed_at->toIso8601String(), 'next_review_at' => $factoryReview->next_review_at->toDateString()];
+        $this->assertSame(hash('sha256', json_encode($factoryReviewPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factoryReview->fingerprint);
         $migration = require database_path('migrations/2026_08_24_680000_create_system_authorization_management.php');
         $migration->down();
         $this->assertDatabaseHas('system_authorization_decisions', ['id' => $decision->id, 'fingerprint' => $decision->fingerprint]);
+    }
+
+    public function test_independent_monitoring_binds_current_authorization_and_derives_due_and_action_state(): void
+    {
+        $manager = User::factory()->create();
+        $manager->givePermissionTo(['Manage System Authorizations', 'Read Applications', 'Read Controls', 'Read Risks']);
+        $application = Application::factory()->create();
+        $control = Control::factory()->create();
+        $risk = Risk::factory()->create();
+        $authorizer = User::factory()->create();
+        $authorizer->givePermissionTo('Authorize Systems');
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo('Monitor System Authorizations');
+        $service = app(SystemAuthorizationManager::class);
+        $package = $service->submit($manager, $application, $this->packageData($control, $risk));
+        $decision = $service->decide($authorizer, $package, $this->decisionData());
+        $data = ['metrics' => ['Control tests reviewed: 12', 'Open POA&M items: 1'], 'findings' => [], 'outcome' => SystemAuthorizationMonitoringOutcome::Effective->value, 'required_actions' => [], 'summary' => 'The deliberate review found the retained authorization context operating as represented.'];
+        foreach ([$manager, $authorizer] as $excluded) {
+            try {
+                $service->monitor($excluded, $package, $data);
+                $this->fail('Expected independent monitoring.');
+            } catch (HttpException $e) {
+                $this->assertSame(403, $e->getStatusCode());
+            }
+        }
+        $review = $this->actingAs($reviewer)->postJson("/api/system-authorization-packages/{$package->id}/monitoring-reviews", $data)->assertCreated()->json('data');
+        $record = SystemAuthorizationMonitoringReview::findOrFail($review['id']);
+        $payload = ['system_authorization_package_id' => $record->system_authorization_package_id, 'version' => $record->version, 'package_snapshot' => $record->package_snapshot, 'decision_snapshot' => $record->decision_snapshot, 'metrics' => $record->metrics, 'findings' => $record->findings, 'outcome' => $record->outcome->value, 'required_actions' => $record->required_actions, 'summary' => $record->summary, 'reviewed_by' => $record->reviewed_by, 'reviewed_at' => $record->reviewed_at->toIso8601String(), 'next_review_at' => $record->next_review_at->toDateString()];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $record->fingerprint);
+        $this->assertSame($decision->fingerprint, $record->decision_snapshot['fingerprint']);
+        $this->assertSame('monitoring_current', $package->fresh()->monitoring_state);
+        Livewire::actingAs($reviewer);
+        Livewire::test(MonitoringReviewsRelationManager::class, ['ownerRecord' => $package, 'pageClass' => ViewSystemAuthorizationPackage::class])->assertCanSeeTableRecords([$record])->assertTableActionVisible('inspect', $record);
+        try {
+            $record->update(['summary' => 'rewrite']);
+            $this->fail('Expected immutable monitoring evidence.');
+        } catch (\LogicException $e) {
+            $this->assertStringContainsString('append-only', $e->getMessage());
+        }
+        $application->update(['description' => 'Material authorization context drift.']);
+        try {
+            $service->monitor($reviewer, $package, $data);
+            $this->fail('Expected stale effective rejection.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('outcome', $e->errors());
+        }
+        $adverse = array_merge($data, ['outcome' => SystemAuthorizationMonitoringOutcome::NeedsAction->value, 'findings' => ['Application context changed after authorization.'], 'required_actions' => ['Submit a replacement authorization package.']]);
+        $service->monitor($reviewer, $package, $adverse);
+        $this->assertSame('action_required', $package->fresh()->monitoring_state);
+        $this->actingAs($reviewer)->getJson("/api/system-authorization-packages/{$package->id}/monitoring-reviews?per_page=1")->assertOk()->assertJsonPath('total', 2);
+        foreach (range(3, 100) as $version) {
+            SystemAuthorizationMonitoringReview::factory()->create(['system_authorization_package_id' => $package->id, 'version' => $version, 'package_snapshot' => $record->package_snapshot, 'decision_snapshot' => $record->decision_snapshot, 'reviewed_by' => $reviewer->id]);
+        }
+        try {
+            $service->monitor($reviewer, $package, $adverse);
+            $this->fail('Expected monitoring history bound.');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('package', $e->errors());
+        }
+        $migration = require database_path('migrations/2026_08_24_690000_create_system_authorization_monitoring.php');
+        $migration->down();
+        $this->assertDatabaseHas('system_authorization_monitoring_reviews', ['id' => $record->id, 'fingerprint' => $record->fingerprint]);
     }
 }

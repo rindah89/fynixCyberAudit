@@ -98,6 +98,7 @@ class RolePermissionSeeder extends Seeder
             'Read System Authorizations',
             'Manage System Authorizations',
             'Authorize Systems',
+            'Monitor System Authorizations',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -154,6 +155,7 @@ class RolePermissionSeeder extends Seeder
             'Read System Authorizations',
             'Manage System Authorizations',
             'Authorize Systems',
+            'Monitor System Authorizations',
         ]);
 
         // Assign specific Permissions to Internal Auditor

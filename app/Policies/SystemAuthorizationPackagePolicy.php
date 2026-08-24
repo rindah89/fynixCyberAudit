@@ -9,7 +9,7 @@ class SystemAuthorizationPackagePolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->can('Read System Authorizations') || $user->can('Manage System Authorizations') || $user->can('Authorize Systems');
+        return $user->can('Read System Authorizations') || $user->can('Manage System Authorizations') || $user->can('Authorize Systems') || $user->can('Monitor System Authorizations');
     }
 
     public function view(User $user, SystemAuthorizationPackage $package): bool
@@ -25,5 +25,10 @@ class SystemAuthorizationPackagePolicy
     public function decide(User $user, SystemAuthorizationPackage $package): bool
     {
         return $user->can('Authorize Systems');
+    }
+
+    public function monitor(User $user, SystemAuthorizationPackage $package): bool
+    {
+        return $user->can('Monitor System Authorizations');
     }
 }

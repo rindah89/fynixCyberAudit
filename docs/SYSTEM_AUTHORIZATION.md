@@ -11,7 +11,7 @@ Enable this foundation with `MODULE_SYSTEM_AUTHORIZATION_ENABLED=true`. It gover
 
 ## Package evidence
 
-Submission locks the application and selected governance records, allocates one of at most 100 application-scoped versions, and retains the complete application snapshot, boundary, impact level, data classifications, selected control and risk snapshots, deliberately listed open findings, monitoring strategy, optional POA&M reference, change summary, submitter/time, and SHA-256 fingerprint. Approval re-locks and compares the exact current application/control/risk context; changed or superseded packages require resubmission.
+Submission locks the application and selected governance records, allocates one of at most 100 application-scoped versions, and retains the complete application snapshot, boundary, impact level, data classifications, selected control and risk snapshots, deliberately listed open findings, monitoring strategy, one-to-365-day review cadence, optional POA&M reference, change summary, submitter/time, and SHA-256 fingerprint. Approval re-locks and compares the exact current application/control/risk context; changed or superseded packages require resubmission.
 
 ## Decisions and state
 
@@ -19,6 +19,10 @@ An independent authorizer records `Authorized`, `Authorized with conditions`, `D
 
 REST maintenance is documented in `docs/API_DOCUMENTATION.md`; the operator workspace provides paginated read-only package and decision inspection plus authorizer decision entry. Routine rollback retains both tables.
 
+## Continuous authorization monitoring
+
+`Monitor System Authorizations` users separated from the application owner, package submitter, and authorizer append one of at most 100 reviews to the latest actively authorized package. Each review retains the complete package and authorization-decision snapshots, deliberate metrics and findings, `Effective`, `Needs action`, or `Revocation recommended` outcome, required actions, summary, reviewer/time, next due date capped by authorization expiry, and SHA-256 fingerprint. Changed application/control/risk context cannot be confirmed effective. Adverse outcomes derive `action_required`; otherwise due state is derived from the retained cadence. Monitoring does not itself revoke authorization or execute actions.
+
 ## Limits
 
-All package content, selections, findings, monitoring strategies, and decisions are deliberate user inputs. Fynix does not discover authorization boundaries, ingest telemetry, validate control operation, authenticate evidence, calculate security impact, execute POA&M work, automatically authorize/revoke systems, provide a qualified signature, or prove regulatory compliance. Periodic continuous-authorization monitoring reviews are a separate capability and are not delivered by this foundation.
+All package content, selections, metrics, findings, monitoring strategies, decisions, and reviews are deliberate user inputs. Fynix does not discover authorization boundaries, ingest telemetry, collect evidence automatically, validate control operation or evidence, calculate security impact, execute POA&M work, automatically authorize/revoke systems, provide a qualified signature, or prove regulatory compliance.

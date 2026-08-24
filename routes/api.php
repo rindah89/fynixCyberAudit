@@ -196,6 +196,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/system-authorization-packages/{package}', [SystemAuthorizationController::class, 'show']);
     Route::get('/system-authorization-packages/{package}/decisions', [SystemAuthorizationController::class, 'decisions']);
     Route::post('/system-authorization-packages/{package}/decisions', [SystemAuthorizationController::class, 'decide']);
+    Route::get('/system-authorization-packages/{package}/monitoring-reviews', [SystemAuthorizationController::class, 'monitoring']);
+    Route::post('/system-authorization-packages/{package}/monitoring-reviews', [SystemAuthorizationController::class, 'monitor']);
     Route::post('/ai-systems', [AiGovernanceController::class, 'storeSystem']);
     Route::post('/ai-systems/{system}/use-cases', [AiGovernanceController::class, 'storeUseCase']);
     Route::post('/ai-use-cases/{useCase}/assessments', [AiGovernanceController::class, 'storeAssessment']);
