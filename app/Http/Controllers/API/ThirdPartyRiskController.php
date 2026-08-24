@@ -6,12 +6,15 @@ use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListFourthPartyConcentrationsRequest;
+use App\Http\Requests\ListThirdPartyEngagementMonitoringRequest;
 use App\Http\Requests\ListThirdPartyEngagementsRequest;
 use App\Http\Requests\ListVendorFourthPartyDependenciesRequest;
 use App\Http\Requests\MapVendorRiskRequest;
 use App\Http\Requests\ShowThirdPartyEngagementRequest;
 use App\Http\Requests\StoreFourthPartyDependencyRequest;
 use App\Http\Requests\StoreThirdPartyContractRiskReviewRequest;
+use App\Http\Requests\StoreThirdPartyEngagementMonitoringIndicatorRequest;
+use App\Http\Requests\StoreThirdPartyEngagementMonitoringObservationRequest;
 use App\Http\Requests\StoreThirdPartyEngagementRequest;
 use App\Http\Requests\StoreVendorRiskAssessmentRequest;
 use App\Http\Requests\StoreVendorRiskDecisionRequest;
@@ -19,10 +22,12 @@ use App\Http\Requests\StoreVendorRiskReviewRequest;
 use App\Http\Requests\TransitionThirdPartyEngagementRequest;
 use App\Models\Risk;
 use App\Models\ThirdPartyEngagement;
+use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Illuminate\Http\JsonResponse;
 
@@ -40,7 +45,7 @@ class ThirdPartyRiskController extends Controller
 
     public function showEngagement(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name'])]);
+        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name'])]);
     }
 
     public function engagementEvents(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
@@ -61,6 +66,33 @@ class ThirdPartyRiskController extends Controller
     public function contractRiskReviews(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
         return response()->json($engagement->contractRiskReviews()->with('reviewer:id,name')->latest('version')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function monitoringIndicators(ListThirdPartyEngagementMonitoringRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    {
+        $page = $engagement->monitoringIndicators()->with(['owner:id,name', 'definer:id,name', 'latestObservation.observer:id,name'])->latest('id')->paginate($request->integer('per_page', 50));
+        $page->through(fn (ThirdPartyEngagementMonitoringIndicator $indicator) => $indicator->append('monitoring_status'));
+
+        return response()->json($page);
+    }
+
+    public function defineMonitoringIndicator(StoreThirdPartyEngagementMonitoringIndicatorRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementMonitoringManager $manager): JsonResponse
+    {
+        $indicator = $manager->define($request->user(), $engagement, $request->validated());
+
+        return response()->json(['data' => $indicator->append('monitoring_status')], JsonResponse::HTTP_CREATED);
+    }
+
+    public function monitoringObservations(ListThirdPartyEngagementMonitoringRequest $request, ThirdPartyEngagementMonitoringIndicator $indicator): JsonResponse
+    {
+        return response()->json($indicator->observations()->with('observer:id,name')->latest('version')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function observeMonitoringIndicator(StoreThirdPartyEngagementMonitoringObservationRequest $request, ThirdPartyEngagementMonitoringIndicator $indicator, ThirdPartyEngagementMonitoringManager $manager): JsonResponse
+    {
+        $observation = $manager->observe($request->user(), $indicator, $request->validated());
+
+        return response()->json(['data' => $observation, 'indicator' => $indicator->refresh()->append('monitoring_status')], JsonResponse::HTTP_CREATED);
     }
 
     public function fourthPartyDependencies(ListVendorFourthPartyDependenciesRequest $request, Vendor $vendor, FourthPartyDependencyManager $manager): JsonResponse

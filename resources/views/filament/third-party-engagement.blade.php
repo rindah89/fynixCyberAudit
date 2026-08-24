@@ -51,4 +51,31 @@
             <div>No contract-risk review has been recorded.</div>
         @endforelse
     </div>
+    <div class="space-y-2">
+        <div class="font-medium">Engagement monitoring evidence</div>
+        @forelse ($engagement->monitoringIndicators->sortBy([['code', 'asc'], ['version', 'asc']]) as $indicator)
+            <div class="rounded-lg border p-3">
+                <div>{{ $indicator->code }} v{{ $indicator->version }} · {{ $indicator->name }} · {{ $indicator->category->getLabel() }} · {{ $indicator->monitoring_status->getLabel() }}</div>
+                <div class="mt-1">Owner: {{ $indicator->owner?->name }} · {{ $indicator->unit }} · {{ $indicator->direction->getLabel() }} · every {{ $indicator->frequency_days }} days</div>
+                <div>Warning {{ $indicator->warning_threshold }} · Critical {{ $indicator->critical_threshold }}</div>
+                <div class="mt-1 whitespace-pre-wrap">{{ $indicator->description }}</div>
+                <div><span class="font-medium">Measurement method:</span> {{ $indicator->measurement_method }}</div>
+                <details class="mt-2"><summary class="font-medium">Retained engagement, contract, and risk context</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['engagement' => $indicator->engagement_snapshot, 'contract_review' => $indicator->contract_review_snapshot, 'risk_approval' => $indicator->risk_approval_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                <div class="mt-1 break-all font-mono text-xs">{{ $indicator->fingerprint }}</div>
+                <div class="mt-2 font-medium">Latest 10 observations</div>
+                @foreach ($indicator->latestObservations->sortBy('version') as $observation)
+                    <div class="mt-2 rounded-lg border p-2">
+                        <div>Observation v{{ $observation->version }} · {{ $observation->status->getLabel() }} · {{ $observation->observed_value }} {{ $indicator->unit }} · {{ $observation->observer?->name }} · {{ $observation->observed_at?->toDayDateTimeString() }}</div>
+                        <div>{{ $observation->reason }}</div>
+                        <div class="whitespace-pre-wrap">{{ $observation->notes }}</div>
+                        <div>Source reference: {{ $observation->source_reference ?: 'None recorded' }}</div>
+                        <details class="mt-1"><summary class="font-medium">Observation snapshots</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['indicator' => $observation->indicator_snapshot, 'engagement' => $observation->engagement_snapshot, 'contract_review' => $observation->contract_review_snapshot, 'risk_approval' => $observation->risk_approval_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                        <div class="break-all font-mono text-xs">{{ $observation->fingerprint }}</div>
+                    </div>
+                @endforeach
+            </div>
+        @empty
+            <div>No engagement monitoring indicator has been defined.</div>
+        @endforelse
+    </div>
 </div>

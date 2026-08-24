@@ -51,4 +51,9 @@ class ThirdPartyEngagement extends Model
     {
         return $this->hasMany(ThirdPartyContractRiskReview::class);
     }
+
+    public function monitoringIndicators(): HasMany
+    {
+        return $this->hasMany(ThirdPartyEngagementMonitoringIndicator::class);
+    }
 }
