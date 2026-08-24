@@ -91,4 +91,11 @@ return [
         'optional' => 'Optional',
         'other' => 'Other',
     ],
+    'incident_affected_entity_type' => [
+        'asset' => 'Asset',
+        'application' => 'Application',
+        'vendor' => 'Vendor',
+        'control' => 'Control',
+        'risk' => 'Risk',
+    ],
 ];

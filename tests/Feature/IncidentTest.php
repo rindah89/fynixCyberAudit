@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\IncidentAffectedEntityType;
 use App\Enums\IncidentLessonArea;
 use App\Enums\IncidentLessonStatus;
 use App\Enums\IncidentNotificationAudience;
@@ -9,14 +10,18 @@ use App\Enums\IncidentNotificationStatus;
 use App\Enums\IncidentPhase;
 use App\Enums\IncidentTaskStatus;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
+use App\Filament\Resources\IncidentResource\RelationManagers\AffectedEntitiesRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
+use App\Incidents\IncidentAffectedEntityManager;
 use App\Incidents\IncidentDesk;
 use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
+use App\Models\Asset;
 use App\Models\Audit;
+use App\Models\Control;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
@@ -192,6 +197,132 @@ class IncidentTest extends TestCase
         $this->assertSame(IncidentPhase::Identification, $evidence->phase);
         $this->assertTrue($evidence->chain_of_custody);
         $this->assertNotEmpty($evidence->path);
+    }
+
+    public function test_manager_links_immutable_affected_entity_snapshots_for_incident_scope(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $reader = User::factory()->create();
+        $reader->assignRole('Regular User');
+        $incidentEditor = User::factory()->create();
+        $incidentEditor->givePermissionTo('Update Incidents');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Scoped infrastructure incident', 'severity' => 'Critical',
+        ]);
+        $asset = Asset::factory()->create(['asset_tag' => 'SRV-042', 'name' => 'Payment API node', 'hostname' => 'pay-api-01']);
+        $control = Control::factory()->create(['code' => 'IR-04', 'title' => 'Incident containment']);
+
+        $this->actingAs($reader)->postJson('/api/incidents/'.$incident->id.'/affected-entities', [
+            'entity_type' => IncidentAffectedEntityType::Asset->value, 'entity_id' => $asset->id,
+            'impact_summary' => 'Unauthorized scope mutation.',
+        ])->assertForbidden();
+        try {
+            app(IncidentAffectedEntityManager::class)->link($reader, $incident, [
+                'entity_type' => IncidentAffectedEntityType::Asset->value, 'entity_id' => $asset->id,
+                'impact_summary' => 'Direct service bypass.',
+            ]);
+            $this->fail('Expected affected-entity service authorization to fail.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        try {
+            app(IncidentAffectedEntityManager::class)->link($incidentEditor, $incident, [
+                'entity_type' => IncidentAffectedEntityType::Asset->value, 'entity_id' => $asset->id,
+                'impact_summary' => 'Inventory ACL bypass attempt.',
+            ]);
+            $this->fail('Expected source inventory authorization to fail.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertDatabaseCount('incident_affected_entities', 0);
+
+        $response = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/affected-entities', [
+            'entity_type' => IncidentAffectedEntityType::Asset->value, 'entity_id' => $asset->id,
+            'impact_summary' => 'The payment API node was isolated during containment.',
+        ])->assertCreated()->assertJsonPath('data.entity_snapshot.asset_tag', 'SRV-042');
+        $record = $incident->affectedEntities()->findOrFail($response->json('data.id'));
+        $payload = [
+            'incident_id' => $record->incident_id, 'entity_type' => $record->entity_type->value,
+            'entity_id_snapshot' => $record->entity_id_snapshot, 'entity_snapshot' => $record->entity_snapshot,
+            'impact_summary' => $record->impact_summary, 'control_failure_note' => $record->control_failure_note,
+            'linked_by' => $record->linked_by, 'linked_at' => $record->linked_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $record->fingerprint);
+
+        $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/affected-entities', [
+            'entity_type' => IncidentAffectedEntityType::Control->value, 'entity_id' => $control->id,
+            'impact_summary' => 'The containment control was affected.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('control_failure_note');
+        $controlRecordId = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/affected-entities', [
+            'entity_type' => IncidentAffectedEntityType::Control->value, 'entity_id' => $control->id,
+            'impact_summary' => 'The containment control failed during the response.',
+            'control_failure_note' => 'The isolation automation did not cover the affected subnet.',
+        ])->assertCreated()->json('data.id');
+        $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/affected-entities', [
+            'entity_type' => IncidentAffectedEntityType::Asset->value, 'entity_id' => $asset->id,
+            'impact_summary' => 'Duplicate immutable scope.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('entity_id');
+
+        $this->actingAs($reader)->getJson('/api/incidents/'.$incident->id.'/affected-entities?per_page=1')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('total', 2);
+        Livewire::actingAs($reader);
+        Livewire::test(AffectedEntitiesRelationManager::class, ['ownerRecord' => $incident, 'pageClass' => ViewIncident::class])
+            ->assertCanSeeTableRecords([$record, $incident->affectedEntities()->findOrFail($controlRecordId)])
+            ->assertTableActionHidden('link');
+        $record->load('linkedBy:id,name');
+        $rendered = view('filament.incident-affected-entity', ['record' => $record])->render();
+        $this->assertStringContainsString('Payment API node', $rendered);
+        $this->assertStringContainsString($record->fingerprint, $rendered);
+
+        $originalFingerprint = $record->fingerprint;
+        $asset->update(['name' => 'Renamed after incident scope capture']);
+        $asset->delete();
+        $this->assertSame('Payment API node', data_get($record->fresh()->entity_snapshot, 'name'));
+        $this->assertSame($originalFingerprint, $record->fresh()->fingerprint);
+
+        try {
+            $record->delete();
+            $this->fail('Expected affected-entity evidence to remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+        $migration = require database_path('migrations/2026_08_24_620000_create_incident_affected_entities.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_affected_entities', ['id' => $record->id, 'fingerprint' => $record->fingerprint]);
+    }
+
+    public function test_affected_entity_history_bound_is_exact(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Bounded affected scope', 'severity' => 'High',
+        ]);
+        $assets = collect(range(1, 101))->map(fn (int $index) => Asset::factory()->create([
+            'asset_tag' => 'BOUND-'.str_pad((string) $index, 3, '0', STR_PAD_LEFT),
+            'name' => 'Bounded asset '.$index,
+        ]));
+        $service = app(IncidentAffectedEntityManager::class);
+        foreach ($assets->take(100) as $index => $asset) {
+            $service->link($manager, $incident, [
+                'entity_type' => IncidentAffectedEntityType::Asset->value,
+                'entity_id' => $asset->id,
+                'impact_summary' => 'Affected asset '.($index + 1).'.',
+            ]);
+        }
+        $this->assertSame(100, $incident->affectedEntities()->count());
+        try {
+            $service->link($manager, $incident, [
+                'entity_type' => IncidentAffectedEntityType::Asset->value,
+                'entity_id' => $assets->last()->id,
+                'impact_summary' => 'One too many affected assets.',
+            ]);
+            $this->fail('Expected the affected-entity bound to reject record 101.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+        $this->assertSame(100, $incident->affectedEntities()->count());
     }
 
     public function test_non_manager_cannot_advance_phase(): void

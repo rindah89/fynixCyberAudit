@@ -100,6 +100,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/incident-notifications/{notification}/decisions', [IncidentGovernanceController::class, 'notificationDecision']);
     Route::get('/incident-notifications/{notification}/events', [IncidentGovernanceController::class, 'notificationEvents']);
     Route::get('/incidents/{incident}/lessons', [IncidentGovernanceController::class, 'lessons']);
+    Route::get('/incidents/{incident}/affected-entities', [IncidentGovernanceController::class, 'affectedEntities']);
+    Route::post('/incidents/{incident}/affected-entities', [IncidentGovernanceController::class, 'storeAffectedEntity']);
     Route::post('/incidents/{incident}/lessons', [IncidentGovernanceController::class, 'storeLesson']);
     Route::post('/incident-lessons/{lesson}/progress', [IncidentGovernanceController::class, 'lessonProgress']);
     Route::get('/incident-lessons/{lesson}/events', [IncidentGovernanceController::class, 'lessonEvents']);

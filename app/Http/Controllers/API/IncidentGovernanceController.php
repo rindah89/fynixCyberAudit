@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Access\FileAccess;
 use App\Enums\IncidentPhase;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ListIncidentAffectedEntitiesRequest;
 use App\Http\Requests\ListIncidentLessonEventsRequest;
 use App\Http\Requests\ListIncidentLessonsRequest;
 use App\Http\Requests\ListIncidentNotificationEventsRequest;
@@ -15,10 +16,12 @@ use App\Http\Requests\RecordIncidentLessonProgressRequest;
 use App\Http\Requests\RecordIncidentNotificationDecisionRequest;
 use App\Http\Requests\RecordIncidentTaskEventRequest;
 use App\Http\Requests\ShowIncidentRequest;
+use App\Http\Requests\StoreIncidentAffectedEntityRequest;
 use App\Http\Requests\StoreIncidentLessonRequest;
 use App\Http\Requests\StoreIncidentNotificationRequest;
 use App\Http\Requests\StoreIncidentRequest;
 use App\Http\Requests\TransitionIncidentPhaseRequest;
+use App\Incidents\IncidentAffectedEntityManager;
 use App\Incidents\IncidentDesk;
 use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
@@ -136,6 +139,17 @@ class IncidentGovernanceController extends Controller
     {
         return response()->json($incident->lessons()->with('owner:id,name,email')->withCount('events')->latest('id')
             ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function affectedEntities(ListIncidentAffectedEntitiesRequest $request, Incident $incident): JsonResponse
+    {
+        return response()->json($incident->affectedEntities()->with('linkedBy:id,name')
+            ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function storeAffectedEntity(StoreIncidentAffectedEntityRequest $request, Incident $incident, IncidentAffectedEntityManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->link($request->user(), $incident, $request->validated())->load('linkedBy:id,name')], JsonResponse::HTTP_CREATED);
     }
 
     public function storeLesson(StoreIncidentLessonRequest $request, Incident $incident, IncidentLessonManager $manager): JsonResponse
