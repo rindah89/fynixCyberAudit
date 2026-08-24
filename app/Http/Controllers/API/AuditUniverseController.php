@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ApproveAuditPlanRequest;
 use App\Http\Requests\AssessAuditableEntityRequest;
 use App\Http\Requests\DeleteAuditPlanItemRequest;
+use App\Http\Requests\LaunchAuditEngagementRequest;
 use App\Http\Requests\ListAuditUniverseRequest;
 use App\Http\Requests\StoreAuditableEntityRequest;
 use App\Http\Requests\StoreAuditPlanItemRequest;
@@ -15,6 +16,7 @@ use App\Http\Requests\UpdateAuditPlanItemRequest;
 use App\Models\AuditableEntity;
 use App\Models\AuditPlan;
 use App\Models\AuditPlanItem;
+use App\Services\AuditEngagementManager;
 use App\Services\AuditUniverseManager;
 use Illuminate\Http\JsonResponse;
 
@@ -83,5 +85,10 @@ class AuditUniverseController extends Controller
     public function approve(ApproveAuditPlanRequest $request, AuditPlan $plan, AuditUniverseManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->approvePlan($plan, $request->user())]);
+    }
+
+    public function launchEngagement(LaunchAuditEngagementRequest $request, AuditPlanItem $item, AuditEngagementManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->launch($item, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }

@@ -7,6 +7,7 @@ use App\Enums\AuditPlanStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 class AuditPlanItem extends Model
@@ -54,5 +55,10 @@ class AuditPlanItem extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by')->withTrashed();
+    }
+
+    public function engagementBaseline(): HasOne
+    {
+        return $this->hasOne(AuditEngagementBaseline::class);
     }
 }

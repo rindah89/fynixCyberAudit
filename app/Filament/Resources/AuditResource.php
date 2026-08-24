@@ -218,6 +218,35 @@ class AuditResource extends Resource
                             ->columnSpanFull()
                             ->html(),
                     ])->columnSpanFull(),
+                Section::make('Approved plan engagement baseline')
+                    ->visible(fn (Audit $record): bool => $record->engagementBaseline !== null)
+                    ->columns(2)
+                    ->schema([
+                        TextEntry::make('engagementBaseline.planItem.plan.name')->label('Source plan'),
+                        TextEntry::make('engagementBaseline.planItem.id')->label('Plan item ID'),
+                        TextEntry::make('engagementBaseline.objective')->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.scope')->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.exclusions')->placeholder('None')->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.team_user_ids')
+                            ->label('Team user IDs')
+                            ->getStateUsing(fn (Audit $record): string => implode(', ', $record->engagementBaseline?->team_user_ids ?? []))
+                            ->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.audit_snapshot')
+                            ->label('Audit launch snapshot')
+                            ->getStateUsing(fn (Audit $record): string => json_encode($record->engagementBaseline?->audit_snapshot ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))
+                            ->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.plan_snapshot')
+                            ->label('Approved plan and item snapshot')
+                            ->getStateUsing(fn (Audit $record): string => json_encode($record->engagementBaseline?->plan_snapshot ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))
+                            ->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.entity_assessment_snapshot')
+                            ->label('Entity assessment snapshot')
+                            ->getStateUsing(fn (Audit $record): string => json_encode($record->engagementBaseline?->entity_assessment_snapshot ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))
+                            ->columnSpanFull(),
+                        TextEntry::make('engagementBaseline.launcher.name')->label('Launched by'),
+                        TextEntry::make('engagementBaseline.launched_at')->dateTime(),
+                        TextEntry::make('engagementBaseline.fingerprint')->copyable()->columnSpanFull(),
+                    ])->columnSpanFull(),
             ]);
     }
 
@@ -258,7 +287,12 @@ class AuditResource extends Resource
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ])
-            ->with(['taxonomies.parent', 'manager' => fn ($q) => $q->withTrashed()]);
+            ->with([
+                'taxonomies.parent',
+                'manager' => fn ($q) => $q->withTrashed(),
+                'engagementBaseline.launcher' => fn ($q) => $q->withTrashed(),
+                'engagementBaseline.planItem.plan',
+            ]);
     }
 
     public static function completeAudit(Audit $audit): void

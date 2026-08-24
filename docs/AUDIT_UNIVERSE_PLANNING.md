@@ -20,6 +20,12 @@ Draft item dates, rationale, status, and optional audit link can be corrected, a
 
 Users with `Read Programs` or `Update Programs` inspect the complete universe and plans. Entity owners see their assigned entities and assessment history; plan managers see their plans and items. **Foundations → Audit Universe** and **Foundations → Risk-Based Audit Plans** provide read-only, paginated inspection and relation-scoped private exports. REST lists are paginated with a maximum page size of 100.
 
+## Approved-plan engagement handoff
+
+After approval, a planned item without an existing audit can launch one audit engagement through REST. The caller must have `Create Audits` and must be either the approved plan manager or have `Update Programs`. The request supplies the audit title/type, accountable manager, optional program and description, explicit objective/scope/exclusions, and up to 100 active team members. The server uses the approved item dates, starts the audit in `Not Started`, ensures the manager is on the team, and creates the audit and team membership in the same transaction.
+
+The handoff does not rewrite the approved plan item. Instead, it creates one immutable engagement baseline linking the new audit to the approved item. The baseline retains the plan approval identity/fingerprint, item priority and dates, complete entity-assessment snapshot, objective, scope, exclusions, sorted team identities, launcher/time, and a SHA-256 content fingerprint. The audit detail REST response, operator audit detail, and audit export expose that baseline. Subsequent audit execution may update the operational audit, but it does not rewrite what was authorized at launch.
+
 ## Limitations
 
-All entities, mappings, scores, dates, rationales, and audit links are deliberate operator or integration inputs. Fynix does not discover entities, ingest risk telemetry, calculate calibrated likelihood or financial loss, optimize staffing/budgets, forecast assurance coverage, create audit procedures, schedule resources, or automatically launch audits. Snapshot hashes establish content identity, not the truth or sufficiency of the underlying assessment.
+All entities, mappings, scores, rationales, charter content, team selection, and launch actions are deliberate operator or integration inputs. Fynix does not discover entities, ingest risk telemetry, calculate calibrated likelihood or financial loss, optimize staffing/budgets, forecast assurance coverage, create audit procedures, allocate resources automatically, or automatically launch or execute audits. Snapshot hashes establish content identity, not the truth, sufficiency, or execution quality of the underlying assessment or charter.

@@ -12,10 +12,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
-use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 /**
  * Class Audit
@@ -79,6 +80,8 @@ class Audit extends Model
     protected $casts = [
         'controls' => 'array',
         'status' => WorkflowStatus::class,
+        'start_date' => 'date',
+        'end_date' => 'date',
     ];
 
     /**
@@ -87,6 +90,11 @@ class Audit extends Model
     public function auditItems(): HasMany
     {
         return $this->hasMany(AuditItem::class);
+    }
+
+    public function engagementBaseline(): HasOne
+    {
+        return $this->hasOne(AuditEngagementBaseline::class);
     }
 
     /**

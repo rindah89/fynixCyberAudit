@@ -94,6 +94,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::put('/audit-plans/{plan}/items/{item}', [AuditUniverseController::class, 'updateItem']);
     Route::delete('/audit-plans/{plan}/items/{item}', [AuditUniverseController::class, 'removeItem']);
     Route::post('/audit-plans/{plan}/approve', [AuditUniverseController::class, 'approve']);
+    Route::post('/audit-plan-items/{item}/launch-engagement', [AuditUniverseController::class, 'launchEngagement']);
     Route::apiResource('audit-items', AuditItemController::class);
     Route::apiResource('programs', ProgramController::class);
     Route::apiResource('risks', RiskController::class);

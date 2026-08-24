@@ -4,17 +4,21 @@ namespace Tests\Feature;
 
 use App\Enums\AuditPlanStatus;
 use App\Filament\Exports\AuditableEntityAssessmentExporter;
+use App\Filament\Exports\AuditExporter;
 use App\Filament\Exports\AuditPlanItemExporter;
 use App\Filament\Resources\AuditableEntityResource\Pages\ViewAuditableEntity;
 use App\Filament\Resources\AuditableEntityResource\RelationManagers\AssessmentsRelationManager;
 use App\Filament\Resources\AuditPlanResource\Pages\ViewAuditPlan;
 use App\Filament\Resources\AuditPlanResource\RelationManagers\ItemsRelationManager;
+use App\Filament\Resources\AuditResource\Pages\ViewAudit;
 use App\Models\AuditableEntity;
 use App\Models\AuditableEntityAssessment;
+use App\Models\AuditEngagementBaseline;
 use App\Models\AuditPlanItem;
 use App\Models\Control;
 use App\Models\Risk;
 use App\Models\User;
+use App\Services\AuditEngagementManager;
 use App\Services\AuditUniverseManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -275,6 +279,85 @@ class AuditUniversePlanningTest extends TestCase
         $this->assertSame(212, $item->priority_rank);
     }
 
+    public function test_approved_plan_item_launches_attributable_immutable_audit_engagement_baseline(): void
+    {
+        $manager = $this->manager();
+        $manager->givePermissionTo(['Create Audits', 'Read Audits', 'List Audits']);
+        $owner = User::factory()->create();
+        $risk = Risk::factory()->create();
+        $control = Control::factory()->create();
+        $teamMember = User::factory()->create();
+        $entity = app(AuditUniverseManager::class)->createEntity($manager, $this->entityPayload($owner, $risk, $control));
+        $assessment = app(AuditUniverseManager::class)->assess($entity, $manager, $this->assessmentPayload());
+        $plan = app(AuditUniverseManager::class)->createPlan($manager, $this->planPayload($manager));
+        $item = app(AuditUniverseManager::class)->addPlanItem($plan, $manager, $this->itemPayload($entity, $assessment));
+        app(AuditUniverseManager::class)->approvePlan($plan, $manager);
+
+        $outsider = User::factory()->create();
+        $outsider->givePermissionTo('Create Audits');
+        try {
+            app(AuditEngagementManager::class)->launch($item, $outsider, $this->engagementPayload($manager, $teamMember));
+            $this->fail('A caller outside the approved plan launched an engagement.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+            $this->assertDatabaseCount('audit_engagement_baselines', 0);
+        }
+
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/audit-plan-items/{$item->id}/launch-engagement", $this->engagementPayload($manager, $teamMember) + ['fingerprint' => str_repeat('a', 64)])
+            ->assertUnprocessable()->assertJsonValidationErrors('fingerprint');
+        $this->postJson("/api/audit-plan-items/{$item->id}/launch-engagement", $this->engagementPayload($manager, $teamMember))
+            ->assertCreated()->assertJsonPath('data.audit.status', 'Not Started')
+            ->assertJsonPath('data.entity_assessment_snapshot.assessment.governance_fingerprint', $assessment->governance_fingerprint);
+        $baseline = AuditEngagementBaseline::query()->where('audit_plan_item_id', $item->id)->firstOrFail();
+        $baseline->load('audit');
+
+        $this->assertSame('Not Started', $baseline->audit->status->value);
+        $this->assertSame('2027-03-01', $baseline->audit->start_date->toDateString());
+        $this->assertSame('2027-04-30', $baseline->audit->end_date->toDateString());
+        $this->assertEqualsCanonicalizing([$manager->id, $teamMember->id], $baseline->team_user_ids);
+        $this->assertSame('Payments control audit', data_get($baseline->audit_snapshot, 'title'));
+        $this->assertSame($assessment->governance_fingerprint, data_get($baseline->entity_assessment_snapshot, 'assessment.governance_fingerprint'));
+        $this->assertSame($plan->fresh()->approval_fingerprint, data_get($baseline->plan_snapshot, 'plan.approval_fingerprint'));
+        $this->assertSame(64, strlen($baseline->fingerprint));
+        $this->assertSame($baseline->fingerprint, $this->engagementFingerprint($baseline));
+        $this->assertNull($item->fresh()->audit_id, 'Approved planning evidence was mutated during handoff.');
+        $this->assertEqualsCanonicalizing([$manager->id, $teamMember->id], $baseline->audit->members()->pluck('users.id')->all());
+        try {
+            $baseline->update(['scope' => 'Rewritten scope']);
+            $this->fail('Engagement baseline was mutable.');
+        } catch (LogicException) {
+            $this->assertDatabaseHas('audit_engagement_baselines', ['id' => $baseline->id, 'scope' => $this->engagementPayload($manager, $teamMember)['scope']]);
+        }
+
+        $secondItem = AuditPlanItem::factory()->create();
+        $this->postJson("/api/audit-plan-items/{$secondItem->id}/launch-engagement", $this->engagementPayload($manager, $teamMember))
+            ->assertUnprocessable()->assertJsonValidationErrors('plan');
+        $this->postJson("/api/audit-plan-items/{$item->id}/launch-engagement", $this->engagementPayload($manager, $teamMember))
+            ->assertUnprocessable()->assertJsonValidationErrors('item');
+        $this->getJson('/api/audits/'.$baseline->audit_id)->assertOk()
+            ->assertJsonPath('data.engagement_baseline.fingerprint', $baseline->fingerprint);
+
+        $this->actingAs($manager, 'web');
+        Livewire::test(ViewAudit::class, ['record' => $baseline->audit_id])
+            ->assertSee('Approved plan engagement baseline')
+            ->assertSee($baseline->objective)
+            ->assertSee($assessment->governance_fingerprint)
+            ->assertSee($baseline->fingerprint);
+
+        $columns = collect(AuditExporter::getColumns())->map->getName();
+        $this->assertContains('engagementBaseline.objective', $columns);
+        $this->assertContains('engagementBaseline.plan_snapshot', $columns);
+        $this->assertContains('engagementBaseline.entity_assessment_snapshot', $columns);
+        $this->assertContains('engagementBaseline.fingerprint', $columns);
+        $factoryBaseline = AuditEngagementBaseline::factory()->create();
+        $this->assertSame($factoryBaseline->audit->manager_id, $factoryBaseline->team_user_ids[0]);
+        $this->assertSame(AuditPlanStatus::Approved, $factoryBaseline->planItem->plan->status);
+        $this->assertSame($factoryBaseline->audit_id, data_get($factoryBaseline->audit_snapshot, 'id'));
+        $this->assertSame($factoryBaseline->planItem->plan->approval_fingerprint, data_get($factoryBaseline->plan_snapshot, 'plan.approval_fingerprint'));
+        $this->assertSame($factoryBaseline->fingerprint, $this->engagementFingerprint($factoryBaseline));
+    }
+
     private function manager(): User
     {
         $user = User::factory()->create();
@@ -311,5 +394,34 @@ class AuditUniversePlanningTest extends TestCase
     private function draftItemPayload(): array
     {
         return ['status' => 'planned', 'planned_start_at' => '2027-03-01', 'planned_end_at' => '2027-04-30', 'rationale' => 'Residual exposure and criticality warrant coverage.'];
+    }
+
+    private function engagementPayload(User $manager, User $teamMember): array
+    {
+        return [
+            'title' => 'Payments control audit',
+            'description' => 'Audit launched from the approved annual plan.',
+            'audit_type' => 'controls',
+            'manager_id' => $manager->id,
+            'objective' => 'Evaluate whether payment authorization controls are designed and operating effectively.',
+            'scope' => 'Payment authorization, settlement, and mapped control evidence for the approved planning period.',
+            'exclusions' => 'Treasury investments and payroll.',
+            'team_user_ids' => [$teamMember->id],
+        ];
+    }
+
+    private function engagementFingerprint(AuditEngagementBaseline $baseline): string
+    {
+        return hash('sha256', json_encode([
+            'audit_snapshot' => $baseline->audit_snapshot,
+            'objective' => $baseline->objective,
+            'scope' => $baseline->scope,
+            'exclusions' => $baseline->exclusions,
+            'team_user_ids' => $baseline->team_user_ids,
+            'plan_snapshot' => $baseline->plan_snapshot,
+            'entity_assessment_snapshot' => $baseline->entity_assessment_snapshot,
+            'launched_by' => $baseline->launched_by,
+            'launched_at' => $baseline->launched_at->toIso8601String(),
+        ], JSON_THROW_ON_ERROR));
     }
 }
