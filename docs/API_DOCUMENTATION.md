@@ -299,6 +299,16 @@ Policy owners and users with `Update Policies` launch a campaign with `POST /api
 
 Authenticated users list only their assignments through `GET /api/policy-acknowledgements/mine?page=1&per_page=50` and acknowledge their own open assignment through `POST /api/policy-acknowledgement-assignments/{assignment}/acknowledge` with `{"acknowledged": true}` plus optional `comment` and `client_reference`. The server owns the acknowledgement statement, actor, time, and snapshots. Policy owners/editors use `GET /api/policy-acknowledgement-campaigns/{campaign}/report` for paginated assignment status and `POST /api/policy-acknowledgement-campaigns/{campaign}/close` for one governed closure. List page size is capped at 100. Acknowledgements remain accepted after the due time until closure; closure prevents later submissions. This is attributable application acknowledgement, not qualified electronic signature, identity proofing, HR audience synchronization, training completion, or notification-delivery evidence.
 
+#### Regulatory change inventory
+
+Users with `Update Policies` create sources with `POST /api/regulatory-sources`; source owners and policy editors update them through `PUT /api/regulatory-sources/{source}` and create requirements through `POST /api/regulatory-sources/{source}/requirements`. The initial requirement payload combines `code` and `owner_id` with a first version: `change_type=new_requirement`, status, title, requirement text, effective/optional expiry dates, and up to 100 active `policy_ids` plus 250 active `control_ids`.
+
+Source owners, requirement owners, and policy editors publish later versions through `POST /api/regulatory-requirements/{requirement}/versions`. Later change types are `amendment`, `guidance`, or `repeal`; a repeal must use `repealed` status. The server allocates version numbers and owns the source/mapping snapshot, publisher/time, and SHA-256 content fingerprint.
+
+Assess only the current version through `POST /api/regulatory-requirement-versions/{version}/assessments`. Applicability is `applicable`, `not_applicable`, or `under_review`; impact is `low`, `medium`, `high`, or `critical`. Summary and rationale are required. `action_owner_id` and current-or-future `action_due_at` must appear together, are required for under-review and high/critical applicable assessments, and are prohibited for not-applicable assessments. The server allocates assessment versions and snapshots the exact requirement, source, mapped policies, and controls.
+
+`GET /api/regulatory-requirements?page=1&per_page=50` returns paginated current state. `GET /api/regulatory-requirements/{requirement}/versions` returns complete version history and `GET /api/regulatory-requirements/{requirement}/assessments` returns complete assessment history. All three reads are capped at 100 records per page. `Read Policies` and `Update Policies` users see all requirements; other authenticated source/requirement owners see only assigned records. Source/version/assessment maintenance is REST-only; the operator workspace provides read-only inspection and scoped assessment export. This is manual regulatory inventory and attributable assessment—not external-feed ingestion, legal advice, source authentication, automatic applicability/mapping, or automatic remediation.
+
 ### Vendors
 
 **Base URL:** `/api/vendors`

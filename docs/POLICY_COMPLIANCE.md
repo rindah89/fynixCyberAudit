@@ -1,6 +1,16 @@
 # Policy compliance workflow
 
-Fynix Cyber Audit tracks policy compliance as attributable attestations against discrete policy obligations. This workflow does not claim automated regulatory-change management; control testing is documented separately in `docs/CONTINUOUS_CONTROL_TESTING.md`.
+Fynix Cyber Audit tracks policy compliance as attributable attestations against discrete policy obligations and provides a deliberately maintained regulatory source and requirement inventory. It does not ingest regulatory feeds or provide legal advice; control testing is documented separately in `docs/CONTINUOUS_CONTROL_TESTING.md`.
+
+## Regulatory change inventory
+
+Policy editors register regulatory sources through REST with authority, jurisdiction, reference URL, accountable owner, and lifecycle status. Editors and assigned source or requirement owners publish append-only requirement versions through REST. The server allocates version numbers, snapshots the source and selected active policy/control records, and fingerprints the complete version content. The first version is a new requirement; later versions explicitly identify an amendment, guidance update, or repeal.
+
+Authorized users inspect **Compliance → Regulatory Requirements**. The workspace exposes the current derived state and complete paginated immutable version and change-assessment history. Each assessment records applicability, impact, summary, rationale, actor/time, optional action owner/due date, and complete requirement/source/policy/control snapshots. High or critical applicable changes and items under review require an accountable action and due date. Current versions without an assessment show `assessment_required`; due dates derive `review_overdue` or `action_overdue`.
+
+REST integrations maintain sources, requirements, versions, and assessments through the routes documented in `docs/API_DOCUMENTATION.md`; the operator workspace is inspection-only. Readers with `Read Policies` see all records; assigned source and requirement owners see their own scope. The assessment export is available from the already scoped requirement history and includes deterministic snapshot JSON and the version fingerprint.
+
+All regulatory content, mappings, applicability, impact, summaries, and actions are deliberate human inputs. Fynix does not discover regulatory changes, authenticate source content, interpret law, infer applicability or mappings, synchronize external feeds, validate legal sufficiency, or automatically remediate changes.
 
 ## Operator workflow
 
@@ -71,4 +81,4 @@ Launch and operate acknowledgement campaigns:
 
 ## Explicit limitations
 
-Audience selection and policy content remain deliberate operator inputs. This workflow does not synchronize HR groups, automatically assign audiences, send or prove notification delivery, require quizzes/training, provide electronic-signature identity assurance, ingest regulatory content, detect policy-to-law changes, automatically collect evidence, validate authenticity/sufficiency, or infer compliance from policy content. Control-test results must not be inferred from policy attestations or acknowledgements; they are recorded through the separate control-testing workflow.
+Audience selection and policy content remain deliberate operator inputs. This workflow does not synchronize HR groups, automatically assign audiences, send or prove notification delivery, require quizzes/training, provide electronic-signature identity assurance, automatically collect evidence, validate authenticity/sufficiency, or infer compliance from policy content. Regulatory inventory is deliberate and does not provide feeds or automatic policy-to-law detection. Control-test results must not be inferred from policy attestations or acknowledgements; they are recorded through the separate control-testing workflow.
