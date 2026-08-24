@@ -10,8 +10,10 @@ use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Filament\Exports\VendorExporter;
 use App\Filament\Resources\ThirdPartyRiskResource;
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
+use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\FourthPartyDependenciesRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\RiskReviewsRelationManager;
 use App\Models\Audit;
+use App\Models\BusinessService;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
@@ -19,9 +21,11 @@ use App\Models\Risk;
 use App\Models\Survey;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\VendorFourthPartyDependency;
 use App\Models\VendorRiskAssessment;
 use App\Models\VendorRiskIssue;
 use App\Models\VendorRiskReviewEvidence;
+use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,6 +45,115 @@ class ThirdPartyRiskManagementTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         Storage::fake('private');
+    }
+
+    public function test_manager_records_versioned_fourth_party_dependencies_and_derives_concentration(): void
+    {
+        $manager = $this->manager();
+        $primary = Vendor::factory()->create(['vendor_manager_id' => $manager->id]);
+        $secondPrimary = Vendor::factory()->create();
+        $fourthParty = Vendor::factory()->create(['name' => 'Shared Cloud Subprocessor']);
+        $service = BusinessService::factory()->create();
+        Sanctum::actingAs($manager);
+        $payload = [
+            'fourth_party_vendor_id' => $fourthParty->id,
+            'business_service_id' => $service->id,
+            'status' => 'active', 'category' => 'cloud_infrastructure', 'criticality' => 'critical',
+            'service_description' => 'Hosts production workloads for the primary vendor.',
+            'data_access' => true, 'source_reference' => 'DDQ-2026-44',
+            'rationale' => 'The vendor disclosed this material subprocessor.',
+        ];
+
+        $this->postJson("/api/vendors/{$primary->id}/fourth-party-dependencies", $payload + ['version' => 99])
+            ->assertUnprocessable()->assertJsonValidationErrors('version');
+        $first = $this->postJson("/api/vendors/{$primary->id}/fourth-party-dependencies", $payload)
+            ->assertCreated()->assertJsonPath('data.version', 1)
+            ->assertJsonPath('data.governance_snapshot.fourth_party.name', 'Shared Cloud Subprocessor')
+            ->assertJsonPath('data.governance_snapshot.business_service.id', $service->id)
+            ->assertJsonPath('concentration.primary_vendor_count', 1)
+            ->assertJsonPath('concentration.high_or_critical_count', 1)
+            ->assertJsonPath('concentration.concentration_band', 'moderate')->json('data.id');
+        $this->postJson("/api/vendors/{$secondPrimary->id}/fourth-party-dependencies", $payload)
+            ->assertCreated()->assertJsonPath('concentration.primary_vendor_count', 2)
+            ->assertJsonPath('concentration.concentration_band', 'moderate');
+
+        $externalName = 'Boundary External Fourth Party';
+        $longDescription = str_repeat('S', 2000);
+        $external = $this->postJson("/api/vendors/{$primary->id}/fourth-party-dependencies", [
+            'fourth_party_name' => $externalName, 'status' => 'active', 'category' => 'other',
+            'criticality' => 'low', 'service_description' => $longDescription,
+            'rationale' => 'Boundary-width validation.',
+        ])->assertCreated()->json('data');
+        $this->assertSame(73, strlen($external['dependency_key']));
+        $this->assertSame($longDescription, $external['service_description']);
+        $concentrations = $this->getJson('/api/third-party-risk/fourth-party-concentrations?per_page=100')
+            ->assertOk()->assertJsonPath('per_page', 100)
+            ->assertJsonFragment(['fourth_party_name' => 'Shared Cloud Subprocessor', 'primary_vendor_count' => 2]);
+        $shared = collect($concentrations->json('data'))->firstWhere('fourth_party_name', 'Shared Cloud Subprocessor');
+        $this->assertCount(2, $shared['primary_vendors']);
+        $secondPrimary->delete();
+        $this->getJson('/api/third-party-risk/fourth-party-concentrations')
+            ->assertOk()->assertJsonFragment(['fourth_party_name' => 'Shared Cloud Subprocessor', 'primary_vendor_count' => 1]);
+        $secondPrimary->restore();
+
+        $this->postJson("/api/vendors/{$primary->id}/fourth-party-dependencies", $payload + ['fourth_party_name' => 'Conflicting identity'])
+            ->assertUnprocessable()->assertJsonValidationErrors('fourth_party_name');
+
+        $this->postJson("/api/vendors/{$primary->id}/fourth-party-dependencies", array_merge($payload, ['status' => 'exited']))
+            ->assertCreated()->assertJsonPath('data.version', 2)
+            ->assertJsonPath('concentration.primary_vendor_count', 1);
+        $this->getJson("/api/vendors/{$primary->id}/fourth-party-dependencies")
+            ->assertOk()->assertJsonPath('total', 3)->assertJsonFragment(['status' => 'exited', 'version' => 2]);
+
+        $record = VendorFourthPartyDependency::query()->findOrFail($first);
+        $factoryRecord = VendorFourthPartyDependency::factory()->create();
+        $this->assertSame($factoryRecord->vendor_id, data_get($factoryRecord->governance_snapshot, 'primary_vendor.id'));
+        try {
+            $record->update(['rationale' => 'Rewritten']);
+            $this->fail('Fourth-party history was mutable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('vendor_fourth_party_dependencies', ['id' => $first, 'rationale' => $payload['rationale']]);
+        }
+    }
+
+    public function test_fourth_party_workspace_preserves_owner_scope_and_cross_vendor_privacy(): void
+    {
+        $manager = $this->manager();
+        $owner = User::factory()->create();
+        $outsider = User::factory()->create();
+        $vendor = Vendor::factory()->create(['vendor_manager_id' => $owner->id]);
+        $other = Vendor::factory()->create();
+        $record = app(FourthPartyDependencyManager::class)->record($vendor, $manager, [
+            'fourth_party_name' => 'External Hosting Chain', 'status' => 'active',
+            'category' => 'technology_service', 'criticality' => 'high',
+            'service_description' => 'Supports the vendor service.', 'rationale' => 'Disclosed in due diligence.',
+        ]);
+        app(FourthPartyDependencyManager::class)->record($other, $manager, [
+            'fourth_party_name' => 'External Hosting Chain', 'status' => 'active',
+            'category' => 'technology_service', 'criticality' => 'medium',
+            'service_description' => 'Supports another vendor.', 'rationale' => 'Disclosed in due diligence.',
+        ]);
+
+        Sanctum::actingAs($owner);
+        $this->getJson("/api/vendors/{$vendor->id}/fourth-party-dependencies")->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson("/api/vendors/{$other->id}/fourth-party-dependencies")->assertForbidden();
+        $this->getJson('/api/third-party-risk/fourth-party-concentrations')->assertForbidden();
+        $this->postJson("/api/vendors/{$vendor->id}/fourth-party-dependencies", [])->assertForbidden();
+
+        $this->actingAs($owner, 'web');
+        Livewire::test(FourthPartyDependenciesRelationManager::class, [
+            'ownerRecord' => $vendor, 'pageClass' => ViewThirdPartyRisk::class,
+        ])->assertCanSeeTableRecords([$record])->assertTableActionVisible('inspect', $record);
+
+        Sanctum::actingAs($outsider);
+        $this->getJson("/api/vendors/{$vendor->id}/fourth-party-dependencies")->assertForbidden();
+
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Vendors');
+        $this->actingAs($reader, 'web');
+        $this->assertTrue(ThirdPartyRiskResource::canViewAny());
+        $this->assertTrue(ThirdPartyRiskResource::canView($other));
+        $this->assertSame(2, ThirdPartyRiskResource::getEloquentQuery()->whereKey([$vendor->id, $other->id])->count());
     }
 
     public function test_manager_records_versioned_vendor_risk_assessment_with_server_scores(): void

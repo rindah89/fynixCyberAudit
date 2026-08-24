@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ListThirdPartyRisks;
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
+use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\FourthPartyDependenciesRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\RiskAssessmentsRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\RiskDecisionsRelationManager;
 use App\Filament\Resources\VendorResource\RelationManagers\RiskReviewsRelationManager;
@@ -37,7 +38,7 @@ class ThirdPartyRiskResource extends Resource
             return false;
         }
 
-        return $user->can('Manage Third Party Risk') || Vendor::query()->where('vendor_manager_id', $user->id)->exists();
+        return $user->can('Manage Third Party Risk') || $user->can('Read Vendors') || Vendor::query()->where('vendor_manager_id', $user->id)->exists();
     }
 
     public static function canView(Model $record): bool
@@ -47,7 +48,7 @@ class ThirdPartyRiskResource extends Resource
             return false;
         }
 
-        return $user->can('Manage Third Party Risk') || $record->vendor_manager_id === $user->id;
+        return $user->can('Manage Third Party Risk') || $user->can('Read Vendors') || $record->vendor_manager_id === $user->id;
     }
 
     public static function canCreate(): bool
@@ -91,7 +92,7 @@ class ThirdPartyRiskResource extends Resource
     {
         $query = parent::getEloquentQuery()->withThirdPartyRiskGraph()->with(['vendorManager' => fn ($query) => $query->withTrashed()]);
         $user = auth()->user();
-        if ($user && ! $user->can('Manage Third Party Risk')) {
+        if ($user && ! $user->can('Manage Third Party Risk') && ! $user->can('Read Vendors')) {
             $query->where('vendor_manager_id', $user->id);
         }
 
@@ -100,7 +101,7 @@ class ThirdPartyRiskResource extends Resource
 
     public static function getRelations(): array
     {
-        return [RiskAssessmentsRelationManager::class, RisksRelationManager::class, RiskDecisionsRelationManager::class, RiskReviewsRelationManager::class];
+        return [RiskAssessmentsRelationManager::class, RisksRelationManager::class, RiskDecisionsRelationManager::class, RiskReviewsRelationManager::class, FourthPartyDependenciesRelationManager::class];
     }
 
     public static function getPages(): array

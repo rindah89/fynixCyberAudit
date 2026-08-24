@@ -117,6 +117,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/vendors/{vendor}/risks', [ThirdPartyRiskController::class, 'mapRisk']);
     Route::post('/vendors/{vendor}/risk-decisions', [ThirdPartyRiskController::class, 'decide']);
     Route::post('/vendors/{vendor}/risk-reviews', [ThirdPartyRiskController::class, 'review']);
+    Route::get('/vendors/{vendor}/fourth-party-dependencies', [ThirdPartyRiskController::class, 'fourthPartyDependencies']);
+    Route::post('/vendors/{vendor}/fourth-party-dependencies', [ThirdPartyRiskController::class, 'recordFourthPartyDependency']);
+    Route::get('/third-party-risk/fourth-party-concentrations', [ThirdPartyRiskController::class, 'fourthPartyConcentrations']);
     Route::apiResource('assets', AssetController::class);
     Route::apiResource('policies', PolicyController::class);
     Route::post('/policies/{policy}/obligations', [PolicyComplianceController::class, 'store']);
