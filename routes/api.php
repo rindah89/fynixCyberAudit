@@ -94,6 +94,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/audits/{audit}/procedures', [AuditProcedureController::class, 'index']);
     Route::post('/audits/{audit}/procedures', [AuditProcedureController::class, 'store']);
     Route::post('/audit-procedures/{procedure}/execute', [AuditProcedureController::class, 'execute']);
+    Route::post('/audit-procedure-executions/{execution}/review', [AuditProcedureController::class, 'review']);
     Route::get('/audits/{audit}/closeouts', [AuditCloseoutController::class, 'index']);
     Route::post('/audits/{audit}/closeouts', [AuditCloseoutController::class, 'submit']);
     Route::post('/audit-closeout-submissions/{submission}/review', [AuditCloseoutController::class, 'review']);

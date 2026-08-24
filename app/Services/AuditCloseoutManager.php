@@ -62,12 +62,18 @@ class AuditCloseoutManager
             if ($requests->count() > 500) {
                 throw ValidationException::withMessages(['data_requests' => 'A governed closeout is bounded to 500 data requests. Split larger scopes into separate engagements.']);
             }
-            $procedures = $locked->procedures()->with('execution')->orderBy('id')->lockForUpdate()->get();
+            $procedures = $locked->procedures()->with('execution.review')->orderBy('id')->lockForUpdate()->get();
             if ($procedures->count() > 250) {
                 throw ValidationException::withMessages(['audit_procedures' => 'Governed closeout is bounded to 250 procedure versions.']);
             }
             if ($procedures->contains(fn ($procedure): bool => ! $procedure->execution)) {
                 throw ValidationException::withMessages(['audit_procedures' => 'Every defined audit procedure must be executed before closeout.']);
+            }
+            if ($procedures->contains(fn ($procedure): bool => ! $procedure->execution?->review)) {
+                throw ValidationException::withMessages(['audit_procedures' => 'Every executed workpaper must receive supervisory review before closeout.']);
+            }
+            if ($procedures->groupBy('code')->contains(fn (Collection $versions): bool => $versions->sortBy('version')->last()->execution->review->decision->value !== 'approved')) {
+                throw ValidationException::withMessages(['audit_procedures' => 'The latest version of every workpaper must have an approved supervisory review before closeout.']);
             }
             DB::table('audit_user')->where('audit_id', $locked->id)->orderBy('user_id')->lockForUpdate()->get();
             $memberIds = $locked->members()->orderBy('users.id')->lockForUpdate()->pluck('users.id')->map(fn ($id): int => (int) $id)->all();
@@ -244,7 +250,7 @@ class AuditCloseoutManager
     {
         $items = $audit->auditItems()->orderBy('id')->lockForUpdate()->get();
         $requests = $audit->dataRequest()->orderBy('id')->lockForUpdate()->get();
-        $procedures = $audit->procedures()->with('execution')->orderBy('id')->lockForUpdate()->get();
+        $procedures = $audit->procedures()->with('execution.review')->orderBy('id')->lockForUpdate()->get();
         DB::table('audit_user')->where('audit_id', $audit->id)->orderBy('user_id')->lockForUpdate()->get();
         $memberIds = $audit->members()->orderBy('users.id')->lockForUpdate()->pluck('users.id')->map(fn ($id): int => (int) $id)->all();
         $auditableSnapshots = $this->lockAuditableSnapshots($items);
@@ -284,6 +290,7 @@ class AuditCloseoutManager
         return $procedures->map(fn ($procedure): array => [
             ...$procedure->only(['id', 'audit_id', 'audit_item_id', 'version', 'code', 'title', 'objective', 'steps', 'method', 'population_description', 'planned_sample_size', 'assigned_to', 'due_at', 'status', 'created_by', 'created_at']),
             'execution' => $procedure->execution?->only(['id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
+            'supervisory_review' => $procedure->execution?->review?->only(['id', 'audit_procedure_execution_id', 'decision', 'review_summary', 'execution_snapshot', 'reviewed_by', 'reviewed_at', 'fingerprint']),
         ])->all();
     }
 

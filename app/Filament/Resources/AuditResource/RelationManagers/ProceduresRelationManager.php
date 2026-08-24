@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AuditResource\RelationManagers;
 
 use App\Enums\AuditProcedureMethod;
 use App\Enums\AuditProcedureOutcome;
+use App\Enums\AuditWorkpaperReviewDecision;
 use App\Enums\WorkflowStatus;
 use App\Filament\Exports\AuditProcedureExporter;
 use App\Models\AuditCloseoutSubmission;
@@ -29,12 +30,13 @@ class ProceduresRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['auditItem.auditable', 'assignee:id,name', 'creator:id,name', 'execution.executor:id,name']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['auditItem.auditable', 'assignee:id,name', 'creator:id,name', 'execution.executor:id,name', 'execution.review.reviewer:id,name']))
             ->defaultSort('id', 'desc')->columns([
                 TextColumn::make('code')->searchable(), TextColumn::make('version')->sortable(), TextColumn::make('title')->searchable(),
                 TextColumn::make('method')->badge(), TextColumn::make('assignee.name'), TextColumn::make('due_at')->date()->sortable(),
                 TextColumn::make('status')->badge()->color(fn (string $state): string => $state === 'completed' ? 'success' : 'info'),
                 TextColumn::make('execution.outcome')->badge()->placeholder('Pending'),
+                TextColumn::make('execution.review.decision')->label('Supervisory review')->badge()->placeholder('Pending'),
             ])->headerActions([
                 Action::make('define')->visible(fn (): bool => $this->getOwnerRecord()->status === WorkflowStatus::INPROGRESS
                     && ! $this->isCloseoutFrozen()
@@ -42,10 +44,20 @@ class ProceduresRelationManager extends RelationManager
                     ->form($this->definitionForm())->action(fn (array $data) => app(AuditProcedureManager::class)->define($this->getOwnerRecord(), auth()->user(), $data)),
                 ExportAction::make()->exporter(AuditProcedureExporter::class),
             ])->recordActions([
-                Action::make('execute')->visible(fn (AuditProcedure $record): bool => ! $record->execution
+                Action::make('execute')->visible(fn (AuditProcedure $record): bool => $this->getOwnerRecord()->status === WorkflowStatus::INPROGRESS
+                    && ! $record->execution
                     && ! $this->isCloseoutFrozen()
                     && (auth()->user()?->can('Update Audits') || $this->getOwnerRecord()->manager_id === auth()->id() || $record->assigned_to === auth()->id()))
                     ->form($this->executionForm())->action(fn (AuditProcedure $record, array $data) => app(AuditProcedureManager::class)->execute($record, auth()->user(), $data)),
+                Action::make('review_workpaper')->visible(fn (AuditProcedure $record): bool => $this->getOwnerRecord()->status === WorkflowStatus::INPROGRESS
+                    && $record->execution && ! $record->execution->review
+                    && $record->execution->executed_by !== auth()->id()
+                    && ! $this->isCloseoutFrozen()
+                    && (auth()->user()?->can('Update Audits') || $this->getOwnerRecord()->manager_id === auth()->id()))
+                    ->form([
+                        Select::make('decision')->options(AuditWorkpaperReviewDecision::class)->required(),
+                        Textarea::make('review_summary')->maxLength(30000)->required(),
+                    ])->action(fn (AuditProcedure $record, array $data) => app(AuditProcedureManager::class)->review($record->execution, auth()->user(), $data)),
                 Action::make('inspect')->icon('heroicon-o-eye')->modalSubmitAction(false)->modalCancelActionLabel('Close')
                     ->modalContent(fn (AuditProcedure $record) => view('filament.audit-procedure', ['procedure' => $record])),
             ]);

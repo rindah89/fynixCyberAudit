@@ -23,12 +23,15 @@ class AuditProcedureExporter extends Exporter
             ExportColumn::make('execution.sample_tested'), ExportColumn::make('execution.evidence_reference'),
             ExportColumn::make('execution.procedure_snapshot')->state(fn (AuditProcedure $record): string => json_encode($record->execution?->procedure_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('execution.executor.name'), ExportColumn::make('execution.executed_at'), ExportColumn::make('execution.fingerprint'),
+            ExportColumn::make('execution.review.decision'), ExportColumn::make('execution.review.review_summary'),
+            ExportColumn::make('execution.review.execution_snapshot')->state(fn (AuditProcedure $record): string => json_encode($record->execution?->review?->execution_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
+            ExportColumn::make('execution.review.reviewer.name'), ExportColumn::make('execution.review.reviewed_at'), ExportColumn::make('execution.review.fingerprint'),
         ];
     }
 
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->with(['assignee' => fn ($query) => $query->withTrashed(), 'creator' => fn ($query) => $query->withTrashed(), 'execution.executor' => fn ($query) => $query->withTrashed()]);
+        return $query->with(['assignee' => fn ($query) => $query->withTrashed(), 'creator' => fn ($query) => $query->withTrashed(), 'execution.executor' => fn ($query) => $query->withTrashed(), 'execution.review.reviewer' => fn ($query) => $query->withTrashed()]);
     }
 
     public static function getCompletedNotificationBody(Export $export): string

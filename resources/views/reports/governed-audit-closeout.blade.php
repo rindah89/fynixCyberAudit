@@ -15,7 +15,9 @@
 @foreach (data_get($report, 'audit_procedure_snapshots', []) as $procedure)
     <p><strong>{{ data_get($procedure, 'code') }} v{{ data_get($procedure, 'version') }}:</strong>
         {{ str_replace('_', ' ', data_get($procedure, 'execution.outcome', 'pending')) }} —
-        {{ \Illuminate\Support\Str::limit(data_get($procedure, 'execution.result', 'No execution result'), 500) }}</p>
+        {{ \Illuminate\Support\Str::limit(data_get($procedure, 'execution.result', 'No execution result'), 500) }}<br>
+        <strong>Supervisory review:</strong> {{ str_replace('_', ' ', data_get($procedure, 'supervisory_review.decision', 'pending')) }} —
+        {{ \Illuminate\Support\Str::limit(data_get($procedure, 'supervisory_review.review_summary', 'No review summary'), 500) }}</p>
 @endforeach
 <h2>Effort summary</h2>
 <p><strong>Planned:</strong> {{ number_format(data_get($report, 'audit_effort_snapshots.summary.planned_minutes', 0)) }} minutes ·

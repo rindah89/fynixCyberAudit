@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\Enums\AuditProcedureMethod;
 use App\Enums\AuditProcedureOutcome;
+use App\Enums\AuditWorkpaperReviewDecision;
 use App\Enums\WorkflowStatus;
 use App\Models\Audit;
 use App\Models\AuditCloseoutSubmission;
 use App\Models\AuditItem;
 use App\Models\AuditProcedure;
 use App\Models\AuditProcedureExecution;
+use App\Models\AuditWorkpaperReview;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -39,6 +41,10 @@ class AuditProcedureManager
             $prior = AuditProcedure::query()->where('audit_id', $locked->id)->where('code', $validated['code'])->orderBy('version')->lockForUpdate()->get();
             if (AuditProcedure::query()->whereKey($prior->modelKeys())->whereDoesntHave('execution')->exists()) {
                 throw ValidationException::withMessages(['code' => 'Execute the current procedure version before defining a later version.']);
+            }
+            $latest = $prior->last();
+            if ($latest && $latest->execution?->review?->decision !== AuditWorkpaperReviewDecision::ReworkRequired) {
+                throw ValidationException::withMessages(['code' => 'A later version is allowed only after the current workpaper review requires rework.']);
             }
 
             return AuditProcedure::query()->create($validated + [
@@ -82,6 +88,34 @@ class AuditProcedureManager
         }, 3);
     }
 
+    public function review(AuditProcedureExecution $execution, User $actor, array $data): AuditWorkpaperReview
+    {
+        return DB::transaction(function () use ($execution, $actor, $data): AuditWorkpaperReview {
+            $procedureId = AuditProcedureExecution::query()->findOrFail($execution->id)->audit_procedure_id;
+            $auditId = AuditProcedure::query()->findOrFail($procedureId)->audit_id;
+            $audit = Audit::query()->lockForUpdate()->findOrFail($auditId);
+            $procedure = AuditProcedure::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($procedureId);
+            $locked = AuditProcedureExecution::query()->where('audit_procedure_id', $procedure->id)->lockForUpdate()->findOrFail($execution->id);
+            $this->authorizeManage($audit, $actor);
+            $this->assertMutable($audit);
+            if ($locked->executed_by === $actor->id) {
+                throw ValidationException::withMessages(['reviewer' => 'The workpaper reviewer must be independent from its executor.']);
+            }
+            if ($locked->review()->exists()) {
+                throw ValidationException::withMessages(['execution' => 'This workpaper execution has already been reviewed.']);
+            }
+            $validated = Validator::make($data, self::reviewRules())->validate();
+            $reviewedAt = now();
+            $snapshot = $locked->only(['id', 'audit_procedure_id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']);
+            $payload = $validated + ['execution_snapshot' => $snapshot, 'reviewed_by' => $actor->id, 'reviewed_at' => $reviewedAt->toIso8601String()];
+
+            return $locked->review()->create($payload + [
+                'reviewed_at' => $reviewedAt,
+                'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
+            ])->load(['reviewer:id,name', 'execution.procedure']);
+        }, 3);
+    }
+
     public static function definitionRules(): array
     {
         return [
@@ -102,6 +136,16 @@ class AuditProcedureManager
             'outcome' => ['required', Rule::enum(AuditProcedureOutcome::class)], 'result' => ['required', 'string', 'max:30000'],
             'exceptions' => ['nullable', 'string', 'max:30000'], 'sample_tested' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'evidence_reference' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+
+    public static function reviewRules(): array
+    {
+        return [
+            'audit_procedure_execution_id' => ['prohibited'], 'execution_snapshot' => ['prohibited'],
+            'reviewed_by' => ['prohibited'], 'reviewed_at' => ['prohibited'], 'fingerprint' => ['prohibited'],
+            'decision' => ['required', Rule::enum(AuditWorkpaperReviewDecision::class)],
+            'review_summary' => ['required', 'string', 'max:30000'],
         ];
     }
 

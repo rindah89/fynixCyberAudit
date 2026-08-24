@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use LogicException;
 
 class AuditProcedure extends Model
@@ -51,6 +52,11 @@ class AuditProcedure extends Model
     public function execution(): HasOne
     {
         return $this->hasOne(AuditProcedureExecution::class);
+    }
+
+    public function workpaperReview(): HasOneThrough
+    {
+        return $this->hasOneThrough(AuditWorkpaperReview::class, AuditProcedureExecution::class, 'audit_procedure_id', 'audit_procedure_execution_id');
     }
 
     public function effortBudgets(): HasMany

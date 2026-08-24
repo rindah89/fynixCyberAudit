@@ -134,8 +134,11 @@ class AuditEffortTest extends TestCase
         [$audit, $manager, $member, $procedure, $item] = $this->context();
         $budget = app(AuditEffortManager::class)->budget($audit, $manager, $this->budgetPayload($procedure, $member, 600));
         $entry = app(AuditEffortManager::class)->record($audit, $member, $this->entryPayload($audit, $procedure, 180));
-        app(AuditProcedureManager::class)->execute($procedure, $member, [
+        $execution = app(AuditProcedureManager::class)->execute($procedure, $member, [
             'outcome' => 'effective', 'result' => 'The selected population met the procedure criteria.', 'sample_tested' => 10,
+        ]);
+        app(AuditProcedureManager::class)->review($execution, $manager, [
+            'decision' => 'approved', 'review_summary' => 'The workpaper supports its conclusion.',
         ]);
         $item->update(['status' => WorkflowStatus::COMPLETED, 'auditor_notes' => 'Concluded from procedure results.', 'effectiveness' => Effectiveness::EFFECTIVE]);
         $submission = app(AuditCloseoutManager::class)->submit($audit, $manager, [
