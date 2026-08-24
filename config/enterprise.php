@@ -9,6 +9,7 @@ return [
         'incidents' => (bool) env('MODULE_INCIDENTS_ENABLED', false),
         'resilience' => (bool) env('MODULE_RESILIENCE_ENABLED', false),
         'compliance_cases' => (bool) env('MODULE_COMPLIANCE_CASES_ENABLED', false),
+        'privacy_management' => (bool) env('MODULE_PRIVACY_MANAGEMENT_ENABLED', false),
     ],
     'surveyor' => [
         'max_file_size' => (int) env('SURVEYOR_MAX_FILE_SIZE', 10 * 1024 * 1024),

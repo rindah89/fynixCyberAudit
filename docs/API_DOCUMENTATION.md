@@ -805,3 +805,15 @@ The compliance-case module requires `MODULE_COMPLIANCE_CASES_ENABLED=true`. `Man
 Opening requires `title`, `category`, `priority`, `allegation`, and `summary`; optional fields are `source_channel`, `source_reference`, `reporter_reference`, and `confidential`. Categories are `Conduct`, `Fraud`, `Regulatory`, `Policy Violation`, `Privacy`, `Conflict of Interest`, `Retaliation`, and `Other`. Priorities are `Low`, `Medium`, `High`, and `Critical`.
 
 The forward lifecycle is `New` → `Triaged` → `Investigating` → `Action Required`/`Resolved` → `Closed`, with `Action Required` allowed to return to `Investigating`. Triage requires an active user with `Investigate Compliance Cases` plus a triage summary. Action-required/resolved states require investigation evidence; resolution requires a resolution summary. Final closure requires a manager separated from the opener, every assigned investigator, and every investigation/resolution decision actor; the closer must supply the closure summary in that event. Each change requires `summary` and appends a complete material before/after snapshot, actor/time, version, and fingerprint. Pages are limited to 1–100 and history to 200 events/case. See `docs/COMPLIANCE_CASE_MANAGEMENT.md` for privacy boundaries and limitations.
+## Governed privacy management
+
+When `MODULE_PRIVACY_MANAGEMENT_ENABLED=true`, authenticated privacy users use:
+
+- `GET|POST /api/privacy-processing-activities`
+- `GET|PUT /api/privacy-processing-activities/{activity}`
+- `GET /api/privacy-processing-activities/{activity}/versions`
+- `GET|POST /api/privacy-processing-activities/{activity}/assessments`
+
+Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Registration/revision records complete immutable processing-context versions. Assessment records bind the exact latest activity version and require separation from the owner and latest version author. Server-owned number, state evidence, version, snapshots, attribution, timestamps, and fingerprints are prohibited in caller payloads. Activation requires an approved assessment of the unchanged latest version; later material change derives `Assessment Required`.
+
+Inputs and judgments are deliberate. These endpoints do not discover personal data, determine legal basis, provide legal advice, manage consent or data-subject requests, validate controls, or prove regulatory compliance.

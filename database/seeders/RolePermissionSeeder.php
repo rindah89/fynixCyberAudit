@@ -86,6 +86,10 @@ class RolePermissionSeeder extends Seeder
             'Read Compliance Cases',
             'Investigate Compliance Cases',
             'Manage Compliance Cases',
+            'Read Privacy',
+            'Own Privacy Activities',
+            'Assess Privacy',
+            'Manage Privacy',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -130,6 +134,10 @@ class RolePermissionSeeder extends Seeder
             'Read Compliance Cases',
             'Investigate Compliance Cases',
             'Manage Compliance Cases',
+            'Read Privacy',
+            'Own Privacy Activities',
+            'Assess Privacy',
+            'Manage Privacy',
         ]);
 
         // Assign specific Permissions to Internal Auditor

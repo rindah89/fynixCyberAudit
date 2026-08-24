@@ -10,6 +10,7 @@ use App\Models\ComplianceCase;
 use App\Models\ControlTestDefinition;
 use App\Models\Policy;
 use App\Models\PolicyObligation;
+use App\Models\PrivacyProcessingActivity;
 use App\Models\Survey;
 use App\Models\SurveyTemplate;
 use App\Models\VendorDocument;
@@ -20,6 +21,7 @@ use App\Policies\ControlTestDefinitionPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\PolicyObligationPolicy;
 use App\Policies\PolicyPolicy;
+use App\Policies\PrivacyProcessingActivityPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\SurveyPolicy;
 use App\Policies\SurveyTemplatePolicy;
@@ -48,6 +50,7 @@ class AuthServiceProvider extends ServiceProvider
         ControlTestDefinition::class => ControlTestDefinitionPolicy::class,
         BusinessService::class => BusinessServicePolicy::class,
         ComplianceCase::class => ComplianceCasePolicy::class,
+        PrivacyProcessingActivity::class => PrivacyProcessingActivityPolicy::class,
         AiSystem::class => AiSystemPolicy::class,
         Survey::class => SurveyPolicy::class,
         SurveyTemplate::class => SurveyTemplatePolicy::class,
