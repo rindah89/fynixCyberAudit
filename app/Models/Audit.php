@@ -141,6 +141,16 @@ class Audit extends Model
         return $this->hasMany(AuditProcedure::class);
     }
 
+    public function effortBudgets(): HasMany
+    {
+        return $this->hasMany(AuditEffortBudget::class);
+    }
+
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(AuditTimeEntry::class);
+    }
+
     public function latestCloseoutSubmission(): HasOne
     {
         return $this->hasOne(AuditCloseoutSubmission::class)->latestOfMany('version');

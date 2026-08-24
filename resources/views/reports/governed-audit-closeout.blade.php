@@ -17,6 +17,10 @@
         {{ str_replace('_', ' ', data_get($procedure, 'execution.outcome', 'pending')) }} —
         {{ \Illuminate\Support\Str::limit(data_get($procedure, 'execution.result', 'No execution result'), 500) }}</p>
 @endforeach
+<h2>Effort summary</h2>
+<p><strong>Planned:</strong> {{ number_format(data_get($report, 'audit_effort_snapshots.summary.planned_minutes', 0)) }} minutes ·
+    <strong>Actual:</strong> {{ number_format(data_get($report, 'audit_effort_snapshots.summary.actual_minutes', 0)) }} minutes ·
+    <strong>Variance:</strong> {{ number_format(data_get($report, 'audit_effort_snapshots.summary.variance_minutes', 0)) }} minutes</p>
 <h2>Independent review</h2><p>{{ data_get($report, 'review_summary') }}</p>
 <p><strong>Submission fingerprint:</strong> {{ data_get($report, 'submission_fingerprint') }}</p>
 <p><strong>Reviewed by user:</strong> {{ data_get($report, 'reviewed_by') }} at {{ data_get($report, 'reviewed_at') }}</p>

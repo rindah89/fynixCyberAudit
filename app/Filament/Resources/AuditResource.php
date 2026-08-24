@@ -16,7 +16,9 @@ use App\Filament\Resources\AuditResource\RelationManagers\AttachmentsRelationMan
 use App\Filament\Resources\AuditResource\RelationManagers\AuditItemRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\CloseoutSubmissionsRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\DataRequestsRelationManager;
+use App\Filament\Resources\AuditResource\RelationManagers\EffortBudgetsRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\ProceduresRelationManager;
+use App\Filament\Resources\AuditResource\RelationManagers\TimeEntriesRelationManager;
 use App\Filament\Resources\AuditResource\Widgets\AuditStatsWidget;
 use App\Models\Audit;
 use App\Models\AuditCloseoutSubmission;
@@ -265,6 +267,8 @@ class AuditResource extends Resource
             return [
                 AuditItemRelationManager::class,
                 ProceduresRelationManager::class,
+                EffortBudgetsRelationManager::class,
+                TimeEntriesRelationManager::class,
                 DataRequestsRelationManager::class,
                 AttachmentsRelationManager::class,
                 CloseoutSubmissionsRelationManager::class,

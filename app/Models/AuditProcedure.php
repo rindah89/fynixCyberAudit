@@ -6,6 +6,7 @@ use App\Enums\AuditProcedureMethod;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
@@ -50,5 +51,15 @@ class AuditProcedure extends Model
     public function execution(): HasOne
     {
         return $this->hasOne(AuditProcedureExecution::class);
+    }
+
+    public function effortBudgets(): HasMany
+    {
+        return $this->hasMany(AuditEffortBudget::class);
+    }
+
+    public function timeEntries(): HasMany
+    {
+        return $this->hasMany(AuditTimeEntry::class);
     }
 }

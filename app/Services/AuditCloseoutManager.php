@@ -86,6 +86,7 @@ class AuditCloseoutManager
             ])->all();
             $requestSnapshots = $requests->map(fn (DataRequest $request): array => $request->only(['id', 'code', 'audit_item_id', 'created_by_id', 'assigned_to_id', 'status', 'details', 'created_at', 'updated_at']))->all();
             $procedureSnapshots = $this->procedureSnapshots($procedures);
+            $effortSnapshots = $this->lockEffortSnapshots($locked);
             $submittedAt = now();
             $payload = [
                 'audit_snapshot' => $auditSnapshot,
@@ -93,6 +94,7 @@ class AuditCloseoutManager
                 'audit_item_snapshots' => $itemSnapshots,
                 'data_request_snapshots' => $requestSnapshots,
                 'audit_procedure_snapshots' => $procedureSnapshots,
+                'audit_effort_snapshots' => $effortSnapshots,
                 'opinion' => $validated['opinion'],
                 'executive_summary' => $validated['executive_summary'],
                 'scope_limitations' => $validated['scope_limitations'] ?? null,
@@ -145,6 +147,7 @@ class AuditCloseoutManager
                     'audit_item_snapshots' => $locked->audit_item_snapshots,
                     'data_request_snapshots' => $locked->data_request_snapshots,
                     'audit_procedure_snapshots' => $locked->audit_procedure_snapshots,
+                    'audit_effort_snapshots' => $locked->audit_effort_snapshots,
                     'decision' => $validated['decision'],
                     'review_summary' => $validated['review_summary'],
                     'reviewed_by' => $actor->id,
@@ -258,11 +261,13 @@ class AuditCloseoutManager
         ])->all();
         $currentRequests = $requests->map(fn (DataRequest $request): array => $request->only(['id', 'code', 'audit_item_id', 'created_by_id', 'assigned_to_id', 'status', 'details', 'created_at', 'updated_at']))->all();
         $currentProcedures = $this->procedureSnapshots($procedures);
+        $currentEffort = $this->lockEffortSnapshots($audit);
 
         if ($this->canonicalSnapshot($currentAudit) !== $submission->audit_snapshot
             || $this->canonicalSnapshot($currentItems) !== $submission->audit_item_snapshots
             || $this->canonicalSnapshot($currentRequests) !== $submission->data_request_snapshots
-            || $this->canonicalSnapshot($currentProcedures) !== ($submission->audit_procedure_snapshots ?? [])) {
+            || $this->canonicalSnapshot($currentProcedures) !== ($submission->audit_procedure_snapshots ?? [])
+            || $this->canonicalSnapshot($currentEffort) !== ($submission->audit_effort_snapshots ?? ['budgets' => [], 'time_entries' => [], 'summary' => ['planned_minutes' => 0, 'actual_minutes' => 0, 'variance_minutes' => 0, 'allocations' => []]])) {
             throw ValidationException::withMessages([
                 'submission' => 'The captured audit scope or fieldwork changed after submission. Reject this version and submit a fresh closeout snapshot.',
             ]);
@@ -280,6 +285,18 @@ class AuditCloseoutManager
             ...$procedure->only(['id', 'audit_id', 'audit_item_id', 'version', 'code', 'title', 'objective', 'steps', 'method', 'population_description', 'planned_sample_size', 'assigned_to', 'due_at', 'status', 'created_by', 'created_at']),
             'execution' => $procedure->execution?->only(['id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
         ])->all();
+    }
+
+    private function lockEffortSnapshots(Audit $audit): array
+    {
+        $budgets = $audit->effortBudgets()->with(['procedure:id,code,title', 'user:id,name', 'setter:id,name'])->orderBy('id')->lockForUpdate()->get();
+        $entries = $audit->timeEntries()->with(['procedure:id,code,title', 'user:id,name', 'entrant:id,name'])->orderBy('id')->lockForUpdate()->get();
+
+        return [
+            'budgets' => $budgets->map(fn ($budget): array => $budget->only(['id', 'audit_id', 'audit_procedure_id', 'user_id', 'version', 'planned_minutes', 'rationale', 'allocation_snapshot', 'set_by', 'set_at', 'fingerprint']))->all(),
+            'time_entries' => $entries->map(fn ($entry): array => $entry->only(['id', 'audit_id', 'audit_procedure_id', 'user_id', 'entry_type', 'reverses_time_entry_id', 'work_date', 'minutes', 'activity', 'notes', 'source_reference', 'budget_snapshot', 'procedure_snapshot', 'entered_by', 'entered_at', 'fingerprint']))->all(),
+            'summary' => app(AuditEffortManager::class)->summary($audit),
+        ];
     }
 
     private function lockAuditableSnapshots(Collection $items): Collection

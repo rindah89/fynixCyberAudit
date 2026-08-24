@@ -14,9 +14,9 @@ class AuditCloseoutSubmission extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['audit_id', 'version', 'opinion', 'executive_summary', 'scope_limitations', 'significant_matters', 'recommendations_summary', 'audit_snapshot', 'engagement_baseline_snapshot', 'audit_item_snapshots', 'data_request_snapshots', 'audit_procedure_snapshots', 'submitted_by', 'submitted_at', 'fingerprint'];
+    protected $fillable = ['audit_id', 'version', 'opinion', 'executive_summary', 'scope_limitations', 'significant_matters', 'recommendations_summary', 'audit_snapshot', 'engagement_baseline_snapshot', 'audit_item_snapshots', 'data_request_snapshots', 'audit_procedure_snapshots', 'audit_effort_snapshots', 'submitted_by', 'submitted_at', 'fingerprint'];
 
-    protected $casts = ['opinion' => AuditOpinion::class, 'audit_snapshot' => 'array', 'engagement_baseline_snapshot' => 'array', 'audit_item_snapshots' => 'array', 'data_request_snapshots' => 'array', 'audit_procedure_snapshots' => 'array', 'submitted_at' => 'datetime'];
+    protected $casts = ['opinion' => AuditOpinion::class, 'audit_snapshot' => 'array', 'engagement_baseline_snapshot' => 'array', 'audit_item_snapshots' => 'array', 'data_request_snapshots' => 'array', 'audit_procedure_snapshots' => 'array', 'audit_effort_snapshots' => 'array', 'submitted_at' => 'datetime'];
 
     protected static function booted(): void
     {
