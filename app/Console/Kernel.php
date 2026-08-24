@@ -17,6 +17,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('fynix:reconcile-policy-exceptions')->dailyAt('00:10')->withoutOverlapping();
         $schedule->command('fynix:reconcile-policy-acknowledgement-reminders')->dailyAt('08:00')->withoutOverlapping();
         $schedule->command('fynix:reconcile-policy-acknowledgement-escalations')->dailyAt('08:10')->withoutOverlapping();
+        $schedule->command('fynix:reconcile-third-party-collaboration-reminders')->dailyAt('08:20')->withoutOverlapping();
     }
 
     /**

@@ -6,17 +6,23 @@ use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
 use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRelationManager;
 use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
+use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
+use App\Models\ThirdPartyEngagementCollaborationReminder;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationReminderManager;
 use Database\Seeders\RolePermissionSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\Events\NotificationSending;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
@@ -252,5 +258,73 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $migration = require database_path('migrations/2026_08_24_820000_create_third_party_collaboration_evidence.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_engagement_collaboration_evidence', ['id' => $evidence->id]);
+    }
+
+    public function test_due_and_overdue_collaboration_reminders_are_exact_recipient_idempotent_evidence(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($opener, $engagement, [
+            'category' => 'evidence', 'subject' => 'Provide renewal evidence', 'request_text' => 'Upload the current evidence.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-27',
+        ]);
+        $contact->forceFill(['email_verified_at' => null])->save();
+        $reminders = app(ThirdPartyEngagementCollaborationReminderManager::class);
+
+        Event::listen(NotificationSending::class, fn (): bool => false);
+        try {
+            $reminders->reconcile(now());
+            $this->fail('A cancelled reminder must not be represented as delivered.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('not accepted', $exception->getMessage());
+        }
+        $this->assertDatabaseCount('third_party_engagement_collaboration_reminders', 0);
+        $this->assertDatabaseCount('notifications', 0);
+        Event::forget(NotificationSending::class);
+        $this->assertSame(1, $reminders->reconcile(now()));
+        $this->assertSame(0, $reminders->reconcile(now()));
+        Carbon::setTestNow('2026-08-27 12:00:00');
+        $this->assertSame(0, $reminders->reconcile(now()));
+        Carbon::setTestNow('2026-08-28 00:00:01');
+        $this->assertSame(1, $reminders->reconcile(now()));
+        $this->assertSame(0, $reminders->reconcile(now()));
+        $answered = app(ThirdPartyEngagementCollaborationManager::class)->open($opener, $engagement, [
+            'category' => 'evidence', 'subject' => 'Already answered', 'request_text' => 'Respond before reconciliation.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-28',
+        ]);
+        app(ThirdPartyEngagementCollaborationManager::class)->respond($contact, $answered, ['response_text' => 'Answered.']);
+        $this->assertSame(0, $reminders->reconcile(now()));
+        $this->assertDatabaseMissing('third_party_engagement_collaboration_reminders', ['third_party_engagement_collaboration_request_id' => $answered->id]);
+
+        $request->refresh()->load('reminders');
+        $this->assertSame(['due_soon', 'overdue'], $request->reminders->pluck('type')->map->value->all());
+        $this->assertDatabaseCount('notifications', 2);
+        foreach ($request->reminders as $reminder) {
+            $payload = $reminder->only(['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'type', 'channel', 'notification_id', 'recipient_snapshot', 'request_snapshot', 'event_snapshot']);
+            $payload['type'] = $reminder->type->value;
+            $payload['attempted_at'] = $reminder->attempted_at->toIso8601String();
+            $payload['delivered_at'] = $reminder->delivered_at->toIso8601String();
+            $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $reminder->fingerprint);
+        }
+
+        Sanctum::actingAs($opener);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonCount(2, 'data.1.reminders')->assertJsonPath('data.1.reminders.1.type', 'overdue');
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($contact, 'vendor');
+        Livewire::test(ListCollaborationRequests::class)->assertSee('Overdue');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee($request->reminders->last()->notification_id)
+            ->assertSee('Event snapshot');
+
+        $this->assertThrows(fn () => ThirdPartyEngagementCollaborationReminder::query()->firstOrFail()->update(['channel' => 'mail']), \LogicException::class);
+        DB::table('notifications')->where('id', $request->reminders->first()->notification_id)->delete();
+        $this->assertDatabaseHas('third_party_engagement_collaboration_reminders', ['id' => $request->reminders->first()->id]);
+        $migration = require database_path('migrations/2026_08_24_830000_create_third_party_collaboration_reminders.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_engagement_collaboration_reminders', ['id' => $request->reminders->last()->id]);
+        Carbon::setTestNow();
     }
 }

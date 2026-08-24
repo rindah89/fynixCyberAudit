@@ -177,6 +177,14 @@
                     <div class="break-all font-mono text-xs">{{ $event->fingerprint }}</div>
                 </div>
             @endforeach
+            @foreach ($request->reminders->sortBy('delivered_at') as $reminder)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div>{{ $reminder->type->getLabel() }} reminder · {{ $reminder->channel }} · attempted {{ $reminder->attempted_at?->toDayDateTimeString() }} · delivered {{ $reminder->delivered_at?->toDayDateTimeString() }}</div>
+                    <div class="break-all">Notification: <span class="font-mono text-xs">{{ $reminder->notification_id }}</span></div>
+                    <details class="mt-1"><summary class="font-medium">Retained recipient, request, and latest-event snapshots</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipient' => $reminder->recipient_snapshot, 'request' => $reminder->request_snapshot, 'event' => $reminder->event_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $reminder->fingerprint }}</div>
+                </div>
+            @endforeach
             <div class="mt-1 break-all font-mono text-xs">{{ $request->fingerprint }}</div>
         </div>
     @empty

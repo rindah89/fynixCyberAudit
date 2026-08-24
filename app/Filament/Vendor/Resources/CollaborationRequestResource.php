@@ -7,6 +7,7 @@ use App\Enums\ThirdPartyEngagementStatus;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
 use App\Models\ThirdPartyEngagementCollaborationEvidence;
+use App\Models\ThirdPartyEngagementCollaborationReminder;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
@@ -51,6 +52,7 @@ class CollaborationRequestResource extends Resource
                         ->whereNull('deleted_at'))
                     ->with('document'),
                 'latestEvent',
+                'reminders',
             ]);
     }
 
@@ -61,6 +63,7 @@ class CollaborationRequestResource extends Resource
             TextColumn::make('subject')->searchable()->wrap(),
             TextColumn::make('category')->badge(),
             TextColumn::make('latest_status')->label('Status')->state(fn (ThirdPartyEngagementCollaborationRequest $record) => $record->latestStatus())->badge(),
+            TextColumn::make('reminder_state')->label('Reminder')->state(fn (ThirdPartyEngagementCollaborationRequest $record) => $record->reminders->last()?->type)->badge(),
             TextColumn::make('due_at')->date()->sortable(),
         ])->recordActions([
             ViewAction::make(),
@@ -96,6 +99,16 @@ class CollaborationRequestResource extends Resource
                         TextEntry::make('file_size_snapshot')->numeric(), TextEntry::make('sha256'),
                     ])->columns(2)->columnSpanFull(),
                 ])->columns(2),
+            ]),
+            Section::make('In-app reminder delivery evidence')->schema([
+                RepeatableEntry::make('reminders')->hiddenLabel()->schema([
+                    TextEntry::make('type')->badge(), TextEntry::make('channel'), TextEntry::make('delivered_at')->dateTime(),
+                    TextEntry::make('attempted_at')->dateTime(), TextEntry::make('notification_id')->columnSpanFull(),
+                    TextEntry::make('recipient_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->recipient_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
+                    TextEntry::make('request_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->request_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
+                    TextEntry::make('event_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->event_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
+                    TextEntry::make('fingerprint')->columnSpanFull(),
+                ])->columns(3),
             ]),
         ]);
     }
