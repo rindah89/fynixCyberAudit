@@ -12,16 +12,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Jeffgreco13\FilamentBreezy\Traits\TwoFactorAuthenticatable;
 use Kirschbaum\Commentions\Contracts\Commenter;
 use Laravel\Sanctum\HasApiTokens;
-use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
- * @property \Illuminate\Support\Carbon|null $last_activity
+ * @property Carbon|null $last_activity
  */
 class User extends Authenticatable implements Commenter, FilamentUser
 {
@@ -112,6 +113,11 @@ class User extends Authenticatable implements Commenter, FilamentUser
     {
         return $this->hasMany(DataRequestResponse::class, 'requestee_id')
             ->whereIn('status', [ResponseStatus::PENDING, ResponseStatus::REJECTED]);
+    }
+
+    public function policyAcknowledgementAssignments(): HasMany
+    {
+        return $this->hasMany(PolicyAcknowledgementAssignment::class);
     }
 
     public function managedPrograms(): HasMany

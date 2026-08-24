@@ -10,12 +10,12 @@ use App\Filament\Resources\PolicyResource\Pages\EditPolicy;
 use App\Filament\Resources\PolicyResource\Pages\ListPolicies;
 use App\Filament\Resources\PolicyResource\Pages\ViewPolicy;
 use App\Filament\Resources\PolicyResource\Pages\ViewPolicyDetails;
+use App\Filament\Resources\PolicyResource\RelationManagers\AcknowledgementCampaignsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\ControlsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\ExceptionsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\ImplementationsRelationManager;
 use App\Filament\Resources\PolicyResource\RelationManagers\RisksRelationManager;
 use App\Models\Policy;
-use App\Models\User;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
@@ -572,6 +572,7 @@ class PolicyResource extends Resource
     public static function getRelations(): array
     {
         return [
+            AcknowledgementCampaignsRelationManager::class,
             ControlsRelationManager::class,
             ImplementationsRelationManager::class,
             RisksRelationManager::class,

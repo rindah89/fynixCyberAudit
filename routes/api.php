@@ -123,6 +123,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::apiResource('assets', AssetController::class);
     Route::apiResource('policies', PolicyController::class);
     Route::post('/policies/{policy}/obligations', [PolicyComplianceController::class, 'store']);
+    Route::post('/policies/{policy}/acknowledgement-campaigns', [PolicyComplianceController::class, 'launchAcknowledgementCampaign']);
+    Route::get('/policy-acknowledgements/mine', [PolicyComplianceController::class, 'myAcknowledgements']);
+    Route::get('/policy-acknowledgement-campaigns/{campaign}/report', [PolicyComplianceController::class, 'acknowledgementReport']);
+    Route::post('/policy-acknowledgement-assignments/{assignment}/acknowledge', [PolicyComplianceController::class, 'acknowledge']);
+    Route::post('/policy-acknowledgement-campaigns/{campaign}/close', [PolicyComplianceController::class, 'closeAcknowledgementCampaign']);
     Route::post('/policy-obligations/{obligation}/attest', [PolicyComplianceController::class, 'attest']);
     Route::apiResource('data-requests', DataRequestController::class);
     Route::apiResource('data-request-responses', DataRequestResponseController::class);

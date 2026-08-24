@@ -184,6 +184,11 @@ class Policy extends Model
         return $this->hasMany(PolicyObligation::class);
     }
 
+    public function acknowledgementCampaigns(): HasMany
+    {
+        return $this->hasMany(PolicyAcknowledgementCampaign::class);
+    }
+
     /**
      * Get the scope name accessor.
      */

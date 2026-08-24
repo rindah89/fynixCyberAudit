@@ -293,6 +293,12 @@ Required fields: `code`, `title`, `owner_id`, `frequency`, and `next_due_at`. Op
 
 Outcomes are `compliant`, `non_compliant`, or `not_applicable`. The evidence reference is optional operator-supplied text; Fynix does not verify the referenced record or grant access to it. `evidence_attachment_ids` optionally accepts up to 20 distinct accepted data-request attachments downloadable by the attestor. The server retains copies bounded to 10 MiB per file and 50 MiB per attestation and returns append-only provenance, size, disk/path, and SHA-256 snapshots under `data.evidence`; hashes prove byte identity rather than truth, sufficiency, authenticity, or outcome inference. The optional exception must belong to the obligation's policy and be approved and currently in effect. Product interfaces append history rather than modifying attestations, and recurring obligations calculate their next due date from the attestation timestamp. Inactive obligations cannot be attested.
 
+#### Policy acknowledgement campaigns
+
+Policy owners and users with `Update Policies` launch a campaign with `POST /api/policies/{policy}/acknowledgement-campaigns`. Payloads require `title`, a future `due_at`, and `audience_user_ids` containing one to 500 distinct active user IDs; `instructions` is optional. The policy must be currently effective, non-retired, and have readable embedded body content. The server allocates the campaign version and snapshots policy content, context, revision history, update time, and SHA-256 fingerprint.
+
+Authenticated users list only their assignments through `GET /api/policy-acknowledgements/mine?page=1&per_page=50` and acknowledge their own open assignment through `POST /api/policy-acknowledgement-assignments/{assignment}/acknowledge` with `{"acknowledged": true}` plus optional `comment` and `client_reference`. The server owns the acknowledgement statement, actor, time, and snapshots. Policy owners/editors use `GET /api/policy-acknowledgement-campaigns/{campaign}/report` for paginated assignment status and `POST /api/policy-acknowledgement-campaigns/{campaign}/close` for one governed closure. List page size is capped at 100. Acknowledgements remain accepted after the due time until closure; closure prevents later submissions. This is attributable application acknowledgement, not qualified electronic signature, identity proofing, HR audience synchronization, training completion, or notification-delivery evidence.
+
 ### Vendors
 
 **Base URL:** `/api/vendors`

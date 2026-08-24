@@ -5,10 +5,17 @@ namespace App\Http\Controllers\API;
 use App\Enums\PolicyAttestationOutcome;
 use App\Enums\PolicyObligationFrequency;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AcknowledgePolicyCampaignRequest;
+use App\Http\Requests\ClosePolicyAcknowledgementCampaignRequest;
+use App\Http\Requests\LaunchPolicyAcknowledgementCampaignRequest;
+use App\Http\Requests\ListPolicyAcknowledgementsRequest;
 use App\Http\Requests\StorePolicyAttestationRequest;
 use App\Models\Policy;
+use App\Models\PolicyAcknowledgementAssignment;
+use App\Models\PolicyAcknowledgementCampaign;
 use App\Models\PolicyException;
 use App\Models\PolicyObligation;
+use App\PolicyCompliance\PolicyAcknowledgementManager;
 use App\PolicyCompliance\PolicyCompliance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +23,37 @@ use Illuminate\Validation\Rule;
 
 class PolicyComplianceController extends Controller
 {
+    public function launchAcknowledgementCampaign(LaunchPolicyAcknowledgementCampaignRequest $request, Policy $policy, PolicyAcknowledgementManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->launch($policy, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function myAcknowledgements(ListPolicyAcknowledgementsRequest $request, PolicyAcknowledgementManager $manager): JsonResponse
+    {
+        $assignments = $manager->assignments($request->user())->paginate($request->integer('per_page', 50));
+        $assignments->through(fn (PolicyAcknowledgementAssignment $assignment) => $assignment->append('acknowledgement_status'));
+
+        return response()->json($assignments);
+    }
+
+    public function acknowledgementReport(ListPolicyAcknowledgementsRequest $request, PolicyAcknowledgementCampaign $campaign, PolicyAcknowledgementManager $manager): JsonResponse
+    {
+        $assignments = $manager->report($campaign, $request->user())->paginate($request->integer('per_page', 50));
+        $assignments->through(fn (PolicyAcknowledgementAssignment $assignment) => $assignment->append('acknowledgement_status'));
+
+        return response()->json($assignments);
+    }
+
+    public function acknowledge(AcknowledgePolicyCampaignRequest $request, PolicyAcknowledgementAssignment $assignment, PolicyAcknowledgementManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->acknowledge($assignment, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function closeAcknowledgementCampaign(ClosePolicyAcknowledgementCampaignRequest $request, PolicyAcknowledgementCampaign $campaign, PolicyAcknowledgementManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->close($campaign, $request->user())->append('campaign_status')]);
+    }
+
     public function store(Request $request, Policy $policy): JsonResponse
     {
         $this->authorize('update', $policy);

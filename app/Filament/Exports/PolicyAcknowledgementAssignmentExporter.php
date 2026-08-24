@@ -1,0 +1,51 @@
+<?php
+
+namespace App\Filament\Exports;
+
+use App\Models\PolicyAcknowledgementAssignment;
+use Filament\Actions\Exports\ExportColumn;
+use Filament\Actions\Exports\Exporter;
+use Filament\Actions\Exports\Models\Export;
+use Illuminate\Database\Eloquent\Builder;
+
+class PolicyAcknowledgementAssignmentExporter extends Exporter
+{
+    protected static ?string $model = PolicyAcknowledgementAssignment::class;
+
+    public static function getColumns(): array
+    {
+        return [
+            ExportColumn::make('campaign.policy.code')->label('Policy Code'),
+            ExportColumn::make('campaign.policy.name')->label('Policy Name'),
+            ExportColumn::make('campaign.version')->label('Campaign Version'),
+            ExportColumn::make('campaign.title')->label('Campaign'),
+            ExportColumn::make('user.name')->label('Assigned User'),
+            ExportColumn::make('user.email')->label('Assigned Email'),
+            ExportColumn::make('acknowledgement_status')->label('Status'),
+            ExportColumn::make('assigned_at'),
+            ExportColumn::make('campaign.due_at')->label('Due At'),
+            ExportColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged At'),
+            ExportColumn::make('acknowledgement.statement')->label('Statement'),
+            ExportColumn::make('acknowledgement.comment')->label('Comment'),
+            ExportColumn::make('acknowledgement.client_reference')->label('Client Reference'),
+            ExportColumn::make('campaign.policy_fingerprint')->label('Policy Fingerprint'),
+            ExportColumn::make('campaign.policy_snapshot')->label('Policy Snapshot JSON')
+                ->formatStateUsing(fn ($state): string => json_encode($state, JSON_THROW_ON_ERROR)),
+        ];
+    }
+
+    public static function modifyQuery(Builder $query): Builder
+    {
+        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'acknowledgement']);
+    }
+
+    public static function getCompletedNotificationBody(Export $export): string
+    {
+        return 'Your policy acknowledgement export completed with '.number_format($export->successful_rows).' rows.';
+    }
+
+    public function getFileDisk(): string
+    {
+        return setting('storage.driver', 'private');
+    }
+}

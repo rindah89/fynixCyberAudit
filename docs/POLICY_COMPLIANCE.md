@@ -14,6 +14,14 @@ An evidence reference is operator-supplied text for locating a record in a data 
 
 Governed attachment selection is separate from that text reference. A retained-copy SHA-256 value proves byte identity, not truth, sufficiency, authenticity, or that the attestation outcome was derived from the file.
 
+## Policy acknowledgement campaigns
+
+A policy owner or user with `Update Policies` can launch a campaign from a currently effective, non-retired policy that has readable embedded body content. Launch requires a title, future due time, and one to 500 distinct active users; instructions are optional. The server allocates a per-policy campaign version and snapshots the policy identity, content, document reference, scope, ownership, dates, revision history, update time, and SHA-256 fingerprint. Later policy edits do not rewrite the assigned version.
+
+Assigned employees use **Compliance → My Policy Acknowledgements** to inspect only their assignments and the exact policy snapshot. Acknowledgement requires an explicit accepted confirmation; the server supplies the standard statement and records the assigned user, optional comment/client reference, campaign and policy snapshots, fingerprint, and timestamp. Another user cannot acknowledge the assignment, and an acknowledged assignment cannot be submitted again. A policy editor or owner uses **Compliance → Policy Campaigns** for complete paginated audience reporting and scoped export.
+
+Pending assignments become `overdue` after the campaign due time. A campaign is `complete` when every assignment is acknowledged, `overdue` when its due time passes with pending assignments, and `closed` after an authorized owner/editor deliberately closes it. Closure preserves unacknowledged assignments as `closed_unacknowledged` and prevents later acknowledgement. Campaign definitions, assignments, and acknowledgement evidence are immutable through product interfaces except for the campaign's one governed closure.
+
 ## Compliance status
 
 | Status | Meaning |
@@ -38,6 +46,8 @@ Recurring attestations calculate their next due date from the attestation time: 
 - Inactive obligations cannot be attested.
 - Obligations soft-delete. Attested obligations and referenced exceptions cannot be physically deleted while their attestation history exists.
 - Each attestation records the user and timestamp.
+- Campaign launch and closure reauthorize against the current policy owner/editor boundary under database locks. Acknowledgement reauthorizes against the locked current assignment and campaign.
+- Soft-deleted policies and deactivated users remain attributable through retained snapshots and historical relationships; they are not eligible for new campaign audience selection.
 
 ## Integration interface
 
@@ -51,6 +61,14 @@ Submit an attestation:
 
 Policy detail responses include obligations, owners, related controls, current derived status, and latest attestations.
 
+Launch and operate acknowledgement campaigns:
+
+- `POST /api/policies/{policy}/acknowledgement-campaigns`
+- `GET /api/policy-acknowledgements/mine`
+- `POST /api/policy-acknowledgement-assignments/{assignment}/acknowledge`
+- `GET /api/policy-acknowledgement-campaigns/{campaign}/report`
+- `POST /api/policy-acknowledgement-campaigns/{campaign}/close`
+
 ## Explicit limitations
 
-This workflow does not provide regulatory content feeds, automated policy-to-law change detection, employee acknowledgement campaigns, automatic evidence collection, authenticity/sufficiency validation, or inference from file content. Control-test results must not be inferred from policy attestations; they are recorded through the separate control-testing workflow.
+Audience selection and policy content remain deliberate operator inputs. This workflow does not synchronize HR groups, automatically assign audiences, send or prove notification delivery, require quizzes/training, provide electronic-signature identity assurance, ingest regulatory content, detect policy-to-law changes, automatically collect evidence, validate authenticity/sufficiency, or infer compliance from policy content. Control-test results must not be inferred from policy attestations or acknowledgements; they are recorded through the separate control-testing workflow.
