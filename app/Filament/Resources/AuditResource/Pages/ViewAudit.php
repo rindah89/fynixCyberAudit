@@ -7,6 +7,8 @@ use App\Filament\Resources\AuditResource;
 use App\Filament\Resources\AuditResource\Widgets\TextWidget;
 use App\Jobs\PerformAiAuditJob;
 use App\Models\Audit;
+use App\Models\AuditCloseoutSubmission;
+use App\Services\AuditCloseoutReport;
 use App\Support\Enterprise;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Filament\Actions\Action;
@@ -63,6 +65,7 @@ class ViewAudit extends ViewRecord
                 ->icon('heroicon-m-pencil')
                 ->size(Size::Small)
                 ->color('primary')
+                ->disabled(fn (Audit $record): bool => AuditCloseoutSubmission::freezesAudit($record->id))
                 ->button(),
             ActionGroup::make([
                 Action::make('ActionsButton')
@@ -74,7 +77,9 @@ class ViewAudit extends ViewRecord
                     ->modalDescription('Are you sure you want to begin this audit?')
                     ->modalSubmitActionLabel('Yes, start the audit!')
                     ->disabled(function (Audit $record, $livewire) {
-
+                        if ($record->status === WorkflowStatus::COMPLETED && $record->engagementBaseline()->exists()) {
+                            return true;
+                        }
                         if ($record->manager_id != auth()->id()) {
                             return true; // Disable if not the audit manager
                         }
@@ -111,6 +116,9 @@ class ViewAudit extends ViewRecord
                     ->modalSubmitActionLabel('Yes, complete this audit!')
                     ->modalIconColor('danger')
                     ->disabled(function (Audit $record, $livewire) {
+                        if ($record->engagementBaseline()->exists()) {
+                            return true;
+                        }
                         if ($record->manager_id != auth()->id()) {
                             return true; // Disable if not the audit manager
                         }
@@ -142,6 +150,9 @@ class ViewAudit extends ViewRecord
                     ->modalDescription('This reviews each control item using implementations and policies only (not file evidence). Expect about one minute per item. A queue worker must be running.')
                     ->modalSubmitActionLabel('Start AI Audit')
                     ->disabled(function (Audit $record) {
+                        if (AuditCloseoutSubmission::freezesAudit($record->id)) {
+                            return true;
+                        }
                         if ($record->status !== WorkflowStatus::INPROGRESS) {
                             return true;
                         }
@@ -184,6 +195,10 @@ class ViewAudit extends ViewRecord
                     })
                     ->action(function (Audit $audit, $livewire) {
                         if ($audit->status == WorkflowStatus::COMPLETED) {
+                            $closeoutReview = $audit->latestCloseoutSubmission()->with('review')->first()?->review;
+                            if ($closeoutReview?->report_disk && $closeoutReview->report_path) {
+                                return app(AuditCloseoutReport::class)->download($closeoutReview);
+                            }
                             $filepath = "audit_reports/AuditReport-{$this->record->id}.pdf";
                             $storage = Storage::disk(config('filesystems.default'));
                             if ($storage->exists($filepath)) {

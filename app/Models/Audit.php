@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Aliziodev\LaravelTaxonomy\Traits\HasTaxonomy;
+use App\Enums\AuditCloseoutDecision;
 use App\Enums\WorkflowStatus;
 use App\Mcp\Traits\HasMcpSupport;
 use Eloquent;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
+use LogicException;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
@@ -84,6 +86,38 @@ class Audit extends Model
         'end_date' => 'date',
     ];
 
+    protected static function booted(): void
+    {
+        static::updating(function (Audit $audit): void {
+            Audit::query()->whereKey($audit->id)->lockForUpdate()->firstOrFail();
+            $closeoutFrozen = AuditCloseoutSubmission::freezesAudit($audit->id);
+            if ($closeoutFrozen && $audit->isDirty(['title', 'description', 'audit_type', 'start_date', 'end_date', 'manager_id', 'program_id'])) {
+                throw new LogicException('Audit scope and accountability are frozen while closeout is pending or approved.');
+            }
+            if ($closeoutFrozen && $audit->isDirty('status') && $audit->status !== WorkflowStatus::COMPLETED) {
+                throw new LogicException('Audit status is frozen while closeout is pending or approved.');
+            }
+            if (! $audit->isDirty('status') || ! $audit->engagementBaseline()->exists()) {
+                return;
+            }
+            $approved = AuditCloseoutReview::query()
+                ->where('decision', AuditCloseoutDecision::Approved)
+                ->whereHas('submission', fn ($query) => $query->where('audit_id', $audit->id))
+                ->exists();
+            if ($audit->status === WorkflowStatus::COMPLETED && ! $approved) {
+                throw new LogicException('Governed plan engagements require independent closeout approval before completion.');
+            }
+            if ($audit->getRawOriginal('status') === WorkflowStatus::COMPLETED->value && $approved) {
+                throw new LogicException('An independently approved audit closeout cannot be reopened through ordinary audit maintenance.');
+            }
+        });
+        static::deleting(function (Audit $audit): void {
+            if ($audit->engagementBaseline()->exists() || $audit->closeoutSubmissions()->exists()) {
+                throw new LogicException('Audits with governed planning or closeout evidence cannot be deleted.');
+            }
+        });
+    }
+
     /**
      * Get the audit items for the audit.
      */
@@ -95,6 +129,16 @@ class Audit extends Model
     public function engagementBaseline(): HasOne
     {
         return $this->hasOne(AuditEngagementBaseline::class);
+    }
+
+    public function closeoutSubmissions(): HasMany
+    {
+        return $this->hasMany(AuditCloseoutSubmission::class);
+    }
+
+    public function latestCloseoutSubmission(): HasOne
+    {
+        return $this->hasOne(AuditCloseoutSubmission::class)->latestOfMany('version');
     }
 
     /**

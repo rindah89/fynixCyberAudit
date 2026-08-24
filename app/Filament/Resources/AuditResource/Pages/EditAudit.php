@@ -4,6 +4,7 @@ namespace App\Filament\Resources\AuditResource\Pages;
 
 use App\Filament\Resources\AuditResource;
 use App\Models\User;
+use App\Services\AuditTeamManager;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ForceDeleteAction;
 use Filament\Actions\RestoreAction;
@@ -52,6 +53,8 @@ class EditAudit extends EditRecord
                             ->searchable(),
                         Select::make('members')
                             ->relationship('members')
+                            ->saveRelationshipsUsing(fn (Select $component): mixed => app(AuditTeamManager::class)
+                                ->sync($component->getRecord(), auth()->user(), $component->getState() ?? []))
                             ->label('Additional Members')
                             ->hint('Who else should have full access to the Audit?')
                             ->helperText('Note: You don\'t need to add evidence people who are only fulfilling requests here.')

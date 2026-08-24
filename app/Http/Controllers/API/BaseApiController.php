@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 abstract class BaseApiController extends Controller
 {
@@ -119,12 +120,14 @@ abstract class BaseApiController extends Controller
 
         $validatedData = $this->validateStore($request);
 
-        $resource = $this->modelClass::create($validatedData);
+        $resource = DB::transaction(function () use ($validatedData): Model {
+            $resource = $this->modelClass::create($validatedData);
+            if (! empty($this->showRelations)) {
+                $resource->load($this->showRelations);
+            }
 
-        // Load relationships if specified
-        if (! empty($this->showRelations)) {
-            $resource->load($this->showRelations);
-        }
+            return $resource;
+        });
 
         return response()->json([
             'message' => $this->resourceName.' created successfully',
@@ -163,13 +166,13 @@ abstract class BaseApiController extends Controller
 
         $validatedData = $this->validateUpdate($request, $resource);
 
-        $resource->update($validatedData);
-
-        // Refresh and load relationships
-        $resource->refresh();
-        if (! empty($this->showRelations)) {
-            $resource->load($this->showRelations);
-        }
+        DB::transaction(function () use ($resource, $validatedData): void {
+            $resource->update($validatedData);
+            $resource->refresh();
+            if (! empty($this->showRelations)) {
+                $resource->load($this->showRelations);
+            }
+        });
 
         return response()->json([
             'message' => $this->resourceName.' updated successfully',
@@ -186,7 +189,7 @@ abstract class BaseApiController extends Controller
 
         $this->authorize('delete', $resource);
 
-        $resource->delete();
+        DB::transaction(fn () => $resource->delete());
 
         return response()->json([
             'message' => $this->resourceName.' deleted successfully',
@@ -208,7 +211,7 @@ abstract class BaseApiController extends Controller
             ], JsonResponse::HTTP_BAD_REQUEST);
         }
 
-        $resource->restore();
+        DB::transaction(fn () => $resource->restore());
 
         return response()->json([
             'message' => $this->resourceName.' restored successfully',

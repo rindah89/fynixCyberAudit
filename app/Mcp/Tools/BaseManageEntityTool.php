@@ -483,7 +483,7 @@ abstract class BaseManageEntityTool extends Tool
                 class_uses_recursive($modelClass)
             );
 
-            $entity->delete();
+            DB::transaction(fn () => $entity->delete());
 
             return Response::text(json_encode([
                 'success' => true,

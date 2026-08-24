@@ -3,6 +3,7 @@
 use App\Http\Controllers\API\AiGovernanceController;
 use App\Http\Controllers\API\ApplicationController;
 use App\Http\Controllers\API\AssetController;
+use App\Http\Controllers\API\AuditCloseoutController;
 use App\Http\Controllers\API\AuditController;
 use App\Http\Controllers\API\AuditItemController;
 use App\Http\Controllers\API\AuditUniverseController;
@@ -82,6 +83,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/recovery-plans/{plan}/exercises', [OperationalResilienceController::class, 'storeExercise']);
     Route::post('/recovery-exercises/{exercise}/complete', [OperationalResilienceController::class, 'completeExercise']);
     Route::apiResource('audits', AuditController::class);
+    Route::get('/audits/{audit}/closeouts', [AuditCloseoutController::class, 'index']);
+    Route::post('/audits/{audit}/closeouts', [AuditCloseoutController::class, 'submit']);
+    Route::post('/audit-closeout-submissions/{submission}/review', [AuditCloseoutController::class, 'review']);
     Route::get('/auditable-entities', [AuditUniverseController::class, 'entities']);
     Route::post('/auditable-entities', [AuditUniverseController::class, 'storeEntity']);
     Route::put('/auditable-entities/{entity}', [AuditUniverseController::class, 'updateEntity']);

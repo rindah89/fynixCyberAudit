@@ -8,8 +8,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
-use Spatie\Activitylog\Support\LogOptions;
+use LogicException;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 class DataRequest extends Model
 {
@@ -35,6 +36,31 @@ class DataRequest extends Model
         'files',
         'code', // Optional code for the data request, can be null, defaults to Request-{id}
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(fn (DataRequest $request) => self::assertCloseoutMutable((int) $request->audit_id));
+        static::updating(function (DataRequest $request): void {
+            self::assertCloseoutMutable((int) $request->getRawOriginal('audit_id'));
+            if ((int) $request->audit_id !== (int) $request->getRawOriginal('audit_id')) {
+                self::assertCloseoutMutable((int) $request->audit_id);
+            }
+        });
+        static::deleting(fn (DataRequest $request) => self::assertCloseoutMutable((int) $request->audit_id));
+    }
+
+    private static function assertCloseoutMutable(int $auditId): void
+    {
+        if (! $auditId) {
+            return;
+        }
+
+        Audit::query()->whereKey($auditId)->lockForUpdate()->firstOrFail();
+
+        if (AuditCloseoutSubmission::freezesAudit($auditId)) {
+            throw new LogicException('Audit data requests are frozen while closeout is pending or approved.');
+        }
+    }
 
     public function createdBy(): BelongsTo
     {

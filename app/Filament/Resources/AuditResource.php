@@ -14,9 +14,11 @@ use App\Filament\Resources\AuditResource\Pages\ListAudits;
 use App\Filament\Resources\AuditResource\Pages\ViewAudit;
 use App\Filament\Resources\AuditResource\RelationManagers\AttachmentsRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\AuditItemRelationManager;
+use App\Filament\Resources\AuditResource\RelationManagers\CloseoutSubmissionsRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\DataRequestsRelationManager;
 use App\Filament\Resources\AuditResource\Widgets\AuditStatsWidget;
 use App\Models\Audit;
+use App\Models\AuditCloseoutSubmission;
 use App\Models\Control;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -66,6 +68,12 @@ class AuditResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema;
+    }
+
+    public static function canEdit(Model $record): bool
+    {
+        return parent::canEdit($record)
+            && ! AuditCloseoutSubmission::freezesAudit((int) $record->getKey());
     }
 
     public static function table(Table $table): Table
@@ -257,6 +265,7 @@ class AuditResource extends Resource
                 AuditItemRelationManager::class,
                 DataRequestsRelationManager::class,
                 AttachmentsRelationManager::class,
+                CloseoutSubmissionsRelationManager::class,
             ];
         }
 
@@ -297,6 +306,9 @@ class AuditResource extends Resource
 
     public static function completeAudit(Audit $audit): void
     {
+        if ($audit->engagementBaseline()->exists()) {
+            throw new \LogicException('Governed plan engagements use independent closeout review instead of direct completion.');
+        }
         foreach ($audit->auditItems as $auditItem) {
             // If the audit item is not completed, mark it as completed
             $auditItem->update(['status' => WorkflowStatus::COMPLETED]);

@@ -15,7 +15,7 @@ class AuditController extends BaseApiController
 
     protected array $indexRelations = ['manager', 'standard'];
 
-    protected array $showRelations = ['manager', 'standard', 'auditItems', 'engagementBaseline.launcher', 'engagementBaseline.planItem.plan'];
+    protected array $showRelations = ['manager', 'standard', 'auditItems', 'engagementBaseline.launcher', 'engagementBaseline.planItem.plan', 'closeoutSubmissions.submitter', 'closeoutSubmissions.review.reviewer'];
 
     protected array $searchableFields = ['title', 'description', 'audit_type'];
 
@@ -49,6 +49,8 @@ class AuditController extends BaseApiController
                 'standard',
                 'engagementBaseline.launcher',
                 'engagementBaseline.planItem.plan',
+                'closeoutSubmissions.submitter',
+                'closeoutSubmissions.review.reviewer',
             ]);
         } elseif (! empty($this->showRelations)) {
             $query->with($this->showRelations);

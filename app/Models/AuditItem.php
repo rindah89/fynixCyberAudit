@@ -11,8 +11,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Spatie\Activitylog\Support\LogOptions;
+use LogicException;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 class AuditItem extends Model
 {
@@ -31,6 +32,31 @@ class AuditItem extends Model
         'status' => WorkflowStatus::class,
         'effectiveness' => Effectiveness::class,
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(fn (AuditItem $item) => self::assertCloseoutMutable((int) $item->audit_id));
+        static::updating(function (AuditItem $item): void {
+            self::assertCloseoutMutable((int) $item->getRawOriginal('audit_id'));
+            if ((int) $item->audit_id !== (int) $item->getRawOriginal('audit_id')) {
+                self::assertCloseoutMutable((int) $item->audit_id);
+            }
+        });
+        static::deleting(fn (AuditItem $item) => self::assertCloseoutMutable((int) $item->audit_id));
+    }
+
+    private static function assertCloseoutMutable(int $auditId): void
+    {
+        if (! $auditId) {
+            return;
+        }
+
+        Audit::query()->whereKey($auditId)->lockForUpdate()->firstOrFail();
+
+        if (AuditCloseoutSubmission::freezesAudit($auditId)) {
+            throw new LogicException('Audit fieldwork is frozen while closeout is pending or approved.');
+        }
+    }
 
     public function audit(): BelongsTo
     {
