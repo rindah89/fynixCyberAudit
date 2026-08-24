@@ -56,6 +56,16 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
                     'notification_id' => $record->escalation->notification_id,
                     'delivered_at' => $record->escalation->delivered_at?->toISOString(),
                 ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
+            ExportColumn::make('knowledge_check_attempt_history')->label('Comprehension Check Attempts JSON')
+                ->state(fn (PolicyAcknowledgementAssignment $record): string => json_encode(
+                    $record->knowledgeCheckAttempts->sortBy('version')->map(fn ($attempt): array => [
+                        'version' => $attempt->version, 'submitted_by' => $attempt->submitted_by,
+                        'answers_snapshot' => $attempt->answers_snapshot, 'score_percentage' => $attempt->score_percentage,
+                        'question_snapshot' => $attempt->question_snapshot,
+                        'passed' => $attempt->passed, 'submitted_at' => $attempt->submitted_at?->toISOString(),
+                        'fingerprint' => $attempt->fingerprint,
+                    ])->values()->all(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                )),
             ExportColumn::make('campaign.due_at')->label('Due At'),
             ExportColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged At'),
             ExportColumn::make('acknowledgement.statement')->label('Statement'),
@@ -69,7 +79,7 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
 
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'reminders', 'escalation', 'acknowledgement']);
+        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'reminders', 'escalation', 'knowledgeCheckAttempts', 'acknowledgement']);
     }
 
     public static function getCompletedNotificationBody(Export $export): string

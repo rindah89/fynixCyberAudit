@@ -12,9 +12,13 @@ class PolicyAcknowledgementCampaign extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['policy_id', 'version', 'title', 'instructions', 'due_at', 'launched_by', 'launched_at', 'closed_by', 'closed_at', 'policy_snapshot', 'policy_fingerprint'];
+    protected $fillable = ['policy_id', 'version', 'title', 'instructions', 'due_at', 'launched_by', 'launched_at', 'closed_by', 'closed_at', 'policy_snapshot', 'policy_fingerprint', 'knowledge_check_snapshot', 'knowledge_check_fingerprint'];
 
-    protected $casts = ['due_at' => 'datetime', 'launched_at' => 'datetime', 'closed_at' => 'datetime', 'policy_snapshot' => 'array'];
+    protected $hidden = ['knowledge_check_snapshot'];
+
+    protected $appends = ['knowledge_check'];
+
+    protected $casts = ['due_at' => 'datetime', 'launched_at' => 'datetime', 'closed_at' => 'datetime', 'policy_snapshot' => 'array', 'knowledge_check_snapshot' => 'array'];
 
     protected static function booted(): void
     {
@@ -60,6 +64,25 @@ class PolicyAcknowledgementCampaign extends Model
     public function escalations(): HasMany
     {
         return $this->hasMany(PolicyAcknowledgementEscalation::class);
+    }
+
+    public function knowledgeCheckAttempts(): HasMany
+    {
+        return $this->hasMany(PolicyAcknowledgementKnowledgeCheckAttempt::class);
+    }
+
+    public function getKnowledgeCheckAttribute(): ?array
+    {
+        if (! $this->knowledge_check_snapshot) {
+            return null;
+        }
+
+        return [
+            'passing_percentage' => $this->knowledge_check_snapshot['passing_percentage'],
+            'max_attempts' => $this->knowledge_check_snapshot['max_attempts'],
+            'questions' => collect($this->knowledge_check_snapshot['questions'])
+                ->map(fn (array $question): array => collect($question)->except('correct_option')->all())->all(),
+        ];
     }
 
     public function getCampaignStatusAttribute(): string

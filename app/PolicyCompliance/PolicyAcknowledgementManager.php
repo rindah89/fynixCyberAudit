@@ -6,6 +6,7 @@ use App\Models\Policy;
 use App\Models\PolicyAcknowledgement;
 use App\Models\PolicyAcknowledgementAssignment;
 use App\Models\PolicyAcknowledgementCampaign;
+use App\Models\PolicyAcknowledgementKnowledgeCheckAttempt;
 use App\Models\User;
 use App\Notifications\PolicyAcknowledgementAssigned;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,6 +25,18 @@ class PolicyAcknowledgementManager
             $locked = Policy::query()->lockForUpdate()->findOrFail($policy->id);
             $this->authorizeManage($locked, $actor);
             $validated = Validator::make($data, self::launchRules())->validate();
+            foreach (data_get($validated, 'knowledge_check.questions', []) as $index => $question) {
+                if (count(array_unique($question['options'])) !== count($question['options'])) {
+                    throw ValidationException::withMessages([
+                        "knowledge_check.questions.{$index}.options" => 'Options must be distinct within each question.',
+                    ]);
+                }
+                if ((int) $question['correct_option'] >= count($question['options'])) {
+                    throw ValidationException::withMessages([
+                        "knowledge_check.questions.{$index}.correct_option" => 'The correct option must identify one of this question\'s options.',
+                    ]);
+                }
+            }
             if (! $locked->effective_date || $locked->effective_date->isFuture() || $locked->retired_date?->endOfDay()->isPast()) {
                 throw ValidationException::withMessages(['policy' => 'Acknowledgement campaigns require a currently effective, non-retired policy.']);
             }
@@ -46,6 +59,9 @@ class PolicyAcknowledgementManager
                 'version' => $version, 'title' => $validated['title'], 'instructions' => $validated['instructions'] ?? null,
                 'due_at' => $validated['due_at'], 'launched_by' => $actor->id, 'launched_at' => $launchedAt,
                 'policy_snapshot' => $policySnapshot, 'policy_fingerprint' => $fingerprint,
+                'knowledge_check_snapshot' => $validated['knowledge_check'] ?? null,
+                'knowledge_check_fingerprint' => isset($validated['knowledge_check'])
+                    ? hash('sha256', json_encode($validated['knowledge_check'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)) : null,
             ]);
             $campaign->assignments()->createMany($audienceIds->map(fn (int $userId): array => [
                 'user_id' => $userId, 'assigned_at' => $launchedAt,
@@ -120,6 +136,9 @@ class PolicyAcknowledgementManager
             if ($locked->acknowledgement()->lockForUpdate()->exists()) {
                 throw ValidationException::withMessages(['acknowledgement' => 'This assignment has already been acknowledged.']);
             }
+            if ($campaign->knowledge_check_snapshot && ! $locked->knowledgeCheckAttempts()->where('passed', true)->lockForUpdate()->exists()) {
+                throw ValidationException::withMessages(['knowledge_check' => 'A passing policy comprehension check is required before acknowledgement.']);
+            }
             $acknowledgedAt = now();
 
             return $locked->acknowledgement()->create([
@@ -136,6 +155,60 @@ class PolicyAcknowledgementManager
                 'policy_fingerprint' => $campaign->policy_fingerprint,
                 'acknowledged_at' => $acknowledgedAt,
             ])->load(['acknowledger:id,name,email', 'assignment.campaign.policy:id,code,name']);
+        }, 3);
+    }
+
+    public function submitKnowledgeCheck(PolicyAcknowledgementAssignment $assignment, User $actor, array $answers): PolicyAcknowledgementKnowledgeCheckAttempt
+    {
+        return DB::transaction(function () use ($assignment, $actor, $answers): PolicyAcknowledgementKnowledgeCheckAttempt {
+            $campaignId = PolicyAcknowledgementAssignment::query()->whereKey($assignment->id)->value('policy_acknowledgement_campaign_id');
+            $campaign = PolicyAcknowledgementCampaign::query()->lockForUpdate()->findOrFail($campaignId);
+            $locked = PolicyAcknowledgementAssignment::query()->lockForUpdate()->findOrFail($assignment->id);
+            if ($locked->policy_acknowledgement_campaign_id !== $campaign->id || $locked->user_id !== $actor->id) {
+                abort(403, 'Only the assigned user can submit this policy comprehension check.');
+            }
+            if ($campaign->closed_at || $locked->acknowledgement()->lockForUpdate()->exists()) {
+                throw ValidationException::withMessages(['assignment' => 'This assignment no longer accepts comprehension-check attempts.']);
+            }
+            $check = $campaign->knowledge_check_snapshot;
+            if (! is_array($check)) {
+                throw ValidationException::withMessages(['knowledge_check' => 'This campaign has no policy comprehension check.']);
+            }
+            $attempts = $locked->knowledgeCheckAttempts()->lockForUpdate()->count();
+            if ($locked->knowledgeCheckAttempts()->where('passed', true)->exists()) {
+                throw ValidationException::withMessages(['knowledge_check' => 'This comprehension check has already been passed.']);
+            }
+            if ($attempts >= (int) $check['max_attempts']) {
+                throw ValidationException::withMessages(['knowledge_check' => 'The maximum number of comprehension-check attempts has been reached.']);
+            }
+            $questions = collect($check['questions'])->keyBy('code');
+            if (collect(array_keys($answers))->sort()->values()->all() !== $questions->keys()->sort()->values()->all()) {
+                throw ValidationException::withMessages(['answers' => 'Provide exactly one answer for every comprehension-check question.']);
+            }
+            $answerSnapshot = [];
+            $correct = 0;
+            foreach ($questions as $code => $question) {
+                $selected = filter_var($answers[$code], FILTER_VALIDATE_INT);
+                if ($selected === false || $selected < 0 || $selected >= count($question['options'])) {
+                    throw ValidationException::withMessages(["answers.{$code}" => 'The selected option is invalid.']);
+                }
+                $answerSnapshot[] = ['code' => $code, 'selected_option' => $selected];
+                $correct += $selected === (int) $question['correct_option'] ? 1 : 0;
+            }
+            $score = intdiv($correct * 100, $questions->count());
+            $submittedAt = now()->startOfSecond();
+            $payload = [
+                'policy_acknowledgement_assignment_id' => $locked->id,
+                'policy_acknowledgement_campaign_id' => $campaign->id,
+                'version' => $attempts + 1, 'submitted_by' => $actor->id,
+                'answers_snapshot' => $answerSnapshot, 'question_snapshot' => $check,
+                'score_percentage' => $score, 'passed' => $score >= (int) $check['passing_percentage'],
+                'submitted_at' => $submittedAt->toISOString(),
+            ];
+
+            return $locked->knowledgeCheckAttempts()->create($payload + [
+                'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
+            ]);
         }, 3);
     }
 
@@ -158,7 +231,7 @@ class PolicyAcknowledgementManager
     public function assignments(User $actor): Builder
     {
         return PolicyAcknowledgementAssignment::query()->where('user_id', $actor->id)
-            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'escalation', 'acknowledgement:id,policy_acknowledgement_assignment_id,acknowledged_at'])
+            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'escalation', 'knowledgeCheckAttempts', 'acknowledgement:id,policy_acknowledgement_assignment_id,acknowledged_at'])
             ->latest('assigned_at');
     }
 
@@ -167,7 +240,7 @@ class PolicyAcknowledgementManager
         $policy = $campaign->relationLoaded('policy') ? $campaign->policy : $campaign->policy()->firstOrFail();
         $this->authorizeManage($policy, $actor);
 
-        return $campaign->assignments()->getQuery()->with(['campaign', 'user:id,name,email', 'delivery', 'reminders', 'escalation.recipient:id,name,email', 'acknowledgement.acknowledger:id,name,email'])->latest('assigned_at');
+        return $campaign->assignments()->getQuery()->with(['campaign', 'user:id,name,email', 'delivery', 'reminders', 'escalation.recipient:id,name,email', 'knowledgeCheckAttempts.submitter:id,name,email', 'acknowledgement.acknowledger:id,name,email'])->latest('assigned_at');
     }
 
     public static function launchRules(): array
@@ -178,6 +251,16 @@ class PolicyAcknowledgementManager
             'due_at' => ['required', 'date', 'after:now'],
             'audience_user_ids' => ['required', 'array', 'min:1', 'max:500'],
             'audience_user_ids.*' => ['required', 'integer', 'distinct', 'exists:users,id'],
+            'knowledge_check' => ['nullable', 'array:passing_percentage,max_attempts,questions'],
+            'knowledge_check.passing_percentage' => ['required_with:knowledge_check', 'integer', 'min:1', 'max:100'],
+            'knowledge_check.max_attempts' => ['required_with:knowledge_check', 'integer', 'min:1', 'max:5'],
+            'knowledge_check.questions' => ['required_with:knowledge_check', 'array', 'min:1', 'max:20'],
+            'knowledge_check.questions.*' => ['required', 'array:code,prompt,options,correct_option'],
+            'knowledge_check.questions.*.code' => ['required', 'string', 'regex:/^[a-z][a-z0-9_]{0,49}$/', 'distinct'],
+            'knowledge_check.questions.*.prompt' => ['required', 'string', 'max:1000'],
+            'knowledge_check.questions.*.options' => ['required', 'array', 'min:2', 'max:6'],
+            'knowledge_check.questions.*.options.*' => ['required', 'string', 'max:500'],
+            'knowledge_check.questions.*.correct_option' => ['required', 'integer', 'min:0', 'max:5'],
         ];
     }
 

@@ -103,6 +103,14 @@ class PolicyAcknowledgementResource extends Resource
                 TextEntry::make('escalation.delivered_at')->label('Policy-owner escalation delivered')->dateTime()->placeholder('Not escalated'),
                 TextEntry::make('escalation.notification_id')->label('Escalation notification ID')->copyable()->placeholder('Not escalated'),
                 TextEntry::make('escalation.fingerprint')->label('Escalation fingerprint')->copyable()->columnSpanFull()->placeholder('Not escalated'),
+                RepeatableEntry::make('knowledgeCheckAttempts')->label('Comprehension-check attempts')->schema([
+                    TextEntry::make('version'), TextEntry::make('score_percentage')->suffix('%'),
+                    TextEntry::make('passed')->badge()->formatStateUsing(fn (bool $state): string => $state ? 'Passed' : 'Not passed')
+                        ->color(fn (bool $state): string => $state ? 'success' : 'danger'),
+                    TextEntry::make('submitted_at')->dateTime(),
+                    TextEntry::make('answers_snapshot')->formatStateUsing(fn ($state): string => json_encode($state, JSON_THROW_ON_ERROR))->columnSpanFull(),
+                    TextEntry::make('fingerprint')->copyable()->columnSpanFull(),
+                ])->columnSpanFull(),
             ]),
         ]);
     }
@@ -110,7 +118,7 @@ class PolicyAcknowledgementResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->where('user_id', auth()->id())
-            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'escalation', 'acknowledgement']);
+            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'escalation', 'knowledgeCheckAttempts', 'acknowledgement']);
     }
 
     public static function getPages(): array

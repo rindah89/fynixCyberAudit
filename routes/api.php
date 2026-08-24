@@ -175,6 +175,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/policy-acknowledgements/mine', [PolicyComplianceController::class, 'myAcknowledgements']);
     Route::get('/policy-acknowledgement-campaigns/{campaign}/report', [PolicyComplianceController::class, 'acknowledgementReport']);
     Route::post('/policy-acknowledgement-assignments/{assignment}/acknowledge', [PolicyComplianceController::class, 'acknowledge']);
+    Route::post('/policy-acknowledgement-assignments/{assignment}/knowledge-check-attempts', [PolicyComplianceController::class, 'submitKnowledgeCheck']);
     Route::post('/policy-acknowledgement-campaigns/{campaign}/close', [PolicyComplianceController::class, 'closeAcknowledgementCampaign']);
     Route::post('/regulatory-sources', [RegulatoryChangeController::class, 'storeSource']);
     Route::put('/regulatory-sources/{source}', [RegulatoryChangeController::class, 'updateSource']);

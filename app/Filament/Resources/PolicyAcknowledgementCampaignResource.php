@@ -79,6 +79,10 @@ class PolicyAcknowledgementCampaignResource extends Resource
             TextEntry::make('closed_at')->dateTime()->placeholder('Open'),
             TextEntry::make('policy_fingerprint')->columnSpanFull()->copyable(),
             TextEntry::make('instructions')->columnSpanFull()->placeholder('No additional instructions'),
+            TextEntry::make('knowledge_check_fingerprint')->label('Comprehension-check fingerprint')->copyable()->columnSpanFull()->placeholder('No comprehension check'),
+            TextEntry::make('knowledge_check_snapshot')->label('Immutable comprehension-check definition')
+                ->formatStateUsing(fn ($state): ?string => $state ? json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) : null)
+                ->placeholder('No comprehension check')->columnSpanFull(),
         ])]);
     }
 

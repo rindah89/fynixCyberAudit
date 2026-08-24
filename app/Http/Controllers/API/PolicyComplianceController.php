@@ -10,6 +10,7 @@ use App\Http\Requests\ClosePolicyAcknowledgementCampaignRequest;
 use App\Http\Requests\LaunchPolicyAcknowledgementCampaignRequest;
 use App\Http\Requests\ListPolicyAcknowledgementsRequest;
 use App\Http\Requests\StorePolicyAttestationRequest;
+use App\Http\Requests\SubmitPolicyKnowledgeCheckRequest;
 use App\Models\Policy;
 use App\Models\PolicyAcknowledgementAssignment;
 use App\Models\PolicyAcknowledgementCampaign;
@@ -39,7 +40,12 @@ class PolicyComplianceController extends Controller
     public function acknowledgementReport(ListPolicyAcknowledgementsRequest $request, PolicyAcknowledgementCampaign $campaign, PolicyAcknowledgementManager $manager): JsonResponse
     {
         $assignments = $manager->report($campaign, $request->user())->paginate($request->integer('per_page', 50));
-        $assignments->through(fn (PolicyAcknowledgementAssignment $assignment) => $assignment->append('acknowledgement_status'));
+        $assignments->through(function (PolicyAcknowledgementAssignment $assignment): PolicyAcknowledgementAssignment {
+            $assignment->append('acknowledgement_status');
+            $assignment->knowledgeCheckAttempts->each->makeVisible('question_snapshot');
+
+            return $assignment;
+        });
 
         return response()->json($assignments);
     }
@@ -47,6 +53,13 @@ class PolicyComplianceController extends Controller
     public function acknowledge(AcknowledgePolicyCampaignRequest $request, PolicyAcknowledgementAssignment $assignment, PolicyAcknowledgementManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->acknowledge($assignment, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function submitKnowledgeCheck(SubmitPolicyKnowledgeCheckRequest $request, PolicyAcknowledgementAssignment $assignment, PolicyAcknowledgementManager $manager): JsonResponse
+    {
+        return response()->json([
+            'data' => $manager->submitKnowledgeCheck($assignment, $request->user(), $request->validated('answers')),
+        ], JsonResponse::HTTP_CREATED);
     }
 
     public function closeAcknowledgementCampaign(ClosePolicyAcknowledgementCampaignRequest $request, PolicyAcknowledgementCampaign $campaign, PolicyAcknowledgementManager $manager): JsonResponse
