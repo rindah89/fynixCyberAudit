@@ -83,6 +83,9 @@ class RolePermissionSeeder extends Seeder
             'Manage Risk Portfolio',
             'Manage Issue Lifecycle',
             'Verify Issue Closure',
+            'Read Compliance Cases',
+            'Investigate Compliance Cases',
+            'Manage Compliance Cases',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -124,6 +127,9 @@ class RolePermissionSeeder extends Seeder
             'Manage Risk Portfolio',
             'Manage Issue Lifecycle',
             'Verify Issue Closure',
+            'Read Compliance Cases',
+            'Investigate Compliance Cases',
+            'Manage Compliance Cases',
         ]);
 
         // Assign specific Permissions to Internal Auditor

@@ -6,6 +6,7 @@ namespace App\Providers;
 use Aliziodev\LaravelTaxonomy\Models\Taxonomy;
 use App\Models\AiSystem;
 use App\Models\BusinessService;
+use App\Models\ComplianceCase;
 use App\Models\ControlTestDefinition;
 use App\Models\Policy;
 use App\Models\PolicyObligation;
@@ -14,6 +15,7 @@ use App\Models\SurveyTemplate;
 use App\Models\VendorDocument;
 use App\Policies\AiSystemPolicy;
 use App\Policies\BusinessServicePolicy;
+use App\Policies\ComplianceCasePolicy;
 use App\Policies\ControlTestDefinitionPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\PolicyObligationPolicy;
@@ -45,6 +47,7 @@ class AuthServiceProvider extends ServiceProvider
         PolicyObligation::class => PolicyObligationPolicy::class,
         ControlTestDefinition::class => ControlTestDefinitionPolicy::class,
         BusinessService::class => BusinessServicePolicy::class,
+        ComplianceCase::class => ComplianceCasePolicy::class,
         AiSystem::class => AiSystemPolicy::class,
         Survey::class => SurveyPolicy::class,
         SurveyTemplate::class => SurveyTemplatePolicy::class,
