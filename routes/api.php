@@ -90,6 +90,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/audits/{audit}/governed-findings', [AuditFindingController::class, 'store']);
     Route::get('/audit-findings/{finding}', [AuditFindingController::class, 'show']);
     Route::post('/audit-findings/{finding}/management-responses', [AuditFindingController::class, 'respond']);
+    Route::post('/audit-findings/{finding}/remediation', [AuditFindingController::class, 'handoff']);
+    Route::post('/audit-finding-remediations/{remediation}/follow-ups', [AuditFindingController::class, 'followUp']);
     Route::get('/audits/{audit}/effort-budgets', [AuditEffortController::class, 'budgets']);
     Route::post('/audits/{audit}/effort-budgets', [AuditEffortController::class, 'storeBudget']);
     Route::get('/audits/{audit}/time-entries', [AuditEffortController::class, 'entries']);

@@ -17,4 +17,21 @@
     @empty
         <div>Awaiting accountable management response.</div>
     @endforelse
+    <hr>
+    <div class="font-semibold">Governed remediation and effectiveness follow-up</div>
+    @if ($finding->remediation)
+        <div><strong>Task:</strong> {{ $finding->remediation->task?->number }} · {{ $finding->remediation->task?->title }} · {{ $finding->remediation->task?->status }}</div>
+        <div><strong>Handed off by / at:</strong> {{ $finding->remediation->handoffActor?->name }} · {{ $finding->remediation->handed_off_at }}</div>
+        <div class="break-all"><strong>Handoff fingerprint:</strong> {{ $finding->remediation->fingerprint }}</div>
+        @forelse ($finding->remediation->followUps->sortBy('version') as $followUp)
+            <div><strong>Follow-up v{{ $followUp->version }} · {{ $followUp->outcome->getLabel() }}</strong> · {{ $followUp->reviewer?->name }} · {{ $followUp->reviewed_at }}<br>
+                <span class="whitespace-pre-wrap">{{ $followUp->summary }}</span><br>
+                <strong>Evidence reference:</strong> {{ $followUp->evidence_reference ?: 'None' }}<br>
+                <span class="break-all"><strong>Fingerprint:</strong> {{ $followUp->fingerprint }}</span></div>
+        @empty
+            <div>Awaiting independent effectiveness follow-up after task completion.</div>
+        @endforelse
+    @else
+        <div>No governed remediation handoff recorded.</div>
+    @endif
 </div>

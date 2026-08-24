@@ -53,4 +53,9 @@ class AuditFinding extends Model
     {
         return $this->hasOne(AuditManagementResponse::class)->latestOfMany('version');
     }
+
+    public function remediation(): HasOne
+    {
+        return $this->hasOne(AuditFindingRemediation::class);
+    }
 }

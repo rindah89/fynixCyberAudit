@@ -2,6 +2,7 @@
 
 namespace App\Remediation;
 
+use App\Enums\AuditFindingFollowUpOutcome;
 use App\Models\AuditItem;
 use App\Models\RemediationProject;
 use App\Models\RemediationTask;
@@ -10,6 +11,7 @@ use App\Suite\PpmGateway;
 use App\Support\Enterprise;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class Remediation
 {
@@ -54,36 +56,31 @@ class Remediation
     {
         $this->assertModule($actor);
 
-        if (! $project->isMember($actor)) {
-            abort(403, 'You are not a member of this remediation project.');
-        }
-
-        $title = $data['title'] ?? ($item->auditable->title ?? 'Remediate audit finding');
-
-        $task = RemediationTask::query()->create([
-            'remediation_project_id' => $project->id,
-            'number' => $this->nextTaskNumber($project),
-            'title' => $title,
-            'status' => 'Open',
-            'priority' => $data['priority'] ?? 'Medium',
-            'type' => $data['type'] ?? 'Remediation',
-            'owner_id' => $actor->id,
-            'assignee_id' => $data['assignee_id'] ?? null,
-            'due_date' => $data['due_date'] ?? null,
-            'weakness_description' => $item->auditor_notes,
-            'audit_item_id' => $item->id,
-        ]);
-
-        $gateway = app(PpmGateway::class);
-        if ($gateway->enabled()) {
-            try {
-                $gateway->publishTask($actor, $task);
-            } catch (\Throwable $exception) {
-                report($exception);
+        return DB::transaction(function () use ($actor, $item, $project, $data): RemediationTask {
+            $lockedProject = RemediationProject::query()->lockForUpdate()->findOrFail($project->id);
+            if (! $lockedProject->isMember($actor)) {
+                abort(403, 'You are not a member of this remediation project.');
             }
-        }
 
-        return $task;
+            $title = $data['title'] ?? ($item->auditable->title ?? 'Remediate audit finding');
+            $task = RemediationTask::query()->create([
+                'remediation_project_id' => $lockedProject->id,
+                'number' => $this->nextTaskNumber($lockedProject),
+                'title' => $title,
+                'status' => 'Open',
+                'priority' => $data['priority'] ?? 'Medium',
+                'type' => $data['type'] ?? 'Remediation',
+                'owner_id' => $actor->id,
+                'assignee_id' => $data['assignee_id'] ?? null,
+                'due_date' => $data['due_date'] ?? null,
+                'weakness_description' => $item->auditor_notes,
+                'audit_item_id' => $item->id,
+            ]);
+
+            $this->publishTaskAfterCommit($actor, $task);
+
+            return $task;
+        }, 3);
     }
 
     /**
@@ -95,23 +92,34 @@ class Remediation
         if (! $actor->isSuperAdmin() && ! $actor->can('Manage Remediation') && ! $actor->can('Manage Issue Lifecycle')) {
             abort(403, 'You cannot manage governance issue remediation.');
         }
-        if (! $project->isMember($actor)) {
-            abort(403, 'You are not a member of this remediation project.');
-        }
 
-        $task = RemediationTask::query()->create([
-            'remediation_project_id' => $project->id,
-            'number' => $this->nextTaskNumber($project),
-            'title' => $issue->title,
-            'status' => 'Open',
-            'priority' => $data['priority'] ?? 'Medium',
-            'type' => 'Governance Issue',
-            'owner_id' => $actor->id,
-            'assignee_id' => $data['assignee_id'] ?? null,
-            'due_date' => $data['due_date'],
-            'weakness_description' => $issue->description,
-        ]);
+        return DB::transaction(function () use ($actor, $issue, $project, $data): RemediationTask {
+            $lockedProject = RemediationProject::query()->lockForUpdate()->findOrFail($project->id);
+            if (! $lockedProject->isMember($actor)) {
+                abort(403, 'You are not a member of this remediation project.');
+            }
 
+            $task = RemediationTask::query()->create([
+                'remediation_project_id' => $lockedProject->id,
+                'number' => $this->nextTaskNumber($lockedProject),
+                'title' => $issue->title,
+                'status' => 'Open',
+                'priority' => $data['priority'] ?? 'Medium',
+                'type' => 'Governance Issue',
+                'owner_id' => $actor->id,
+                'assignee_id' => $data['assignee_id'] ?? null,
+                'due_date' => $data['due_date'],
+                'weakness_description' => $issue->description,
+            ]);
+
+            $this->publishTaskAfterCommit($actor, $task);
+
+            return $task;
+        }, 3);
+    }
+
+    private function publishTaskAfterCommit(User $actor, RemediationTask $task): void
+    {
         DB::afterCommit(function () use ($actor, $task): void {
             $gateway = app(PpmGateway::class);
             if ($gateway->enabled()) {
@@ -122,21 +130,25 @@ class Remediation
                 }
             }
         });
-
-        return $task;
     }
 
     public function updateTaskStatus(User $actor, RemediationTask $task, string $status): RemediationTask
     {
         $this->assertModule($actor);
 
-        if (! $task->project->isMember($actor)) {
-            abort(403, 'You are not a member of this remediation project.');
-        }
+        return DB::transaction(function () use ($actor, $task, $status): RemediationTask {
+            $locked = RemediationTask::query()->with('project')->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->project->isMember($actor)) {
+                abort(403, 'You are not a member of this remediation project.');
+            }
+            if ($locked->findingRemediation()->whereHas('followUps', fn ($query) => $query->where('outcome', AuditFindingFollowUpOutcome::Effective->value))->exists()) {
+                throw ValidationException::withMessages(['task' => 'A task with a final effective finding follow-up cannot be reopened.']);
+            }
 
-        $task->update(['status' => $status]);
+            $locked->update(['status' => $status]);
 
-        return $task->fresh();
+            return $locked->fresh();
+        }, 3);
     }
 
     private function assertModule(User $actor): void

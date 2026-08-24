@@ -66,6 +66,9 @@ class AuditFindingManager
             $locked = AuditFinding::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($finding->id);
             abort_unless($locked->accountable_owner_id === $actor->id || $actor->isSuperAdmin(), 403);
             $this->assertMutable($audit);
+            if ($locked->remediation()->exists()) {
+                throw ValidationException::withMessages(['finding' => 'Management-response history is frozen after governed remediation handoff.']);
+            }
             $validated = Validator::make($data, self::responseRules())->validate();
             $prior = $locked->responses()->orderBy('version')->lockForUpdate()->get();
             if ($prior->count() >= 20) {
