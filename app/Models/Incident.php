@@ -78,6 +78,11 @@ class Incident extends Model
         return $this->hasMany(IncidentEvidence::class);
     }
 
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(IncidentNotification::class);
+    }
+
     public function phaseTimestamp(IncidentPhase $phase): ?Carbon
     {
         $raw = $this->phase_timestamps[$phase->value] ?? null;

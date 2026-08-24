@@ -95,6 +95,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/incidents/{incident}/phase-transitions', [IncidentGovernanceController::class, 'transition']);
     Route::post('/incident-tasks/{task}/events', [IncidentGovernanceController::class, 'taskEvent']);
     Route::get('/incident-tasks/{task}/events', [IncidentGovernanceController::class, 'taskEvents']);
+    Route::get('/incidents/{incident}/notifications', [IncidentGovernanceController::class, 'notifications']);
+    Route::post('/incidents/{incident}/notifications', [IncidentGovernanceController::class, 'storeNotification']);
+    Route::post('/incident-notifications/{notification}/decisions', [IncidentGovernanceController::class, 'notificationDecision']);
+    Route::get('/incident-notifications/{notification}/events', [IncidentGovernanceController::class, 'notificationEvents']);
     Route::apiResource('audits', AuditController::class);
     Route::get('/audits/{audit}/governed-findings', [AuditFindingController::class, 'index']);
     Route::post('/audits/{audit}/governed-findings', [AuditFindingController::class, 'store']);

@@ -2,17 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Enums\IncidentNotificationAudience;
+use App\Enums\IncidentNotificationStatus;
 use App\Enums\IncidentPhase;
 use App\Enums\IncidentTaskStatus;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
+use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
 use App\Incidents\IncidentDesk;
+use App\Incidents\IncidentNotificationManager;
 use App\Models\Audit;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
 use App\Models\Incident;
+use App\Models\IncidentNotification;
 use App\Models\IncidentPhaseTransition;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentPlaybookTask;
@@ -518,6 +523,191 @@ class IncidentTest extends TestCase
         $migration = require database_path('migrations/2026_08_24_580000_create_incident_task_event_evidence.php');
         $migration->down();
         $this->assertDatabaseHas('incident_task_event_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+    }
+
+    public function test_manager_records_governed_notification_determination_and_delivery_history(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $reader = User::factory()->create();
+        $reader->assignRole('Regular User');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Customer data exposure', 'severity' => 'Critical', 'involves_data' => true,
+            'involves_pii' => true, 'is_breach' => true,
+        ]);
+        $incident->update(['root_cause' => 'Compromised service credential', 'business_impact' => 'Customer records exposed']);
+        $deadline = now()->addHours(72)->startOfSecond();
+
+        $response = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/notifications', [
+            'audience' => IncidentNotificationAudience::Regulator->value,
+            'framework' => 'GDPR Article 33', 'recipient' => 'Lead supervisory authority',
+            'deadline_at' => $deadline->toIso8601String(), 'rationale' => 'Assess the deliberate regulatory notification decision.',
+            'status' => IncidentNotificationStatus::Sent->value,
+        ])->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->assertNull($response->json('data'));
+
+        $notificationId = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/notifications', [
+            'audience' => IncidentNotificationAudience::Regulator->value,
+            'framework' => 'GDPR Article 33', 'recipient' => 'Lead supervisory authority',
+            'deadline_at' => $deadline->toIso8601String(), 'rationale' => 'Assess the deliberate regulatory notification decision.',
+        ])->assertCreated()->assertJsonPath('data.status', IncidentNotificationStatus::AssessmentPending->value)
+            ->json('data.id');
+        $notification = IncidentNotification::query()->findOrFail($notificationId);
+        $this->assertSame(1, $notification->events()->count());
+
+        $this->actingAs($reader)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'status' => IncidentNotificationStatus::Required->value, 'rationale' => 'Unauthorized decision.',
+        ])->assertForbidden();
+        $this->actingAs($manager)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'status' => IncidentNotificationStatus::Required->value,
+            'rationale' => 'The incident facts meet the deliberately selected notification framework.',
+        ])->assertOk()->assertJsonPath('notification.status', IncidentNotificationStatus::Required->value);
+        $this->assertSame('pending', $notification->fresh()->deadline_status);
+        $this->actingAs($manager)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'deadline_at' => null, 'rationale' => 'Required records cannot remove their deadline.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('deadline_at');
+        $this->actingAs($manager)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'status' => IncidentNotificationStatus::Prepared->value,
+            'delivery_reference' => 'DRAFT-REFERENCE',
+            'rationale' => 'Notification content was prepared outside Fynix.',
+        ])->assertOk();
+        $this->actingAs($manager)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'status' => IncidentNotificationStatus::Sent->value,
+            'delivery_reference' => null,
+            'rationale' => 'A sent decision cannot omit its external reference.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('delivery_reference');
+        $this->actingAs($manager)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'status' => IncidentNotificationStatus::Sent->value,
+            'delivery_reference' => 'REG-ACK-2026-0042',
+            'rationale' => 'Operator recorded external submission and acknowledgement reference.',
+        ])->assertOk()->assertJsonPath('notification.status', IncidentNotificationStatus::Sent->value);
+
+        $notification->refresh();
+        $this->assertNotNull($notification->sent_at);
+        $this->assertSame('not_applicable', $notification->deadline_status);
+        $this->assertSame(4, $notification->events()->count());
+        $event = $notification->events()->reorder()->latest('version')->firstOrFail();
+        $payload = [
+            'incident_id' => $event->incident_id, 'incident_notification_id' => $event->incident_notification_id,
+            'version' => $event->version, 'event_type' => $event->event_type,
+            'before_snapshot' => $event->before_snapshot, 'after_snapshot' => $event->after_snapshot,
+            'rationale' => $event->rationale, 'recorded_by' => $event->recorded_by,
+            'recorded_at' => $event->recorded_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $event->fingerprint);
+        $this->assertSame('REG-ACK-2026-0042', data_get($event->after_snapshot, 'delivery_reference'));
+        $this->assertSame('Compromised service credential', data_get($event->after_snapshot, 'incident.root_cause'));
+        $this->assertSame('Customer records exposed', data_get($event->after_snapshot, 'incident.business_impact'));
+        $this->assertNotEmpty(data_get($event->after_snapshot, 'incident.playbook_snapshot'));
+
+        $this->actingAs($manager)->postJson('/api/incident-notifications/'.$notification->id.'/decisions', [
+            'recipient' => 'Changed after delivery', 'rationale' => 'Terminal mutation.',
+        ])->assertUnprocessable();
+        $this->actingAs($reader)->getJson('/api/incidents/'.$incident->id.'/notifications')
+            ->assertOk()->assertJsonPath('data.0.events_count', 4);
+        $this->actingAs($reader)->getJson('/api/incident-notifications/'.$notification->id.'/events?per_page=2')
+            ->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('total', 4);
+        Livewire::actingAs($reader);
+        Livewire::test(NotificationsRelationManager::class, ['ownerRecord' => $incident, 'pageClass' => ViewIncident::class])
+            ->assertCanSeeTableRecords([$notification])
+            ->assertTableActionHidden('record_decision', $notification)
+            ->assertTableActionVisible('inspect_history', $notification);
+        $notification->load('events.actor:id,name');
+        $renderedHistory = view('filament.incident-notification-history', ['notification' => $notification])->render();
+        $this->assertStringContainsString('REG-ACK-2026-0042', $renderedHistory);
+        $this->assertStringContainsString($event->fingerprint, $renderedHistory);
+
+        try {
+            $event->update(['rationale' => 'Rewrite']);
+            $this->fail('Expected notification decision history to remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+
+        $migration = require database_path('migrations/2026_08_24_590000_create_governed_incident_notifications.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_notification_events', ['id' => $event->id, 'fingerprint' => $event->fingerprint]);
+    }
+
+    public function test_notification_service_reauthorizes_and_rejects_legacy_incidents(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $outsider = User::factory()->create();
+        $outsider->assignRole('Regular User');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Governed notification boundary', 'severity' => 'High',
+        ]);
+        $data = [
+            'audience' => IncidentNotificationAudience::Partner->value, 'recipient' => 'Processor contact',
+            'rationale' => 'Assess partner notification.',
+        ];
+
+        try {
+            app(IncidentNotificationManager::class)->register($outsider, $incident, $data);
+            $this->fail('Expected direct service authorization to fail.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $legacy = Incident::query()->create([
+            'number' => 'INC-2025-0099', 'title' => 'Legacy notification boundary',
+            'severity' => 'High', 'status' => 'Open', 'phase' => IncidentPhase::Identification,
+            'lead_id' => $manager->id, 'reporter_id' => $manager->id, 'detected_at' => now()->subYear(),
+        ]);
+        try {
+            app(IncidentNotificationManager::class)->register($manager, $legacy, $data);
+            $this->fail('Expected legacy incident notification governance to fail.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+        $this->assertDatabaseCount('incident_notifications', 0);
+        $this->assertDatabaseCount('incident_notification_events', 0);
+    }
+
+    public function test_notification_record_and_event_history_bounds_are_exact(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Bounded notification register', 'severity' => 'High',
+        ]);
+        $service = app(IncidentNotificationManager::class);
+        $first = null;
+        for ($index = 1; $index <= 100; $index++) {
+            $record = $service->register($manager, $incident, [
+                'audience' => IncidentNotificationAudience::Other->value,
+                'recipient' => 'Stakeholder '.$index, 'rationale' => 'Register bounded stakeholder '.$index.'.',
+            ]);
+            $first ??= $record;
+        }
+        $this->assertSame(100, $incident->notifications()->count());
+        try {
+            $service->register($manager, $incident, [
+                'audience' => IncidentNotificationAudience::Other->value,
+                'recipient' => 'Stakeholder 101', 'rationale' => 'One too many.',
+            ]);
+            $this->fail('Expected notification record bound to reject the 101st record.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+        $this->assertSame(100, $incident->notifications()->count());
+
+        for ($version = 2; $version <= 50; $version++) {
+            $service->recordDecision($manager, $first, [
+                'framework' => 'Deliberate framework version '.$version,
+                'rationale' => 'Update the governed assessment context.',
+            ]);
+        }
+        $this->assertSame(50, $first->events()->count());
+        try {
+            $service->recordDecision($manager, $first, [
+                'framework' => 'Event 51', 'rationale' => 'One too many.',
+            ]);
+            $this->fail('Expected notification event bound to reject the 51st event.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('notification', $exception->errors());
+        }
+        $this->assertSame(50, $first->events()->count());
     }
 
     private function acceptedEvidence(User $actor, string $path, string $contents): FileAttachment

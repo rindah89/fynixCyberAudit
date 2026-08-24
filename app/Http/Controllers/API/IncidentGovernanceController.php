@@ -5,14 +5,20 @@ namespace App\Http\Controllers\API;
 use App\Access\FileAccess;
 use App\Enums\IncidentPhase;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ListIncidentNotificationEventsRequest;
+use App\Http\Requests\ListIncidentNotificationsRequest;
 use App\Http\Requests\ListIncidentsRequest;
 use App\Http\Requests\ListIncidentTaskEventsRequest;
+use App\Http\Requests\RecordIncidentNotificationDecisionRequest;
 use App\Http\Requests\RecordIncidentTaskEventRequest;
 use App\Http\Requests\ShowIncidentRequest;
+use App\Http\Requests\StoreIncidentNotificationRequest;
 use App\Http\Requests\StoreIncidentRequest;
 use App\Http\Requests\TransitionIncidentPhaseRequest;
 use App\Incidents\IncidentDesk;
+use App\Incidents\IncidentNotificationManager;
 use App\Models\Incident;
+use App\Models\IncidentNotification;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentTask;
 use App\Models\IncidentTaskEvent;
@@ -39,6 +45,7 @@ class IncidentGovernanceController extends Controller
             'tasks' => fn ($query) => $query->with('assignee:id,name')->withCount('events'),
             'phaseTransitions.actor:id,name',
         ]);
+        $incident->loadCount('notifications');
 
         return response()->json(['data' => $incident]);
     }
@@ -81,6 +88,30 @@ class IncidentGovernanceController extends Controller
         $events->getCollection()->transform(fn (IncidentTaskEvent $event) => $this->visibleEvent($event, $request->user()));
 
         return response()->json($events);
+    }
+
+    public function notifications(ListIncidentNotificationsRequest $request, Incident $incident): JsonResponse
+    {
+        return response()->json($incident->notifications()->withCount('events')->latest('id')
+            ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function storeNotification(StoreIncidentNotificationRequest $request, Incident $incident, IncidentNotificationManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->register($request->user(), $incident, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function notificationDecision(RecordIncidentNotificationDecisionRequest $request, IncidentNotification $notification, IncidentNotificationManager $manager): JsonResponse
+    {
+        $event = $manager->recordDecision($request->user(), $notification, $request->validated());
+
+        return response()->json(['data' => $event->load('actor:id,name'), 'notification' => $notification->refresh()]);
+    }
+
+    public function notificationEvents(ListIncidentNotificationEventsRequest $request, IncidentNotification $notification): JsonResponse
+    {
+        return response()->json($notification->events()->with('actor:id,name')
+            ->paginate($request->integer('per_page', 50)));
     }
 
     private function visibleEvent(IncidentTaskEvent $event, User $actor): IncidentTaskEvent
