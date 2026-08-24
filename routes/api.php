@@ -21,6 +21,7 @@ use App\Http\Controllers\API\ExecutiveAuthorityBindingController;
 use App\Http\Controllers\API\FileAttachmentController;
 use App\Http\Controllers\API\GovernanceIssueLifecycleController;
 use App\Http\Controllers\API\ImplementationController;
+use App\Http\Controllers\API\IncidentGovernanceController;
 use App\Http\Controllers\API\OperationalResilienceController;
 use App\Http\Controllers\API\PolicyComplianceController;
 use App\Http\Controllers\API\PolicyController;
@@ -87,6 +88,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/business-services/{service}/recovery-plans', [OperationalResilienceController::class, 'storePlan']);
     Route::post('/recovery-plans/{plan}/exercises', [OperationalResilienceController::class, 'storeExercise']);
     Route::post('/recovery-exercises/{exercise}/complete', [OperationalResilienceController::class, 'completeExercise']);
+
+    Route::get('/incidents', [IncidentGovernanceController::class, 'index']);
+    Route::post('/incidents', [IncidentGovernanceController::class, 'store']);
+    Route::get('/incidents/{incident}', [IncidentGovernanceController::class, 'show']);
+    Route::post('/incidents/{incident}/phase-transitions', [IncidentGovernanceController::class, 'transition']);
     Route::apiResource('audits', AuditController::class);
     Route::get('/audits/{audit}/governed-findings', [AuditFindingController::class, 'index']);
     Route::post('/audits/{audit}/governed-findings', [AuditFindingController::class, 'store']);

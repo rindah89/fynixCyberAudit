@@ -13,8 +13,11 @@ class Incident extends Model
 {
     use HasFactory;
 
+    protected $appends = ['governance_status'];
+
     protected $fillable = [
         'number',
+        'incident_playbook_id',
         'title',
         'type',
         'severity',
@@ -30,6 +33,8 @@ class Incident extends Model
         'business_impact',
         'closure',
         'phase_timestamps',
+        'playbook_snapshot',
+        'governed_at',
     ];
 
     protected $casts = [
@@ -39,6 +44,8 @@ class Incident extends Model
         'involves_pii' => 'boolean',
         'is_breach' => 'boolean',
         'phase_timestamps' => 'array',
+        'playbook_snapshot' => 'array',
+        'governed_at' => 'datetime',
     ];
 
     public function lead(): BelongsTo
@@ -49,6 +56,16 @@ class Incident extends Model
     public function reporter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reporter_id');
+    }
+
+    public function playbook(): BelongsTo
+    {
+        return $this->belongsTo(IncidentPlaybook::class, 'incident_playbook_id');
+    }
+
+    public function phaseTransitions(): HasMany
+    {
+        return $this->hasMany(IncidentPhaseTransition::class)->orderBy('id');
     }
 
     public function tasks(): HasMany
@@ -66,5 +83,10 @@ class Incident extends Model
         $raw = $this->phase_timestamps[$phase->value] ?? null;
 
         return $raw ? Carbon::parse($raw) : null;
+    }
+
+    public function getGovernanceStatusAttribute(): string
+    {
+        return $this->governed_at === null ? 'legacy' : 'governed';
     }
 }

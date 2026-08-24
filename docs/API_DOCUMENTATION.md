@@ -758,3 +758,13 @@ curl -X POST "https://your-domain.com/api/controls/7/restore" \
 ## Support
 
 For issues or questions about the API, please create an issue on the Fynix Cyber Audit GitHub repository.
+## Governed cyber incidents
+
+The incidents module provides a deliberately operated register, not automated detection or SOAR. Reads require `List Incidents`/`Read Incidents` or `Manage Incidents`; creation requires `Create Incidents` or `Manage Incidents`; phase transitions require `Update Incidents` or `Manage Incidents`.
+
+- `GET /api/incidents?page=1&per_page=50`
+- `POST /api/incidents`
+- `GET /api/incidents/{incident}`
+- `POST /api/incidents/{incident}/phase-transitions`
+
+Create with `incident_playbook_id`, `title`, `severity`, `detected_at`, and optional `type`, `involves_data`, `involves_pii`, and `is_breach`. The server owns number, status, phase, lead/reporter, playbook snapshot, and initial transition. Advance with the exact next `phase` and a required `summary`. Responses expose the immutable attributable transition snapshots and fingerprints. See `docs/INCIDENT_RESPONSE.md` for bounds and limitations.

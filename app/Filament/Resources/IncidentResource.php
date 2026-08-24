@@ -4,11 +4,16 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\IncidentResource\Pages\ListIncidents;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
+use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Models\Incident;
 use App\Support\Enterprise;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class IncidentResource extends Resource
 {
@@ -30,7 +35,25 @@ class IncidentResource extends Resource
     public static function canAccess(): bool
     {
         return Enterprise::enabled('incidents')
-            && auth()->user()?->can('Manage Incidents');
+            && auth()->user()?->can('viewAny', Incident::class) === true;
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return $schema->components([
+            Section::make('Governed incident')->columns(3)->schema([
+                TextEntry::make('number'), TextEntry::make('title'), TextEntry::make('type')->placeholder('Not specified'),
+                TextEntry::make('severity')->badge()->color(fn (string $state) => self::severityColor($state)),
+                TextEntry::make('status')->badge()->color(fn (string $state) => self::statusColor($state)),
+                TextEntry::make('phase')->badge(),
+                TextEntry::make('governance_status')->label('Governance')->badge()->color(fn (string $state) => $state === 'governed' ? 'success' : 'gray'),
+                TextEntry::make('lead.name')->label('Lead'), TextEntry::make('reporter.name')->label('Reporter'),
+                TextEntry::make('detected_at')->dateTime(),
+                TextEntry::make('involves_data')->boolean(), TextEntry::make('involves_pii')->boolean(), TextEntry::make('is_breach')->boolean(),
+                TextEntry::make('playbook_snapshot.name')->label('Captured playbook'),
+                TextEntry::make('playbook_snapshot.description')->label('Captured playbook description')->columnSpanFull(),
+            ]),
+        ]);
     }
 
     public static function table(Table $table): Table
@@ -40,9 +63,20 @@ class IncidentResource extends Resource
                 TextColumn::make('number')->searchable(),
                 TextColumn::make('title')->searchable(),
                 TextColumn::make('phase')->badge(),
-                TextColumn::make('severity')->badge(),
-                TextColumn::make('status')->badge(),
+                TextColumn::make('severity')->badge()->color(fn (string $state) => self::severityColor($state)),
+                TextColumn::make('status')->badge()->color(fn (string $state) => self::statusColor($state)),
+                TextColumn::make('governance_status')->label('Governance')->badge()->color(fn (string $state) => $state === 'governed' ? 'success' : 'gray'),
             ]);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->with(['lead:id,name', 'reporter:id,name']);
+    }
+
+    public static function getRelations(): array
+    {
+        return [PhaseTransitionsRelationManager::class];
     }
 
     public static function getPages(): array
@@ -51,5 +85,19 @@ class IncidentResource extends Resource
             'index' => ListIncidents::route('/'),
             'view' => ViewIncident::route('/{record}'),
         ];
+    }
+
+    private static function severityColor(string $severity): string
+    {
+        return match ($severity) {
+            'Critical' => 'danger', 'High' => 'warning', 'Medium' => 'info', default => 'gray',
+        };
+    }
+
+    private static function statusColor(string $status): string
+    {
+        return match ($status) {
+            'Closed', 'Completed' => 'success', 'Open', 'In Progress' => 'warning', 'Cancelled' => 'gray', default => 'info',
+        };
     }
 }
