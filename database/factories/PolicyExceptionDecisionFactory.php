@@ -20,6 +20,7 @@ class PolicyExceptionDecisionFactory extends Factory
             'name' => $exception->name, 'description' => $exception->description, 'justification' => $exception->justification,
             'risk_assessment' => $exception->risk_assessment, 'compensating_controls' => $exception->compensating_controls,
             'effective_date' => $exception->effective_date?->toDateString(), 'expiration_date' => $exception->expiration_date?->toDateString(),
+            'review_frequency_days' => $exception->review_frequency_days,
             'requested_by' => $exception->requested_by, 'requested_date' => $exception->requested_date?->toDateString(),
             'submitted_at' => $exception->submitted_at?->toISOString(), 'governance_snapshot' => $exception->governance_snapshot,
             'governance_fingerprint' => $exception->governance_fingerprint,
@@ -36,7 +37,14 @@ class PolicyExceptionDecisionFactory extends Factory
     public function configure(): static
     {
         return $this->afterCreating(function ($decision): void {
-            $decision->exception->update(['status' => PolicyExceptionStatus::Approved, 'approved_by' => $decision->decided_by]);
+            $decision->exception->update([
+                'status' => PolicyExceptionStatus::Approved,
+                'approved_by' => $decision->decided_by,
+                'next_review_at' => min(
+                    now()->addDays((int) $decision->exception->review_frequency_days),
+                    $decision->exception->expiration_date->endOfDay(),
+                ),
+            ]);
         });
     }
 }

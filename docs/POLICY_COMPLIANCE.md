@@ -14,11 +14,13 @@ The workflow records deliberate policy content and human approval. It does not a
 
 ## Governed policy exceptions
 
-A policy owner or authenticated user with policy read access requests a time-bounded exception with description, business justification, risk assessment, compensating controls, and future effective/expiration dates. The server owns pending status, requester/date/time, current policy and approved-revision context snapshot, and SHA-256 fingerprint. Request content is immutable through product interfaces.
+A policy owner or authenticated user with policy read access requests a time-bounded exception with description, business justification, risk assessment, compensating controls, effective/expiration dates, and a monitoring frequency from one to 365 days. The server owns pending status, requester/date/time, current policy and approved-revision context snapshot, and SHA-256 fingerprint. Request content is immutable through product interfaces.
 
 A different user with `Update Policies` approves or denies a pending request. Approval is rejected if the policy or approved-revision context changed after submission; an independent denial terminalizes stale evidence so a replacement can be submitted. An approved exception may later receive one attributable revocation decision. Every decision is versioned and retains the complete pre-decision exception snapshot, summary, actor/time, and fingerprint. Only approved exceptions inside their effective window qualify an attestation; revocation immediately removes eligibility.
 
-Authorized users inspect complete paginated history under **Policies → Policy exception history** or through REST, with private relation-scoped export. Existing exception rows without a governance fingerprint are visibly labeled `Legacy` and cannot enter the governed decision service. Previously approved, in-window legacy rows remain eligible for existing attestations for backward compatibility, but are not governed request/decision evidence. The product records deliberate requests and decisions, not legal approval, risk quantification, compensating-control effectiveness, electronic signatures, automatic expiry decisions, monitoring, or remediation.
+Approval schedules the first review at the requested frequency, capped by the expiration date. A different `Update Policies` user from both the requester and latest decision maker records an append-only monitoring review with `effective`, `needs_action`, or `revoke_recommended`, a summary, a deliberate control-effectiveness statement, and an optional operator-supplied evidence reference. The server snapshots the approved exception, latest decision, approved policy context, current policy context, actor/time, next review date, and SHA-256 fingerprint. A changed policy context cannot be confirmed effective. `needs_action` and `revoke_recommended` derive persistent `action_required` state until a later current-context effective review or revocation; due and overdue state are derived from the server-owned next-review date.
+
+Authorized users inspect complete paginated request, decision, and monitoring history under **Policies → Policy exception history** or through REST, with private relation-scoped export. Existing exception rows without a governance fingerprint are visibly labeled `Legacy` and cannot enter the governed decision or monitoring service. Previously approved, in-window legacy rows remain eligible for existing attestations for backward compatibility, but are not governed request/decision evidence. The product records deliberate requests, decisions, and monitoring judgments. It does not prove legal approval, quantify risk, verify the evidence reference, validate compensating-control effectiveness, provide electronic signatures, make automatic expiry decisions, collect evidence automatically, or execute remediation.
 
 ## Regulatory change inventory
 
@@ -90,6 +92,8 @@ Submit, inspect, decide, and revoke governed policy exceptions:
 - `POST /api/policies/{policy}/exception-requests`
 - `GET /api/policies/{policy}/exception-requests?page=1&per_page=50`
 - `POST /api/policy-exceptions/{exception}/decisions`
+- `POST /api/policy-exceptions/{exception}/monitoring-reviews`
+- `GET /api/policy-exceptions/{exception}/monitoring-reviews?page=1&per_page=50`
 
 Create an obligation:
 

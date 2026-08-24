@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\PolicyExceptionMonitoringOutcome;
+use App\Enums\PolicyExceptionMonitoringState;
 use App\Enums\PolicyExceptionStatus;
 use Database\Factories\PolicyExceptionFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,6 +24,8 @@ class PolicyException extends Model
     /** @use HasFactory<PolicyExceptionFactory> */
     use HasFactory, SoftDeletes;
 
+    protected $appends = ['monitoring_status'];
+
     protected $fillable = [
         'policy_id',
         'name',
@@ -36,6 +40,9 @@ class PolicyException extends Model
         'submitted_at',
         'effective_date',
         'expiration_date',
+        'review_frequency_days',
+        'next_review_at',
+        'latest_monitoring_outcome',
         'requested_by',
         'approved_by',
         'created_by',
@@ -52,6 +59,9 @@ class PolicyException extends Model
         'requested_date' => 'date',
         'effective_date' => 'date',
         'expiration_date' => 'date',
+        'review_frequency_days' => 'integer',
+        'next_review_at' => 'datetime',
+        'latest_monitoring_outcome' => PolicyExceptionMonitoringOutcome::class,
         'governance_snapshot' => 'array',
         'submitted_at' => 'datetime',
         'created_at' => 'datetime',
@@ -74,15 +84,17 @@ class PolicyException extends Model
 
         static::updating(function ($model) {
             if ($model->getRawOriginal('governance_fingerprint')) {
-                $allowed = ['status', 'approved_by', 'updated_by', 'updated_at'];
+                $allowed = ['status', 'approved_by', 'next_review_at', 'latest_monitoring_outcome', 'updated_by', 'updated_at'];
                 if (array_diff(array_keys($model->getDirty()), $allowed) !== []) {
                     throw new \LogicException('Governed policy exception requests are immutable.');
                 }
-                $from = PolicyExceptionStatus::from($model->getRawOriginal('status'));
-                $valid = ($from === PolicyExceptionStatus::Pending && in_array($model->status, [PolicyExceptionStatus::Approved, PolicyExceptionStatus::Denied], true))
-                    || ($from === PolicyExceptionStatus::Approved && $model->status === PolicyExceptionStatus::Revoked);
-                if (! $valid) {
-                    throw new \LogicException('The governed policy exception transition is invalid.');
+                if ($model->isDirty('status')) {
+                    $from = PolicyExceptionStatus::from($model->getRawOriginal('status'));
+                    $valid = ($from === PolicyExceptionStatus::Pending && in_array($model->status, [PolicyExceptionStatus::Approved, PolicyExceptionStatus::Denied], true))
+                        || ($from === PolicyExceptionStatus::Approved && $model->status === PolicyExceptionStatus::Revoked);
+                    if (! $valid) {
+                        throw new \LogicException('The governed policy exception transition is invalid.');
+                    }
                 }
             }
             if (auth()->check()) {
@@ -139,6 +151,34 @@ class PolicyException extends Model
     public function decisions(): HasMany
     {
         return $this->hasMany(PolicyExceptionDecision::class);
+    }
+
+    public function monitoringReviews(): HasMany
+    {
+        return $this->hasMany(PolicyExceptionMonitoringReview::class);
+    }
+
+    public function getMonitoringStatusAttribute(): PolicyExceptionMonitoringState
+    {
+        if (! $this->governance_fingerprint) {
+            return PolicyExceptionMonitoringState::Legacy;
+        }
+        if ($this->status !== PolicyExceptionStatus::Approved) {
+            return PolicyExceptionMonitoringState::from($this->status->value);
+        }
+        if ($this->isExpired()) {
+            return PolicyExceptionMonitoringState::Expired;
+        }
+        if (in_array($this->latest_monitoring_outcome?->value, ['needs_action', 'revoke_recommended'], true)) {
+            return PolicyExceptionMonitoringState::ActionRequired;
+        }
+        if (! $this->next_review_at) {
+            return PolicyExceptionMonitoringState::ReviewRequired;
+        }
+
+        return $this->next_review_at->isPast()
+            ? PolicyExceptionMonitoringState::ReviewOverdue
+            : PolicyExceptionMonitoringState::MonitoringCurrent;
     }
 
     /**

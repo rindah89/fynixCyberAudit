@@ -165,6 +165,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/policies/{policy}/exception-requests', [PolicyExceptionGovernanceController::class, 'index']);
     Route::post('/policies/{policy}/exception-requests', [PolicyExceptionGovernanceController::class, 'store']);
     Route::post('/policy-exceptions/{exception}/decisions', [PolicyExceptionGovernanceController::class, 'decide']);
+    Route::post('/policy-exceptions/{exception}/monitoring-reviews', [PolicyExceptionGovernanceController::class, 'monitor']);
+    Route::get('/policy-exceptions/{exception}/monitoring-reviews', [PolicyExceptionGovernanceController::class, 'monitoringReviews']);
     Route::get('/policies/{policy}/revisions', [PolicyRevisionController::class, 'index']);
     Route::post('/policies/{policy}/revisions', [PolicyRevisionController::class, 'store']);
     Route::post('/policy-revisions/{revision}/review', [PolicyRevisionController::class, 'review']);

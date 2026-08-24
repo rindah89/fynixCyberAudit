@@ -26,12 +26,13 @@ class PolicyExceptionGovernanceManager
             }
             $validated = Validator::make($data, self::requestRules())->validate();
             $requestedAt = now()->startOfSecond();
-            $context = $this->policyContext($locked, true);
+            $context = $this->currentPolicyContext($locked, true);
             $request = [
                 'name' => $validated['name'], 'description' => $validated['description'] ?? null,
                 'justification' => $validated['justification'], 'risk_assessment' => $validated['risk_assessment'],
                 'compensating_controls' => $validated['compensating_controls'],
                 'effective_date' => $validated['effective_date'], 'expiration_date' => $validated['expiration_date'],
+                'review_frequency_days' => $validated['review_frequency_days'] ?? 90,
             ];
             $snapshot = $context + ['request' => $request];
             $payload = ['policy_id' => $locked->id, 'requested_by' => $actor->id, 'requested_at' => $requestedAt->toISOString(), 'governance_snapshot' => $snapshot];
@@ -63,7 +64,7 @@ class PolicyExceptionGovernanceManager
             $decision = PolicyExceptionDecisionType::from($validated['decision']);
             $this->assertDecisionAllowed($locked, $decision);
             if ($decision === PolicyExceptionDecisionType::Approved
-                && $this->policyContext($policy, true) !== collect($locked->governance_snapshot)->only(['policy', 'approved_revision', 'revision_governance_status', 'deleted_at'])->all()) {
+                && $this->currentPolicyContext($policy, true) !== collect($locked->governance_snapshot)->only(['policy', 'approved_revision', 'revision_governance_status', 'deleted_at'])->all()) {
                 throw ValidationException::withMessages(['exception' => 'The policy approval context changed. Deny this stale request before submitting a replacement.']);
             }
             $version = ((int) $locked->decisions()->max('version')) + 1;
@@ -73,6 +74,7 @@ class PolicyExceptionGovernanceManager
                 'name' => $locked->name, 'description' => $locked->description, 'justification' => $locked->justification,
                 'risk_assessment' => $locked->risk_assessment, 'compensating_controls' => $locked->compensating_controls,
                 'effective_date' => $locked->effective_date?->toDateString(), 'expiration_date' => $locked->expiration_date?->toDateString(),
+                'review_frequency_days' => $locked->review_frequency_days,
                 'requested_by' => $locked->requested_by, 'requested_date' => $locked->requested_date?->toDateString(),
                 'submitted_at' => $locked->submitted_at?->toISOString(), 'governance_snapshot' => $locked->governance_snapshot,
                 'governance_fingerprint' => $locked->governance_fingerprint,
@@ -83,9 +85,20 @@ class PolicyExceptionGovernanceManager
                 'decided_by' => $actor->id, 'decided_at' => $decidedAt->toISOString(),
             ];
             $record = $locked->decisions()->create($payload + ['fingerprint' => self::fingerprint($payload)]);
+            $monitoringStart = now()->startOfSecond();
+            if ($locked->effective_date->startOfDay()->greaterThan($monitoringStart)) {
+                $monitoringStart = $locked->effective_date->startOfDay();
+            }
+            $initialReviewAt = min(
+                $monitoringStart->addDays((int) $locked->review_frequency_days),
+                $locked->expiration_date->endOfDay(),
+            );
             $locked->update([
                 'status' => PolicyExceptionStatus::from($decision->value),
                 'approved_by' => $decision === PolicyExceptionDecisionType::Approved ? $actor->id : $locked->approved_by,
+                'next_review_at' => $decision === PolicyExceptionDecisionType::Approved
+                    ? $initialReviewAt
+                    : $locked->next_review_at,
             ]);
 
             return $record->load(['decider:id,name', 'exception.requester:id,name', 'exception.decisions.decider:id,name']);
@@ -97,7 +110,7 @@ class PolicyExceptionGovernanceManager
         $this->authorizeWorkspace($policy, $actor);
 
         return PolicyException::query()->where('policy_id', $policy->id)->whereNotNull('governance_fingerprint')
-            ->with(['requester:id,name', 'approver:id,name', 'decisions.decider:id,name'])->latest('submitted_at');
+            ->with(['requester:id,name', 'approver:id,name', 'decisions.decider:id,name', 'monitoringReviews.reviewer:id,name'])->latest('submitted_at');
     }
 
     public static function requestRules(): array
@@ -108,6 +121,7 @@ class PolicyExceptionGovernanceManager
             'compensating_controls' => ['required', 'string', 'max:30000'],
             'effective_date' => ['required', 'date_format:Y-m-d', 'after_or_equal:today'],
             'expiration_date' => ['required', 'date_format:Y-m-d', 'after:effective_date'],
+            'review_frequency_days' => ['sometimes', 'integer', 'between:1,365'],
         ];
     }
 
@@ -121,7 +135,7 @@ class PolicyExceptionGovernanceManager
         abort_unless($policy->owner_id === $actor->id || $actor->can('Read Policies') || $actor->can('Update Policies'), 403, 'You cannot access this policy exception workspace.');
     }
 
-    private function policyContext(Policy $policy, bool $lock = false): array
+    public function currentPolicyContext(Policy $policy, bool $lock = false): array
     {
         $revision = $policy->currentApprovedRevision()->first();
         $revisionManager = app(PolicyRevisionManager::class);

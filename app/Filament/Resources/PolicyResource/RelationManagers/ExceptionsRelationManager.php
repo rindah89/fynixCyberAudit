@@ -3,10 +3,12 @@
 namespace App\Filament\Resources\PolicyResource\RelationManagers;
 
 use App\Enums\PolicyExceptionDecisionType;
+use App\Enums\PolicyExceptionMonitoringOutcome;
 use App\Enums\PolicyExceptionStatus;
 use App\Filament\Exports\PolicyExceptionExporter;
 use App\Models\PolicyException;
 use App\PolicyCompliance\PolicyExceptionGovernanceManager;
+use App\PolicyCompliance\PolicyExceptionMonitoringManager;
 use Filament\Actions\Action;
 use Filament\Actions\ExportAction;
 use Filament\Forms\Components\DatePicker;
@@ -30,6 +32,7 @@ class ExceptionsRelationManager extends RelationManager
         return $table->modifyQueryUsing(fn (Builder $query) => $query->with([
             'requester' => fn ($query) => $query->withTrashed(), 'approver' => fn ($query) => $query->withTrashed(),
             'decisions.decider' => fn ($query) => $query->withTrashed(),
+            'monitoringReviews.reviewer' => fn ($query) => $query->withTrashed(),
         ]))->defaultSort('created_at', 'desc')->columns([
             TextColumn::make('name')->searchable()->sortable()->wrap()->limit(50),
             TextColumn::make('status')->badge()->sortable(),
@@ -39,6 +42,9 @@ class ExceptionsRelationManager extends RelationManager
             TextColumn::make('requester.name')->label('Requested by'),
             TextColumn::make('effective_date')->date()->sortable(),
             TextColumn::make('expiration_date')->date()->sortable(),
+            TextColumn::make('latest_monitoring_outcome')->label('Latest monitoring')->badge()->sortable(),
+            TextColumn::make('monitoring_status')->label('Monitoring state')->badge(),
+            TextColumn::make('next_review_at')->label('Next monitoring review')->dateTime()->sortable(),
             TextColumn::make('submitted_at')->dateTime()->sortable(),
         ])->filters([SelectFilter::make('status')->options(PolicyExceptionStatus::class)])
             ->headerActions([
@@ -53,6 +59,7 @@ class ExceptionsRelationManager extends RelationManager
                         Textarea::make('compensating_controls')->required()->maxLength(30000),
                         DatePicker::make('effective_date')->required()->minDate(today()),
                         DatePicker::make('expiration_date')->required()->after('effective_date'),
+                        TextInput::make('review_frequency_days')->label('Review frequency (days)')->numeric()->integer()->minValue(1)->maxValue(365)->default(90)->required(),
                     ])->action(fn (array $data) => app(PolicyExceptionGovernanceManager::class)->submit($this->getOwnerRecord(), auth()->user(), $data)),
                 ExportAction::make()->exporter(PolicyExceptionExporter::class)
                     ->visible(fn (): bool => (bool) auth()->user()?->can('Read Policies')),
@@ -71,6 +78,16 @@ class ExceptionsRelationManager extends RelationManager
                             : [PolicyExceptionDecisionType::Revoked->value => __('Revoked')])->required(),
                         Textarea::make('decision_summary')->required()->maxLength(30000),
                     ])->action(fn (PolicyException $record, array $data) => app(PolicyExceptionGovernanceManager::class)->decide($record, auth()->user(), $data)),
+                Action::make('monitor')->label('Record monitoring review')->icon('heroicon-o-clipboard-document-check')
+                    ->visible(fn (PolicyException $record): bool => (bool) $record->governance_fingerprint
+                        && $record->isActive() && auth()->user()?->can('Update Policies')
+                        && ! in_array(auth()->id(), [$record->requested_by, $record->decisions->sortByDesc('version')->first()?->decided_by], true))
+                    ->schema([
+                        Select::make('outcome')->options(PolicyExceptionMonitoringOutcome::class)->required(),
+                        Textarea::make('review_summary')->required()->maxLength(30000),
+                        Textarea::make('control_effectiveness')->required()->maxLength(30000),
+                        TextInput::make('evidence_reference')->maxLength(255),
+                    ])->action(fn (PolicyException $record, array $data) => app(PolicyExceptionMonitoringManager::class)->review($record, auth()->user(), $data)),
             ]);
     }
 

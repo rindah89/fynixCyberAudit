@@ -97,6 +97,11 @@ class PolicyExceptionFactory extends Factory
         return $this->pending()->afterMaking(function (PolicyException $exception): void {
             $requester = User::factory()->create();
             $submittedAt = now()->startOfSecond();
+            $exception->effective_date = now()->startOfDay();
+            $exception->expiration_date = now()->addMonths(3)->startOfDay();
+            $exception->risk_assessment ??= 'Governed factory risk assessment.';
+            $exception->compensating_controls ??= 'Governed factory compensating controls.';
+            $exception->review_frequency_days = 90;
             $exception->requested_by = $requester->id;
             $exception->requested_date = $submittedAt->toDateString();
             $exception->submitted_at = $submittedAt;
@@ -106,6 +111,7 @@ class PolicyExceptionFactory extends Factory
                 'compensating_controls' => $exception->compensating_controls,
                 'effective_date' => $exception->effective_date?->toDateString(),
                 'expiration_date' => $exception->expiration_date?->toDateString(),
+                'review_frequency_days' => $exception->review_frequency_days,
             ];
             $policy = $exception->policy;
             $snapshot = [

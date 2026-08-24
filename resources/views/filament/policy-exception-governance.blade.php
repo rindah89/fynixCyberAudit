@@ -6,6 +6,8 @@
         <div><dt class="font-medium">Submitted at</dt><dd>{{ $exception->submitted_at }}</dd></div>
         <div><dt class="font-medium">Effective date</dt><dd>{{ $exception->effective_date?->toDateString() }}</dd></div>
         <div><dt class="font-medium">Expiration date</dt><dd>{{ $exception->expiration_date?->toDateString() }}</dd></div>
+        <div><dt class="font-medium">Review frequency</dt><dd>{{ $exception->review_frequency_days ? $exception->review_frequency_days.' days' : 'Not governed' }}</dd></div>
+        <div><dt class="font-medium">Next monitoring review</dt><dd>{{ $exception->next_review_at }}</dd></div>
         @foreach (['description' => 'Description', 'justification' => 'Justification', 'risk_assessment' => 'Risk assessment', 'compensating_controls' => 'Compensating controls'] as $field => $label)
             <div class="sm:col-span-2"><dt class="font-medium">{{ $label }}</dt><dd class="whitespace-pre-wrap">{{ $exception->{$field} }}</dd></div>
         @endforeach
@@ -22,6 +24,16 @@
             <div>{{ $decision->decider?->name }} · {{ $decision->decided_at }}</div>
             <p class="mt-2 whitespace-pre-wrap">{{ $decision->decision_summary }}</p>
             <div class="mt-2 break-all font-mono text-xs">{{ $decision->fingerprint }}</div>
+        </div>
+    @endforeach
+    @foreach ($exception->monitoringReviews->sortByDesc('version') as $review)
+        <div class="rounded-lg border p-3">
+            <div class="font-medium">Monitoring review v{{ $review->version }} — {{ $review->outcome->getLabel() }}</div>
+            <div>{{ $review->reviewer?->name }} · {{ $review->reviewed_at }}</div>
+            <p class="mt-2 whitespace-pre-wrap">{{ $review->review_summary }}</p>
+            <p class="mt-2 whitespace-pre-wrap">{{ $review->control_effectiveness }}</p>
+            @if ($review->evidence_reference)<div class="mt-2">Operator-supplied reference: {{ $review->evidence_reference }}</div>@endif
+            <div class="mt-2 break-all font-mono text-xs">{{ $review->fingerprint }}</div>
         </div>
     @endforeach
 </div>
