@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -28,8 +29,11 @@ class PolicyException extends Model
         'justification',
         'risk_assessment',
         'compensating_controls',
+        'governance_snapshot',
+        'governance_fingerprint',
         'status',
         'requested_date',
+        'submitted_at',
         'effective_date',
         'expiration_date',
         'requested_by',
@@ -48,6 +52,8 @@ class PolicyException extends Model
         'requested_date' => 'date',
         'effective_date' => 'date',
         'expiration_date' => 'date',
+        'governance_snapshot' => 'array',
+        'submitted_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
@@ -67,8 +73,25 @@ class PolicyException extends Model
         });
 
         static::updating(function ($model) {
+            if ($model->getRawOriginal('governance_fingerprint')) {
+                $allowed = ['status', 'approved_by', 'updated_by', 'updated_at'];
+                if (array_diff(array_keys($model->getDirty()), $allowed) !== []) {
+                    throw new \LogicException('Governed policy exception requests are immutable.');
+                }
+                $from = PolicyExceptionStatus::from($model->getRawOriginal('status'));
+                $valid = ($from === PolicyExceptionStatus::Pending && in_array($model->status, [PolicyExceptionStatus::Approved, PolicyExceptionStatus::Denied], true))
+                    || ($from === PolicyExceptionStatus::Approved && $model->status === PolicyExceptionStatus::Revoked);
+                if (! $valid) {
+                    throw new \LogicException('The governed policy exception transition is invalid.');
+                }
+            }
             if (auth()->check()) {
                 $model->updated_by = auth()->id();
+            }
+        });
+        static::deleting(function (self $model): void {
+            if ($model->governance_fingerprint) {
+                throw new \LogicException('Governed policy exception requests cannot be deleted.');
             }
         });
     }
@@ -78,7 +101,7 @@ class PolicyException extends Model
      */
     public function policy(): BelongsTo
     {
-        return $this->belongsTo(Policy::class);
+        return $this->belongsTo(Policy::class)->withTrashed();
     }
 
     /**
@@ -86,7 +109,7 @@ class PolicyException extends Model
      */
     public function requester(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'requested_by');
+        return $this->belongsTo(User::class, 'requested_by')->withTrashed();
     }
 
     /**
@@ -94,7 +117,7 @@ class PolicyException extends Model
      */
     public function approver(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'approved_by');
+        return $this->belongsTo(User::class, 'approved_by')->withTrashed();
     }
 
     /**
@@ -111,6 +134,11 @@ class PolicyException extends Model
     public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function decisions(): HasMany
+    {
+        return $this->hasMany(PolicyExceptionDecision::class);
     }
 
     /**

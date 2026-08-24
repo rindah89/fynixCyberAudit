@@ -2,24 +2,20 @@
 
 namespace App\Filament\Resources\PolicyResource\RelationManagers;
 
+use App\Enums\PolicyExceptionDecisionType;
 use App\Enums\PolicyExceptionStatus;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\CreateAction;
-use Filament\Actions\DeleteAction;
-use Filament\Actions\DeleteBulkAction;
-use Filament\Actions\EditAction;
-use Filament\Actions\ViewAction;
+use App\Filament\Exports\PolicyExceptionExporter;
+use App\Models\PolicyException;
+use App\PolicyCompliance\PolicyExceptionGovernanceManager;
+use Filament\Actions\Action;
+use Filament\Actions\ExportAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -27,142 +23,59 @@ class ExceptionsRelationManager extends RelationManager
 {
     protected static string $relationship = 'exceptions';
 
-    protected static ?string $title = 'Policy Exceptions';
-
-    public function form(Schema $schema): Schema
-    {
-        return $schema
-            ->components([
-                Section::make('Exception Details')
-                    ->schema([
-                        TextInput::make('name')
-                            ->label('Exception Name')
-                            ->required()
-                            ->maxLength(255)
-                            ->columnSpanFull(),
-                        Textarea::make('description')
-                            ->label('Description')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                        Textarea::make('justification')
-                            ->label('Business Justification')
-                            ->helperText('Explain why this exception is necessary')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                    ])
-                    ->columns(2),
-
-                Section::make('Risk & Mitigation')
-                    ->schema([
-                        Textarea::make('risk_assessment')
-                            ->label('Risk Assessment')
-                            ->helperText('Describe the risks associated with granting this exception')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                        Textarea::make('compensating_controls')
-                            ->label('Compensating Controls')
-                            ->helperText('Describe any mitigating controls in place')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                    ]),
-
-                Section::make('Status & Dates')
-                    ->schema([
-                        Select::make('status')
-                            ->options(PolicyExceptionStatus::class)
-                            ->default(PolicyExceptionStatus::Pending)
-                            ->required(),
-                        Select::make('requested_by')
-                            ->label('Requested By')
-                            ->relationship('requester', 'name')
-                            ->searchable()
-                            ->preload(),
-                        Select::make('approved_by')
-                            ->label('Approved By')
-                            ->relationship('approver', 'name')
-                            ->searchable()
-                            ->preload()
-                            ->visible(fn (Get $get) => in_array($get('status'), [
-                                PolicyExceptionStatus::Approved->value,
-                                PolicyExceptionStatus::Approved,
-                            ])),
-                        DatePicker::make('requested_date')
-                            ->label('Requested Date')
-                            ->default(now()),
-                        DatePicker::make('effective_date')
-                            ->label('Effective Date'),
-                        DatePicker::make('expiration_date')
-                            ->label('Expiration Date')
-                            ->helperText('Leave blank for no expiration'),
-                    ])
-                    ->columns(2),
-            ]);
-    }
+    protected static ?string $title = 'Policy exception history';
 
     public function table(Table $table): Table
     {
-        return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['requester' => fn ($q) => $q->withTrashed(), 'approver' => fn ($q) => $q->withTrashed()]))
-            ->recordTitleAttribute('name')
-            ->columns([
-                TextColumn::make('name')
-                    ->label('Exception')
-                    ->searchable()
-                    ->sortable()
-                    ->wrap()
-                    ->limit(50),
-                TextColumn::make('status')
-                    ->badge()
-                    ->sortable(),
-                TextColumn::make('requester.name')
-                    ->label('Requested By')
-                    ->formatStateUsing(fn ($record): string => $record->requester?->displayName() ?? '')
-                    ->sortable()
-                    ->toggleable(),
-                TextColumn::make('requested_date')
-                    ->label('Requested')
-                    ->date()
-                    ->sortable()
-                    ->toggleable(),
-                TextColumn::make('effective_date')
-                    ->label('Effective')
-                    ->date()
-                    ->sortable()
-                    ->toggleable(),
-                TextColumn::make('expiration_date')
-                    ->label('Expires')
-                    ->date()
-                    ->sortable()
-                    ->toggleable()
-                    ->placeholder('No expiration'),
-                TextColumn::make('approver.name')
-                    ->label('Approved By')
-                    ->formatStateUsing(fn ($record): string => $record->approver?->displayName() ?? '')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-            ])
-            ->defaultSort('created_at', 'desc')
-            ->filters([
-                SelectFilter::make('status')
-                    ->options(PolicyExceptionStatus::class),
-                TrashedFilter::make(),
-            ])
+        return $table->modifyQueryUsing(fn (Builder $query) => $query->with([
+            'requester' => fn ($query) => $query->withTrashed(), 'approver' => fn ($query) => $query->withTrashed(),
+            'decisions.decider' => fn ($query) => $query->withTrashed(),
+        ]))->defaultSort('created_at', 'desc')->columns([
+            TextColumn::make('name')->searchable()->sortable()->wrap()->limit(50),
+            TextColumn::make('status')->badge()->sortable(),
+            TextColumn::make('governance_fingerprint')->label('Evidence boundary')->badge()
+                ->formatStateUsing(fn ($state): string => $state ? 'Governed' : 'Legacy')
+                ->color(fn ($state): string => $state ? 'success' : 'gray'),
+            TextColumn::make('requester.name')->label('Requested by'),
+            TextColumn::make('effective_date')->date()->sortable(),
+            TextColumn::make('expiration_date')->date()->sortable(),
+            TextColumn::make('submitted_at')->dateTime()->sortable(),
+        ])->filters([SelectFilter::make('status')->options(PolicyExceptionStatus::class)])
             ->headerActions([
-                CreateAction::make()
-                    ->label('Add Exception'),
-            ])
-            ->recordActions([
-                ViewAction::make()
-                    ->hiddenLabel(),
-                EditAction::make()
-                    ->hiddenLabel(),
-                DeleteAction::make()
-                    ->hiddenLabel(),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                ]),
+                Action::make('submit')->label('Request exception')->icon('heroicon-o-shield-exclamation')
+                    ->visible(fn (): bool => $this->getOwnerRecord()->owner_id === auth()->id()
+                        || auth()->user()?->can('Read Policies') || auth()->user()?->can('Update Policies'))
+                    ->schema([
+                        TextInput::make('name')->required()->maxLength(255),
+                        Textarea::make('description')->maxLength(30000),
+                        Textarea::make('justification')->required()->maxLength(30000),
+                        Textarea::make('risk_assessment')->required()->maxLength(30000),
+                        Textarea::make('compensating_controls')->required()->maxLength(30000),
+                        DatePicker::make('effective_date')->required()->minDate(today()),
+                        DatePicker::make('expiration_date')->required()->after('effective_date'),
+                    ])->action(fn (array $data) => app(PolicyExceptionGovernanceManager::class)->submit($this->getOwnerRecord(), auth()->user(), $data)),
+                ExportAction::make()->exporter(PolicyExceptionExporter::class)
+                    ->visible(fn (): bool => (bool) auth()->user()?->can('Read Policies')),
+            ])->recordActions([
+                Action::make('inspect')->label('Inspect')->icon('heroicon-o-eye')
+                    ->modalHeading(fn (PolicyException $record): string => $record->name)
+                    ->modalSubmitAction(false)->modalCancelActionLabel('Close')
+                    ->modalContent(fn (PolicyException $record) => view('filament.policy-exception-governance', ['exception' => $record])),
+                Action::make('decide')->label('Decide')->icon('heroicon-o-check-badge')
+                    ->visible(fn (PolicyException $record): bool => (bool) $record->governance_fingerprint
+                        && auth()->user()?->can('Update Policies') && $record->requested_by !== auth()->id()
+                        && in_array($record->status, [PolicyExceptionStatus::Pending, PolicyExceptionStatus::Approved], true))
+                    ->schema(fn (PolicyException $record): array => [
+                        Select::make('decision')->options($record->status === PolicyExceptionStatus::Pending
+                            ? [PolicyExceptionDecisionType::Approved->value => __('Approved'), PolicyExceptionDecisionType::Denied->value => __('Denied')]
+                            : [PolicyExceptionDecisionType::Revoked->value => __('Revoked')])->required(),
+                        Textarea::make('decision_summary')->required()->maxLength(30000),
+                    ])->action(fn (PolicyException $record, array $data) => app(PolicyExceptionGovernanceManager::class)->decide($record, auth()->user(), $data)),
             ]);
+    }
+
+    public function isReadOnly(): bool
+    {
+        return true;
     }
 }

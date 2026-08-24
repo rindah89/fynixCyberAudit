@@ -6,6 +6,7 @@ use App\Enums\PolicyExceptionStatus;
 use App\Models\Policy;
 use App\Models\PolicyException;
 use App\Models\User;
+use App\PolicyCompliance\PolicyRevisionManager;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -89,5 +90,34 @@ class PolicyExceptionFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => PolicyExceptionStatus::Revoked,
         ]);
+    }
+
+    public function governed(): static
+    {
+        return $this->pending()->afterMaking(function (PolicyException $exception): void {
+            $requester = User::factory()->create();
+            $submittedAt = now()->startOfSecond();
+            $exception->requested_by = $requester->id;
+            $exception->requested_date = $submittedAt->toDateString();
+            $exception->submitted_at = $submittedAt;
+            $request = [
+                'name' => $exception->name, 'description' => $exception->description,
+                'justification' => $exception->justification, 'risk_assessment' => $exception->risk_assessment,
+                'compensating_controls' => $exception->compensating_controls,
+                'effective_date' => $exception->effective_date?->toDateString(),
+                'expiration_date' => $exception->expiration_date?->toDateString(),
+            ];
+            $policy = $exception->policy;
+            $snapshot = [
+                'policy' => app(PolicyRevisionManager::class)->currentSnapshot($policy),
+                'approved_revision' => null,
+                'revision_governance_status' => 'unpublished', 'deleted_at' => null, 'request' => $request,
+            ];
+            $exception->governance_snapshot = $snapshot;
+            $exception->governance_fingerprint = hash('sha256', json_encode([
+                'policy_id' => $policy->id, 'requested_by' => $requester->id,
+                'requested_at' => $submittedAt->toISOString(), 'governance_snapshot' => $snapshot,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        });
     }
 }

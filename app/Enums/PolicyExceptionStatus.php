@@ -17,11 +17,11 @@ enum PolicyExceptionStatus: string implements HasColor, HasIcon, HasLabel
     public function getLabel(): string
     {
         return match ($this) {
-            self::Pending => 'Pending',
-            self::Approved => 'Approved',
-            self::Denied => 'Denied',
-            self::Expired => 'Expired',
-            self::Revoked => 'Revoked',
+            self::Pending => __('Pending'),
+            self::Approved => __('Approved'),
+            self::Denied => __('Denied'),
+            self::Expired => __('Expired'),
+            self::Revoked => __('Revoked'),
         };
     }
 

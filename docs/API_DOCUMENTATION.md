@@ -301,6 +301,14 @@ A different user with `Update Policies` reviews the latest pending revision thro
 
 `GET /api/policies/{policy}/revisions?page=1&per_page=50` returns complete newest-first history and is capped at 100 records per page. Policy owners and `Read Policies`/`Update Policies` users may read the scoped history. The operator relation provides inspection and private scoped export. These are attributable human decisions, not legal review, document authentication, qualified electronic signatures, automatic generation/distribution, or compliance inference.
 
+#### Governed policy exceptions
+
+Policy owners and authenticated users with `Read Policies` or `Update Policies` submit `POST /api/policies/{policy}/exception-requests` with `name`, optional `description`, required `justification`, `risk_assessment`, `compensating_controls`, and canonical future `effective_date`/later `expiration_date`. The server owns policy/status/requester/date/time, the policy and current approved-revision context snapshot, and its SHA-256 fingerprint.
+
+A different `Update Policies` user posts `decision` (`approved` or `denied`) and `decision_summary` to `POST /api/policy-exceptions/{exception}/decisions`. Approval requires the submission-time policy context to remain current. For an approved exception, the same endpoint accepts a later `revoked` decision. Each allowed transition appends an immutable versioned decision snapshot, actor/time, and fingerprint; caller-supplied server fields are rejected.
+
+`GET /api/policies/{policy}/exception-requests?page=1&per_page=50` returns governed history, capped at 100 records per page. The operator relation exposes governed and visibly labeled legacy history, while private export retains full request/decision snapshots. Legacy rows cannot enter the governed decision service. These records do not prove legal approval, risk quantification, compensating-control effectiveness, qualified signatures, monitoring, or automatic remediation.
+
 #### Create a policy obligation
 
 `POST /api/policies/{policy}/obligations`

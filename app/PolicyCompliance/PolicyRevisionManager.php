@@ -117,6 +117,11 @@ class PolicyRevisionManager
         return $approved->proposed_effective_date->isFuture() ? 'approved_scheduled' : 'current';
     }
 
+    public function currentSnapshot(Policy $policy, bool $lock = false): array
+    {
+        return $this->snapshot($policy, $policy->effective_date?->toDateString(), $lock);
+    }
+
     public static function submissionRules(): array
     {
         return [

@@ -12,6 +12,14 @@ Authorized users inspect complete paginated history under **Policies → Governe
 
 The workflow records deliberate policy content and human approval. It does not authenticate uploaded documents, provide legal review, prove reviewer competence or organizational independence beyond user separation, deliver qualified electronic signatures, distribute policy changes, infer compliance, or automatically generate or approve revisions.
 
+## Governed policy exceptions
+
+A policy owner or authenticated user with policy read access requests a time-bounded exception with description, business justification, risk assessment, compensating controls, and future effective/expiration dates. The server owns pending status, requester/date/time, current policy and approved-revision context snapshot, and SHA-256 fingerprint. Request content is immutable through product interfaces.
+
+A different user with `Update Policies` approves or denies a pending request. Approval is rejected if the policy or approved-revision context changed after submission; an independent denial terminalizes stale evidence so a replacement can be submitted. An approved exception may later receive one attributable revocation decision. Every decision is versioned and retains the complete pre-decision exception snapshot, summary, actor/time, and fingerprint. Only approved exceptions inside their effective window qualify an attestation; revocation immediately removes eligibility.
+
+Authorized users inspect complete paginated history under **Policies → Policy exception history** or through REST, with private relation-scoped export. Existing exception rows without a governance fingerprint are visibly labeled `Legacy` and cannot enter the governed decision service. Previously approved, in-window legacy rows remain eligible for existing attestations for backward compatibility, but are not governed request/decision evidence. The product records deliberate requests and decisions, not legal approval, risk quantification, compensating-control effectiveness, electronic signatures, automatic expiry decisions, monitoring, or remediation.
+
 ## Regulatory change inventory
 
 Policy editors register regulatory sources through REST with authority, jurisdiction, reference URL, accountable owner, and lifecycle status. Editors and assigned source or requirement owners publish append-only requirement versions through REST. The server allocates version numbers, snapshots the source and selected active policy/control records, and fingerprints the complete version content. The first version is a new requirement; later versions explicitly identify an amendment, guidance update, or repeal.
@@ -76,6 +84,12 @@ Submit, inspect, and review governed policy revisions:
 - `POST /api/policies/{policy}/revisions`
 - `GET /api/policies/{policy}/revisions?page=1&per_page=50`
 - `POST /api/policy-revisions/{revision}/review`
+
+Submit, inspect, decide, and revoke governed policy exceptions:
+
+- `POST /api/policies/{policy}/exception-requests`
+- `GET /api/policies/{policy}/exception-requests?page=1&per_page=50`
+- `POST /api/policy-exceptions/{exception}/decisions`
 
 Create an obligation:
 
