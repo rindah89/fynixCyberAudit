@@ -1,0 +1,1 @@
+<div class="space-y-4 text-sm"><h3 class="font-semibold">{{ $title }}</h3><div class="whitespace-pre-wrap">{{ $summary }}</div><pre class="overflow-auto whitespace-pre-wrap">{{ json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre><div class="break-all"><span class="text-sm font-medium">SHA-256:</span> {{ $fingerprint }}</div></div>

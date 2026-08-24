@@ -8,6 +8,7 @@ use App\Models\AiSystem;
 use App\Models\BusinessService;
 use App\Models\ComplianceCase;
 use App\Models\ControlTestDefinition;
+use App\Models\EsgMaterialTopic;
 use App\Models\GovernedModel;
 use App\Models\Policy;
 use App\Models\PolicyObligation;
@@ -20,6 +21,7 @@ use App\Policies\AiSystemPolicy;
 use App\Policies\BusinessServicePolicy;
 use App\Policies\ComplianceCasePolicy;
 use App\Policies\ControlTestDefinitionPolicy;
+use App\Policies\EsgMaterialTopicPolicy;
 use App\Policies\GovernedModelPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\PolicyObligationPolicy;
@@ -55,6 +57,7 @@ class AuthServiceProvider extends ServiceProvider
         BusinessService::class => BusinessServicePolicy::class,
         ComplianceCase::class => ComplianceCasePolicy::class,
         GovernedModel::class => GovernedModelPolicy::class,
+        EsgMaterialTopic::class => EsgMaterialTopicPolicy::class,
         SystemAuthorizationPackage::class => SystemAuthorizationPackagePolicy::class,
         PrivacyProcessingActivity::class => PrivacyProcessingActivityPolicy::class,
         AiSystem::class => AiSystemPolicy::class,

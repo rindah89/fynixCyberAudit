@@ -12,6 +12,7 @@ return [
         'privacy_management' => (bool) env('MODULE_PRIVACY_MANAGEMENT_ENABLED', false),
         'model_risk_management' => (bool) env('MODULE_MODEL_RISK_MANAGEMENT_ENABLED', false),
         'system_authorization' => (bool) env('MODULE_SYSTEM_AUTHORIZATION_ENABLED', false),
+        'esg_management' => (bool) env('MODULE_ESG_MANAGEMENT_ENABLED', false),
     ],
     'surveyor' => [
         'max_file_size' => (int) env('SURVEYOR_MAX_FILE_SIZE', 10 * 1024 * 1024),

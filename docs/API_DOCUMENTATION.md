@@ -846,3 +846,18 @@ When `MODULE_SYSTEM_AUTHORIZATION_ENABLED=true`, authenticated authorization use
 Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Submission requires `system_boundary`, `impact_level` (`Low`, `Moderate`, or `High`), one or more `data_classifications`, arrays of authorized `control_ids`, `risk_ids`, and `open_findings`, a `monitoring_strategy`, optional `poam_reference`, and `change_summary`. The server owns versions, application/control/risk snapshots, attribution, timestamps, and fingerprints. Only the latest unchanged package can be independently authorized. `authorized_with_conditions` requires conditions; authorization requires a future `valid_until`; only an active authorization can later be revoked.
 
 Package, decision, and monitoring-review history is append-only and capped at 100 records per parent. Packages specify a one-to-365-day review cadence. An independent monitor records deliberate metrics/findings, outcome (`effective`, `needs_action`, or `revocation_recommended`), required actions, and summary against the complete current authorization baseline. Changed context cannot be confirmed effective; adverse outcomes derive action-required state and otherwise the server derives current/overdue state. Authorization becomes `authorization_expired` after validity passes. Inputs are deliberate: these endpoints do not discover boundaries, collect telemetry/evidence, validate controls or evidence, execute remediation, automatically authorize/revoke, or provide compliance assurance. See `docs/SYSTEM_AUTHORIZATION.md`.
+
+## Governed ESG materiality management
+
+When `MODULE_ESG_MANAGEMENT_ENABLED=true`, authenticated ESG users use:
+
+- `GET|POST /api/esg-material-topics`
+- `GET|PUT /api/esg-material-topics/{topic}`
+- `GET /api/esg-material-topics/{topic}/versions`
+- `GET|POST /api/esg-material-topics/{topic}/assessments`
+
+Lists and histories validate `page >= 1` and `per_page` from 1 through 100. `Manage ESG` registers topics. `Own ESG Topics` users inspect and revise their assigned topics. `Assess ESG` records decisions, and `Read ESG` inspects all retained history. The owner and latest-version author cannot assess that version.
+
+Registration requires a pillar, owner, description, impact/risk/opportunity context, stakeholder groups, organizational boundary, review date, and change summary. Framework and source references are deliberate inputs. The server owns the code, status, version, snapshot, attribution, time, and fingerprint. Material changes append an immutable version and derive `Review Required`; only retirement may be caller-requested and it is terminal.
+
+Assessment requires one-through-five impact and financial scores, stakeholder evidence, methodology, decision, summary, and a future review date. It binds the exact latest unchanged version and derives `Material`, `Not Material`, or `Review Required`. Version and assessment histories are independently capped at 100 records. The REST interface maintains records; the operator workspace provides paginated read-only inspection. These endpoints do not discover topics or ESG data, calculate emissions, validate inputs or targets, manage KPIs, generate disclosures, provide external assurance, or establish reporting-framework compliance. See `docs/ESG_MANAGEMENT.md`.

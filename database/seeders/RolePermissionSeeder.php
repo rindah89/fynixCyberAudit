@@ -99,6 +99,10 @@ class RolePermissionSeeder extends Seeder
             'Manage System Authorizations',
             'Authorize Systems',
             'Monitor System Authorizations',
+            'Read ESG',
+            'Own ESG Topics',
+            'Assess ESG',
+            'Manage ESG',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -156,6 +160,10 @@ class RolePermissionSeeder extends Seeder
             'Manage System Authorizations',
             'Authorize Systems',
             'Monitor System Authorizations',
+            'Read ESG',
+            'Own ESG Topics',
+            'Assess ESG',
+            'Manage ESG',
         ]);
 
         // Assign specific Permissions to Internal Auditor
