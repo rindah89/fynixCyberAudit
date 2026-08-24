@@ -44,9 +44,10 @@ class PolicyExceptionMonitoringReviewFactory extends Factory
             'reviewed_by' => $reviewer->id,
             'reviewed_at' => $reviewedAt->toISOString(),
             'next_review_at' => $nextReviewAt->toISOString(),
+            'evidence_manifest' => [],
         ];
 
-        return $payload + [
+        return collect($payload)->except('evidence_manifest')->all() + [
             'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
         ];
     }

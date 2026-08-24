@@ -7,6 +7,7 @@ use Database\Factories\PolicyExceptionMonitoringReviewFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PolicyExceptionMonitoringReview extends Model
@@ -45,5 +46,10 @@ class PolicyExceptionMonitoringReview extends Model
     public function issue(): HasOne
     {
         return $this->hasOne(PolicyExceptionMonitoringIssue::class);
+    }
+
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(PolicyExceptionMonitoringReviewEvidence::class);
     }
 }

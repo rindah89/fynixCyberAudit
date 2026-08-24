@@ -11,6 +11,7 @@ use App\Http\Controllers\ControlTestExecutionEvidenceController;
 use App\Http\Controllers\GovernanceIssueClosureEvidenceController;
 use App\Http\Controllers\MediaProxyController;
 use App\Http\Controllers\PolicyAttestationEvidenceController;
+use App\Http\Controllers\PolicyExceptionMonitoringReviewEvidenceController;
 use App\Http\Controllers\RecoveryExerciseEvidenceController;
 use App\Http\Controllers\RiskGovernanceReviewEvidenceController;
 use App\Http\Controllers\SurveyAttachmentController;
@@ -59,6 +60,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('recovery-exercise-evidence.download');
     Route::get('/app/policy-attestation-evidence/{evidence}/download', [PolicyAttestationEvidenceController::class, 'download'])
         ->name('policy-attestation-evidence.download');
+    Route::get('/app/policy-exception-monitoring-review-evidence/{evidence}/download', [PolicyExceptionMonitoringReviewEvidenceController::class, 'download'])
+        ->name('policy-exception-monitoring-review-evidence.download');
     Route::get('/app/risk-governance-review-evidence/{evidence}/download', [RiskGovernanceReviewEvidenceController::class, 'download'])
         ->name('risk-governance-review-evidence.download');
     Route::get('/app/audit-closeout-reviews/{review}/report', [AuditCloseoutReportController::class, 'download'])

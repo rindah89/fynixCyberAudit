@@ -40,6 +40,9 @@ class PolicyExceptionGovernanceController extends Controller
 
     public function monitoringReviews(ListPolicyExceptionMonitoringReviewsRequest $request, PolicyException $exception, PolicyExceptionMonitoringManager $manager): JsonResponse
     {
-        return response()->json($manager->history($exception, $request->user())->paginate($request->integer('per_page', 50)));
+        $history = $manager->history($exception, $request->user())->paginate($request->integer('per_page', 50));
+        $history->through(fn ($review) => $manager->visibleReview($review, $request->user()));
+
+        return response()->json($history);
     }
 }

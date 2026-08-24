@@ -12,6 +12,7 @@ use App\Models\GovernanceIssueClosureEvidence;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
 use App\Models\PolicyAttestationEvidence;
+use App\Models\PolicyExceptionMonitoringReviewEvidence;
 use App\Models\RecoveryExerciseEvidence;
 use App\Models\RiskGovernanceReviewEvidence;
 use App\Models\SurveyAttachment;
@@ -162,6 +163,28 @@ class FileAccess
         if (! $system || ! $actor->can('view', $system)
             || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
             abort(403, 'You do not have access to this governed AI monitoring evidence.');
+        }
+
+        return $this->stream(
+            $evidence->disk_snapshot,
+            $evidence->file_path_snapshot,
+            $evidence->file_name_snapshot,
+        );
+    }
+
+    public function streamPolicyExceptionMonitoringReviewEvidence(User $actor, PolicyExceptionMonitoringReviewEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing([
+            'review.exception.policy',
+            'attachment.audit.members',
+            'attachment.dataRequestResponse.dataRequest.audit.members',
+        ]);
+        $policy = $evidence->review?->exception?->policy;
+        $canViewWorkspace = $policy && ((int) $policy->owner_id === (int) $actor->id
+            || $actor->can('Read Policies') || $actor->can('Update Policies'));
+        if (! $canViewWorkspace
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed policy-exception monitoring evidence.');
         }
 
         return $this->stream(

@@ -33,6 +33,14 @@
             <p class="mt-2 whitespace-pre-wrap">{{ $review->review_summary }}</p>
             <p class="mt-2 whitespace-pre-wrap">{{ $review->control_effectiveness }}</p>
             @if ($review->evidence_reference)<div class="mt-2">Operator-supplied reference: {{ $review->evidence_reference }}</div>@endif
+            @foreach ($review->evidence as $evidence)
+                <div class="mt-2 border-t pt-2">
+                    <a class="font-medium text-primary-600 hover:underline" href="{{ route('policy-exception-monitoring-review-evidence.download', $evidence) }}">
+                        {{ $evidence->file_name_snapshot }}
+                    </a>
+                    <div>{{ number_format($evidence->file_size_snapshot) }} bytes · Audit {{ $evidence->audit_id_snapshot }} · SHA-256 <span class="break-all font-mono text-xs">{{ $evidence->sha256 }}</span></div>
+                </div>
+            @endforeach
             @if ($review->issue)<div class="mt-2">Governed issue: {{ $review->issue->status->getLabel() }} · {{ $review->issue->severity }}</div>@endif
             <div class="mt-2 break-all font-mono text-xs">{{ $review->fingerprint }}</div>
         </div>

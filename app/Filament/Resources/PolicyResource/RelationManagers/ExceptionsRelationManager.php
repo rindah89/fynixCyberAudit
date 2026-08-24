@@ -6,7 +6,10 @@ use App\Enums\PolicyExceptionDecisionType;
 use App\Enums\PolicyExceptionMonitoringOutcome;
 use App\Enums\PolicyExceptionStatus;
 use App\Filament\Exports\PolicyExceptionExporter;
+use App\Models\FileAttachment;
 use App\Models\PolicyException;
+use App\Models\PolicyExceptionMonitoringReview;
+use App\Models\User;
 use App\PolicyCompliance\PolicyExceptionGovernanceManager;
 use App\PolicyCompliance\PolicyExceptionMonitoringManager;
 use Filament\Actions\Action;
@@ -34,6 +37,8 @@ class ExceptionsRelationManager extends RelationManager
             'decisions.decider' => fn ($query) => $query->withTrashed(),
             'monitoringReviews.reviewer' => fn ($query) => $query->withTrashed(),
             'monitoringReviews.issue.lifecycle',
+            'monitoringReviews.evidence.attachment.audit.members',
+            'monitoringReviews.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
             'openMonitoringIssues' => fn ($issues) => $issues->select([
                 'policy_exception_monitoring_issues.id',
                 'policy_exception_monitoring_issues.policy_exception_monitoring_review_id',
@@ -73,7 +78,9 @@ class ExceptionsRelationManager extends RelationManager
                 Action::make('inspect')->label('Inspect')->icon('heroicon-o-eye')
                     ->modalHeading(fn (PolicyException $record): string => $record->name)
                     ->modalSubmitAction(false)->modalCancelActionLabel('Close')
-                    ->modalContent(fn (PolicyException $record) => view('filament.policy-exception-governance', ['exception' => $record])),
+                    ->modalContent(fn (PolicyException $record) => view('filament.policy-exception-governance', [
+                        'exception' => $this->visibleException($record),
+                    ])),
                 Action::make('decide')->label('Decide')->icon('heroicon-o-check-badge')
                     ->visible(fn (PolicyException $record): bool => (bool) $record->governance_fingerprint
                         && auth()->user()?->can('Update Policies') && $record->requested_by !== auth()->id()
@@ -93,6 +100,11 @@ class ExceptionsRelationManager extends RelationManager
                         Textarea::make('review_summary')->required()->maxLength(30000),
                         Textarea::make('control_effectiveness')->required()->maxLength(30000),
                         TextInput::make('evidence_reference')->maxLength(255),
+                        Select::make('evidence_attachment_ids')->label('Governed monitoring evidence')
+                            ->multiple()->maxItems(20)->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => $this->evidenceOptions($search))
+                            ->getOptionLabelsUsing(fn (array $values): array => $this->evidenceLabels($values))
+                            ->helperText('Optional accepted audit-evidence files you are authorized to access. Fynix retains bounded content and SHA-256 snapshots.'),
                     ])->action(fn (PolicyException $record, array $data) => app(PolicyExceptionMonitoringManager::class)->review($record, auth()->user(), $data)),
             ]);
     }
@@ -100,5 +112,48 @@ class ExceptionsRelationManager extends RelationManager
     public function isReadOnly(): bool
     {
         return true;
+    }
+
+    private function evidenceOptions(string $search): array
+    {
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return [];
+        }
+
+        return FileAttachment::query()->eligibleGovernedEvidenceFor($actor)
+            ->where('file_name', 'like', '%'.addcslashes($search, '%_').'%')
+            ->latest('id')->limit(50)->pluck('file_name', 'id')->all();
+    }
+
+    private function evidenceLabels(array $values): array
+    {
+        $actor = auth()->user();
+        if (! $actor instanceof User) {
+            return [];
+        }
+
+        return FileAttachment::query()->eligibleGovernedEvidenceFor($actor)
+            ->whereKey($values)->pluck('file_name', 'id')->all();
+    }
+
+    private function visibleException(PolicyException $exception): PolicyException
+    {
+        $exception->load([
+            'monitoringReviews.reviewer' => fn ($query) => $query->withTrashed(),
+            'monitoringReviews.issue.lifecycle',
+            'monitoringReviews.evidence.attachment.audit.members',
+            'monitoringReviews.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ]);
+        $visible = clone $exception;
+        $visible->setRelation('monitoringReviews', $exception->monitoringReviews->map(function (PolicyExceptionMonitoringReview $review): PolicyExceptionMonitoringReview {
+            $actor = auth()->user();
+
+            return $actor instanceof User
+                ? app(PolicyExceptionMonitoringManager::class)->visibleReview($review, $actor)
+                : tap(clone $review, fn (PolicyExceptionMonitoringReview $copy) => $copy->setRelation('evidence', collect()));
+        }));
+
+        return $visible;
     }
 }

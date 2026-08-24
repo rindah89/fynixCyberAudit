@@ -18,6 +18,7 @@ class MonitorPolicyExceptionRequest extends FormRequest
             'policy_exception_id' => ['prohibited'], 'version' => ['prohibited'],
             'exception_snapshot' => ['prohibited'], 'reviewed_by' => ['prohibited'],
             'reviewed_at' => ['prohibited'], 'next_review_at' => ['prohibited'], 'fingerprint' => ['prohibited'],
+            'evidence' => ['prohibited'], 'evidence_manifest' => ['prohibited'],
         ];
     }
 }

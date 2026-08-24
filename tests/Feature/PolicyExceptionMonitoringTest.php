@@ -11,6 +11,7 @@ use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
 use App\Models\Policy;
 use App\Models\PolicyExceptionMonitoringReview;
+use App\Models\PolicyExceptionMonitoringReviewEvidence;
 use App\Models\User;
 use App\PolicyCompliance\PolicyExceptionGovernanceManager;
 use App\PolicyCompliance\PolicyExceptionMonitoringManager;
@@ -45,7 +46,7 @@ class PolicyExceptionMonitoringTest extends TestCase
         $approver = User::factory()->create();
         $monitor = User::factory()->create();
         $approver->givePermissionTo('Update Policies');
-        $monitor->givePermissionTo('Update Policies');
+        $monitor->givePermissionTo(['Update Policies', 'Read Policies']);
         $policy = Policy::factory()->create(['owner_id' => $requester->id]);
         $manager = app(PolicyExceptionGovernanceManager::class);
         $exception = $manager->submit($policy, $requester, [
@@ -110,6 +111,7 @@ class PolicyExceptionMonitoringTest extends TestCase
             'reviewed_by' => $review->reviewed_by,
             'reviewed_at' => $review->reviewed_at->toISOString(),
             'next_review_at' => $review->next_review_at->toISOString(),
+            'evidence_manifest' => [],
         ];
         $this->assertSame(hash('sha256', json_encode($reviewPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)), $review->fingerprint);
         $this->assertSame('Approved with monthly monitoring.', $review->exception_snapshot['latest_decision']['decision_summary']);
@@ -144,9 +146,183 @@ class PolicyExceptionMonitoringTest extends TestCase
             'reviewed_by' => $factoryReview->reviewed_by,
             'reviewed_at' => $factoryReview->reviewed_at->toISOString(),
             'next_review_at' => $factoryReview->next_review_at->toISOString(),
+            'evidence_manifest' => [],
         ];
         $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)), $factoryReview->fingerprint);
         $this->assertSame(90, $factoryReview->exception->review_frequency_days);
+    }
+
+    public function test_monitoring_review_can_bind_authorized_accepted_audit_evidence(): void
+    {
+        $requester = User::factory()->create();
+        $approver = User::factory()->create();
+        $monitor = User::factory()->create();
+        $approver->givePermissionTo('Update Policies');
+        $monitor->givePermissionTo(['Update Policies', 'Read Policies']);
+        $policy = Policy::factory()->create(['owner_id' => $requester->id]);
+        $governance = app(PolicyExceptionGovernanceManager::class);
+        $exception = $governance->submit($policy, $requester, [
+            'name' => 'Temporary access exception',
+            'description' => 'A bounded deviation.',
+            'justification' => 'A legacy dependency remains.',
+            'risk_assessment' => 'Elevated access exposure.',
+            'compensating_controls' => 'Weekly privileged-account reconciliation.',
+            'effective_date' => now()->toDateString(),
+            'expiration_date' => now()->addMonths(6)->toDateString(),
+            'review_frequency_days' => 30,
+        ]);
+        $governance->decide($exception, $approver, [
+            'decision' => 'approved',
+            'decision_summary' => 'Approved with monthly monitoring.',
+        ]);
+        $audit = Audit::factory()->create(['manager_id' => $monitor->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $monitor->id, 'assigned_to_id' => $monitor->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $monitor->id, 'requestee_id' => $monitor->id,
+        ]);
+        $sourceBytes = 'policy exception monitoring evidence bytes';
+        $path = 'policy-exception-monitoring/reconciliation.txt';
+        Storage::disk('private')->put($path, $sourceBytes);
+        $attachment = FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => 'reconciliation.txt', 'file_path' => $path,
+            'file_size' => strlen($sourceBytes), 'description' => 'Monthly reconciliation evidence',
+            'uploaded_by' => $monitor->id,
+        ]);
+
+        Sanctum::actingAs($monitor);
+        $this->postJson("/api/policy-exceptions/{$exception->id}/monitoring-reviews", [
+            'outcome' => 'effective',
+            'review_summary' => 'The compensating control operated during the review period.',
+            'control_effectiveness' => 'All weekly reconciliations were completed.',
+            'evidence_reference' => 'EXTERNAL-REFERENCE',
+            'evidence_attachment_ids' => [$attachment->id],
+        ])->assertCreated()
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', $sourceBytes));
+
+        $evidence = PolicyExceptionMonitoringReviewEvidence::query()->firstOrFail();
+        $this->assertSame($monitor->id, $evidence->linked_by);
+        $this->assertSame($response->id, $evidence->data_request_response_id_snapshot);
+        $this->assertSame(strlen($sourceBytes), $evidence->file_size_snapshot);
+        $review = $evidence->review;
+        $manifest = [[
+            'file_attachment_id' => $evidence->file_attachment_id,
+            'data_request_response_id_snapshot' => $evidence->data_request_response_id_snapshot,
+            'response_status_snapshot' => $evidence->response_status_snapshot,
+            'data_request_id_snapshot' => $evidence->data_request_id_snapshot,
+            'audit_id_snapshot' => $evidence->audit_id_snapshot,
+            'disk_snapshot' => $evidence->disk_snapshot,
+            'file_name_snapshot' => $evidence->file_name_snapshot,
+            'file_path_snapshot' => $evidence->file_path_snapshot,
+            'file_size_snapshot' => $evidence->file_size_snapshot,
+            'sha256' => $evidence->sha256,
+            'linked_by' => $evidence->linked_by,
+            'linked_at' => $evidence->linked_at->toISOString(),
+        ]];
+        $fingerprintPayload = [
+            'policy_exception_id' => $review->policy_exception_id,
+            'version' => $review->version,
+            'outcome' => $review->outcome->value,
+            'review_summary' => $review->review_summary,
+            'control_effectiveness' => $review->control_effectiveness,
+            'evidence_reference' => $review->evidence_reference,
+            'exception_snapshot' => $review->exception_snapshot,
+            'reviewed_by' => $review->reviewed_by,
+            'reviewed_at' => $review->reviewed_at->toISOString(),
+            'next_review_at' => $review->next_review_at->toISOString(),
+            'evidence_manifest' => $manifest,
+        ];
+        $this->assertSame(
+            hash('sha256', json_encode($fingerprintPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
+            $review->fingerprint,
+        );
+        $this->getJson("/api/policy-exceptions/{$exception->id}/monitoring-reviews")
+            ->assertOk()->assertJsonPath('data.0.evidence.0.file_attachment_id', $attachment->id);
+        Storage::disk('private')->put($path, 'replacement source bytes');
+        $download = $this->actingAs($monitor, 'web')
+            ->get(route('policy-exception-monitoring-review-evidence.download', $evidence))
+            ->assertOk();
+        $this->assertSame($sourceBytes, $download->streamedContent());
+        $review->load([
+            'evidence.attachment.audit.members',
+            'evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ]);
+        $this->assertCount(1, app(PolicyExceptionMonitoringManager::class)->visibleReview($review, $monitor)->evidence);
+
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Policies');
+        Sanctum::actingAs($reader);
+        $this->getJson("/api/policy-exceptions/{$exception->id}/monitoring-reviews")
+            ->assertOk()->assertJsonCount(0, 'data.0.evidence');
+        $this->getJson("/api/policies/{$policy->id}/exception-requests")
+            ->assertOk()
+            ->assertJsonMissing(['file_name_snapshot' => $evidence->file_name_snapshot])
+            ->assertJsonMissing(['sha256' => $evidence->sha256]);
+        $this->assertCount(0, app(PolicyExceptionMonitoringManager::class)->visibleReview($review, $reader)->evidence);
+        $this->actingAs($reader, 'web')
+            ->get(route('policy-exception-monitoring-review-evidence.download', $evidence))
+            ->assertForbidden();
+        Livewire::actingAs($reader)->test(ExceptionsRelationManager::class, [
+            'ownerRecord' => $policy,
+            'pageClass' => ViewPolicy::class,
+        ])->mountTableAction('inspect', $exception->fresh())
+            ->assertDontSee($evidence->file_name_snapshot)
+            ->assertDontSee($evidence->sha256);
+        $visibleException = $exception->fresh()->load([
+            'requester', 'decisions.decider', 'monitoringReviews.reviewer', 'monitoringReviews.evidence',
+        ]);
+        $this->view('filament.policy-exception-governance', ['exception' => $visibleException])
+            ->assertSee($evidence->file_name_snapshot)
+            ->assertSee($evidence->sha256);
+
+        try {
+            $evidence->update(['file_name_snapshot' => 'rewritten.txt']);
+            $this->fail('Monitoring evidence was mutable.');
+        } catch (\LogicException) {
+            $this->assertSame('reconciliation.txt', $evidence->fresh()->file_name_snapshot);
+        }
+        try {
+            $attachment->delete();
+            $this->fail('A governed source attachment was deletable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('file_attachments', ['id' => $attachment->id]);
+        }
+
+        $outsider = User::factory()->create();
+        $otherAudit = Audit::factory()->create(['manager_id' => $outsider->id]);
+        $otherRequest = DataRequest::factory()->create([
+            'audit_id' => $otherAudit->id, 'created_by_id' => $outsider->id, 'assigned_to_id' => $outsider->id,
+        ]);
+        $otherResponse = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $otherRequest->id, 'requester_id' => $outsider->id, 'requestee_id' => $outsider->id,
+        ]);
+        $otherPath = 'policy-exception-monitoring/foreign.txt';
+        Storage::disk('private')->put($otherPath, 'foreign evidence bytes');
+        $foreign = FileAttachment::query()->create([
+            'data_request_response_id' => $otherResponse->id, 'audit_id' => $otherAudit->id,
+            'file_name' => 'foreign.txt', 'file_path' => $otherPath, 'file_size' => 22,
+            'description' => 'Foreign evidence', 'uploaded_by' => $outsider->id,
+        ]);
+        $retainedBefore = Storage::disk('private')->allFiles('governed-evidence/policy-exception-monitoring-review');
+        Sanctum::actingAs($monitor);
+        $this->postJson("/api/policy-exceptions/{$exception->id}/monitoring-reviews", [
+            'outcome' => 'effective',
+            'review_summary' => 'A second review should roll back.',
+            'control_effectiveness' => 'No partial evidence may remain.',
+            'evidence_attachment_ids' => [$attachment->id, $foreign->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertDatabaseCount('policy_exception_monitoring_reviews', 1);
+        $this->assertDatabaseCount('policy_exception_monitoring_review_evidence', 1);
+        $this->assertSame($retainedBefore, Storage::disk('private')->allFiles('governed-evidence/policy-exception-monitoring-review'));
+
+        $migration = require database_path('migrations/2026_08_24_500000_create_policy_exception_monitoring_review_evidence.php');
+        $migration->down();
+        $this->assertDatabaseHas('policy_exception_monitoring_review_evidence', [
+            'id' => $evidence->id, 'sha256' => hash('sha256', $sourceBytes),
+        ]);
     }
 
     public function test_monitoring_reauthorizes_rejects_stale_effective_conclusions_and_derives_action_state(): void
