@@ -9,6 +9,7 @@ use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationMana
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
+use App\Filament\Resources\IncidentResource\RelationManagers\TimelineEntriesRelationManager;
 use App\Models\Incident;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -83,6 +84,7 @@ class IncidentResource extends Resource
         return [
             TasksRelationManager::class, PhaseTransitionsRelationManager::class,
             NotificationsRelationManager::class, LessonsRelationManager::class, AffectedEntitiesRelationManager::class,
+            TimelineEntriesRelationManager::class,
         ];
     }
 

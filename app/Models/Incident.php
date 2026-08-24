@@ -93,6 +93,11 @@ class Incident extends Model
         return $this->hasMany(IncidentAffectedEntity::class)->orderBy('id');
     }
 
+    public function timelineEntries(): HasMany
+    {
+        return $this->hasMany(IncidentTimelineEntry::class)->orderBy('occurred_at')->orderBy('version');
+    }
+
     public function phaseTimestamp(IncidentPhase $phase): ?Carbon
     {
         $raw = $this->phase_timestamps[$phase->value] ?? null;

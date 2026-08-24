@@ -98,4 +98,10 @@ return [
         'control' => 'Control',
         'risk' => 'Risk',
     ],
+    'incident_timeline_entry_type' => [
+        'observation' => 'Observation', 'action' => 'Action', 'decision' => 'Decision', 'communication' => 'Communication',
+    ],
+    'incident_timeline_visibility' => [
+        'internal' => 'Internal', 'auditor' => 'Auditor Visible',
+    ],
 ];

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API;
 
 use App\Access\FileAccess;
 use App\Enums\IncidentPhase;
+use App\Enums\IncidentTimelineVisibility;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListIncidentAffectedEntitiesRequest;
 use App\Http\Requests\ListIncidentLessonEventsRequest;
@@ -12,6 +13,7 @@ use App\Http\Requests\ListIncidentNotificationEventsRequest;
 use App\Http\Requests\ListIncidentNotificationsRequest;
 use App\Http\Requests\ListIncidentsRequest;
 use App\Http\Requests\ListIncidentTaskEventsRequest;
+use App\Http\Requests\ListIncidentTimelineEntriesRequest;
 use App\Http\Requests\RecordIncidentLessonProgressRequest;
 use App\Http\Requests\RecordIncidentNotificationDecisionRequest;
 use App\Http\Requests\RecordIncidentTaskEventRequest;
@@ -20,11 +22,13 @@ use App\Http\Requests\StoreIncidentAffectedEntityRequest;
 use App\Http\Requests\StoreIncidentLessonRequest;
 use App\Http\Requests\StoreIncidentNotificationRequest;
 use App\Http\Requests\StoreIncidentRequest;
+use App\Http\Requests\StoreIncidentTimelineEntryRequest;
 use App\Http\Requests\TransitionIncidentPhaseRequest;
 use App\Incidents\IncidentAffectedEntityManager;
 use App\Incidents\IncidentDesk;
 use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
+use App\Incidents\IncidentTimelineManager;
 use App\Models\Incident;
 use App\Models\IncidentLesson;
 use App\Models\IncidentLessonEvent;
@@ -145,6 +149,21 @@ class IncidentGovernanceController extends Controller
     {
         return response()->json($incident->affectedEntities()->with('linkedBy:id,name')
             ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function timeline(ListIncidentTimelineEntriesRequest $request, Incident $incident): JsonResponse
+    {
+        $query = $incident->timelineEntries()->with('recorder:id,name');
+        if ($request->user()->cannot('update', $incident)) {
+            $query->where('visibility', IncidentTimelineVisibility::Auditor->value);
+        }
+
+        return response()->json($query->paginate($request->integer('per_page', 50)));
+    }
+
+    public function storeTimelineEntry(StoreIncidentTimelineEntryRequest $request, Incident $incident, IncidentTimelineManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->record($request->user(), $incident, $request->validated())->load('recorder:id,name')], JsonResponse::HTTP_CREATED);
     }
 
     public function storeAffectedEntity(StoreIncidentAffectedEntityRequest $request, Incident $incident, IncidentAffectedEntityManager $manager): JsonResponse

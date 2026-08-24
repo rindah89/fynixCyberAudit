@@ -9,16 +9,20 @@ use App\Enums\IncidentNotificationAudience;
 use App\Enums\IncidentNotificationStatus;
 use App\Enums\IncidentPhase;
 use App\Enums\IncidentTaskStatus;
+use App\Enums\IncidentTimelineEntryType;
+use App\Enums\IncidentTimelineVisibility;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
 use App\Filament\Resources\IncidentResource\RelationManagers\AffectedEntitiesRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
+use App\Filament\Resources\IncidentResource\RelationManagers\TimelineEntriesRelationManager;
 use App\Incidents\IncidentAffectedEntityManager;
 use App\Incidents\IncidentDesk;
 use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
+use App\Incidents\IncidentTimelineManager;
 use App\Models\Asset;
 use App\Models\Audit;
 use App\Models\Control;
@@ -33,10 +37,12 @@ use App\Models\IncidentPhaseTransitionEvidence;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentPlaybookTask;
 use App\Models\IncidentTaskEvent;
+use App\Models\IncidentTimelineEntry;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -323,6 +329,109 @@ class IncidentTest extends TestCase
             $this->assertArrayHasKey('incident', $exception->errors());
         }
         $this->assertSame(100, $incident->affectedEntities()->count());
+    }
+
+    public function test_timeline_is_append_only_and_redacts_internal_entries_from_readers(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $reader = User::factory()->create();
+        $reader->assignRole('Regular User');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Visibility-aware incident timeline', 'severity' => 'High',
+        ]);
+        $occurredAt = now()->subMinutes(5)->startOfSecond();
+
+        $this->actingAs($reader)->postJson('/api/incidents/'.$incident->id.'/timeline', [
+            'entry_type' => IncidentTimelineEntryType::Observation->value,
+            'visibility' => IncidentTimelineVisibility::Auditor->value,
+            'occurred_at' => $occurredAt->toIso8601String(), 'summary' => 'Unauthorized entry.',
+        ])->assertForbidden();
+        $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/timeline', [
+            'entry_type' => IncidentTimelineEntryType::Observation->value,
+            'visibility' => IncidentTimelineVisibility::Internal->value,
+            'occurred_at' => $occurredAt->toIso8601String(), 'summary' => 'Internal responder hypothesis.',
+            'details' => 'Unverified technical analysis restricted to incident managers.', 'pinned' => true,
+            'version' => 99,
+        ])->assertUnprocessable()->assertJsonValidationErrors('version');
+        $internalId = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/timeline', [
+            'entry_type' => IncidentTimelineEntryType::Observation->value,
+            'visibility' => IncidentTimelineVisibility::Internal->value,
+            'occurred_at' => $occurredAt->toIso8601String(), 'summary' => 'Internal responder hypothesis.',
+            'details' => 'Unverified technical analysis restricted to incident managers.', 'pinned' => true,
+        ])->assertCreated()->json('data.id');
+        $auditorId = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/timeline', [
+            'entry_type' => IncidentTimelineEntryType::Action->value,
+            'visibility' => IncidentTimelineVisibility::Auditor->value,
+            'occurred_at' => now()->subMinute()->startOfSecond()->toIso8601String(),
+            'summary' => 'The affected subnet was isolated.', 'details' => 'Approved containment action recorded for external assurance.',
+        ])->assertCreated()->json('data.id');
+        $internal = IncidentTimelineEntry::query()->findOrFail($internalId);
+        $auditor = IncidentTimelineEntry::query()->findOrFail($auditorId);
+        $payload = [
+            'incident_id' => $auditor->incident_id, 'version' => $auditor->version,
+            'entry_type' => $auditor->entry_type->value, 'visibility' => $auditor->visibility->value,
+            'occurred_at' => $auditor->occurred_at->toIso8601String(), 'summary' => $auditor->summary,
+            'details' => $auditor->details, 'pinned' => $auditor->pinned,
+            'incident_snapshot' => $auditor->incident_snapshot, 'recorded_by' => $auditor->recorded_by,
+            'recorded_at' => $auditor->recorded_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $auditor->fingerprint);
+
+        $readerResponse = $this->actingAs($reader)->getJson('/api/incidents/'.$incident->id.'/timeline')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $auditor->id);
+        $this->assertStringNotContainsString('Internal responder hypothesis', $readerResponse->getContent());
+        $this->actingAs($manager)->getJson('/api/incidents/'.$incident->id.'/timeline')->assertOk()->assertJsonCount(2, 'data');
+        Livewire::actingAs($reader);
+        Livewire::test(TimelineEntriesRelationManager::class, ['ownerRecord' => $incident, 'pageClass' => ViewIncident::class])
+            ->assertCanSeeTableRecords([$auditor])->assertCanNotSeeTableRecords([$internal])->assertTableActionHidden('record');
+        $auditor->load('recorder:id,name');
+        $rendered = view('filament.incident-timeline-entry', ['record' => $auditor])->render();
+        $this->assertStringContainsString('The affected subnet was isolated.', $rendered);
+        $this->assertStringContainsString($auditor->fingerprint, $rendered);
+
+        try {
+            $auditor->delete();
+            $this->fail('Expected timeline evidence to remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+        $migration = require database_path('migrations/2026_08_24_630000_create_incident_timeline_entries.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_timeline_entries', ['id' => $auditor->id, 'fingerprint' => $auditor->fingerprint]);
+    }
+
+    public function test_timeline_history_bound_is_exact(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Bounded incident timeline', 'severity' => 'Medium',
+        ]);
+        $now = now()->startOfSecond();
+        collect(range(1, 499))->map(fn (int $version): array => [
+            'incident_id' => $incident->id, 'version' => $version, 'entry_type' => IncidentTimelineEntryType::Observation->value,
+            'visibility' => IncidentTimelineVisibility::Auditor->value, 'occurred_at' => $now,
+            'summary' => 'Existing bounded entry '.$version, 'details' => null, 'pinned' => false,
+            'incident_snapshot' => '{}', 'recorded_by' => $manager->id, 'recorded_at' => $now,
+            'fingerprint' => str_pad((string) $version, 64, '0', STR_PAD_LEFT), 'created_at' => $now, 'updated_at' => $now,
+        ])->chunk(40)->each(fn ($rows) => DB::table('incident_timeline_entries')->insert($rows->all()));
+        $service = app(IncidentTimelineManager::class);
+        $service->record($manager, $incident, [
+            'entry_type' => IncidentTimelineEntryType::Action->value, 'visibility' => IncidentTimelineVisibility::Auditor->value,
+            'occurred_at' => $now, 'summary' => 'Entry 500 succeeds.',
+        ]);
+        $this->assertSame(500, $incident->timelineEntries()->count());
+        try {
+            $service->record($manager, $incident, [
+                'entry_type' => IncidentTimelineEntryType::Action->value, 'visibility' => IncidentTimelineVisibility::Auditor->value,
+                'occurred_at' => $now, 'summary' => 'Entry 501 fails.',
+            ]);
+            $this->fail('Expected the timeline bound to reject entry 501.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+        $this->assertSame(500, $incident->timelineEntries()->count());
     }
 
     public function test_non_manager_cannot_advance_phase(): void
