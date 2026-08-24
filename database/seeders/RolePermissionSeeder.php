@@ -95,6 +95,9 @@ class RolePermissionSeeder extends Seeder
             'Develop Governed Models',
             'Validate Models',
             'Manage Model Risk',
+            'Read System Authorizations',
+            'Manage System Authorizations',
+            'Authorize Systems',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -148,6 +151,9 @@ class RolePermissionSeeder extends Seeder
             'Develop Governed Models',
             'Validate Models',
             'Manage Model Risk',
+            'Read System Authorizations',
+            'Manage System Authorizations',
+            'Authorize Systems',
         ]);
 
         // Assign specific Permissions to Internal Auditor

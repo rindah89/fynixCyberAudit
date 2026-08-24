@@ -14,6 +14,7 @@ use App\Models\PolicyObligation;
 use App\Models\PrivacyProcessingActivity;
 use App\Models\Survey;
 use App\Models\SurveyTemplate;
+use App\Models\SystemAuthorizationPackage;
 use App\Models\VendorDocument;
 use App\Policies\AiSystemPolicy;
 use App\Policies\BusinessServicePolicy;
@@ -27,6 +28,7 @@ use App\Policies\PrivacyProcessingActivityPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\SurveyPolicy;
 use App\Policies\SurveyTemplatePolicy;
+use App\Policies\SystemAuthorizationPackagePolicy;
 use App\Policies\TaxonomyPolicy;
 use App\Policies\VendorDocumentPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
@@ -53,6 +55,7 @@ class AuthServiceProvider extends ServiceProvider
         BusinessService::class => BusinessServicePolicy::class,
         ComplianceCase::class => ComplianceCasePolicy::class,
         GovernedModel::class => GovernedModelPolicy::class,
+        SystemAuthorizationPackage::class => SystemAuthorizationPackagePolicy::class,
         PrivacyProcessingActivity::class => PrivacyProcessingActivityPolicy::class,
         AiSystem::class => AiSystemPolicy::class,
         Survey::class => SurveyPolicy::class,

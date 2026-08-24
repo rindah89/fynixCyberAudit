@@ -832,3 +832,16 @@ Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Regi
 `validation_state` is derived from the latest exact-version review and becomes `Validation Expired` after its validity date passes.
 
 Inputs and judgments are deliberate. These endpoints do not discover or execute models, ingest telemetry, calculate performance or statistical tests, validate data or regulatory compliance, manage source code/deployment, or provide quantitative aggregate model-risk assurance.
+
+## Governed system authorization
+
+When `MODULE_SYSTEM_AUTHORIZATION_ENABLED=true`, authenticated authorization users use:
+
+- `GET /api/system-authorization-packages`
+- `POST /api/applications/{application}/authorization-packages`
+- `GET /api/system-authorization-packages/{package}`
+- `GET|POST /api/system-authorization-packages/{package}/decisions`
+
+Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Submission requires `system_boundary`, `impact_level` (`Low`, `Moderate`, or `High`), one or more `data_classifications`, arrays of authorized `control_ids`, `risk_ids`, and `open_findings`, a `monitoring_strategy`, optional `poam_reference`, and `change_summary`. The server owns versions, application/control/risk snapshots, attribution, timestamps, and fingerprints. Only the latest unchanged package can be independently authorized. `authorized_with_conditions` requires conditions; authorization requires a future `valid_until`; only an active authorization can later be revoked.
+
+Package and decision history is append-only and capped at 100 records per parent. The derived state becomes `authorization_expired` after validity passes. Inputs are deliberate: these endpoints do not discover boundaries, collect telemetry, validate controls or evidence, execute remediation, automatically authorize/revoke, or provide compliance assurance. See `docs/SYSTEM_AUTHORIZATION.md`.
