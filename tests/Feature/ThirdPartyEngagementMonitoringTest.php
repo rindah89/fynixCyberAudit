@@ -10,6 +10,7 @@ use App\Models\ThirdPartyEngagementMonitoringObservation;
 use App\Models\User;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementOnboardingManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -114,6 +115,7 @@ class ThirdPartyEngagementMonitoringTest extends TestCase
         $this->postJson("/api/third-party-engagements/{$approved->id}/monitoring-indicators", $payload)
             ->assertUnprocessable()->assertJsonValidationErrors('engagement');
 
+        $this->recordOnboarding($approved);
         app(ThirdPartyEngagementManager::class)->transition($manager, $approved, ['status' => 'active', 'summary' => 'Activated for monitoring.']);
         $indicatorId = $this->postJson("/api/third-party-engagements/{$approved->id}/monitoring-indicators", $payload + ['fingerprint' => str_repeat('a', 64)])
             ->assertUnprocessable()->assertJsonValidationErrors('fingerprint');
@@ -202,11 +204,23 @@ class ThirdPartyEngagementMonitoringTest extends TestCase
         $engagement = $review->engagement()->firstOrFail();
         $manager = User::query()->findOrFail($engagement->approved_by);
         $manager->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']);
+        $this->recordOnboarding($engagement);
         app(ThirdPartyEngagementManager::class)->transition($manager, $engagement, [
             'status' => 'active',
             'summary' => 'Activated against the accepted contract-risk review.',
         ]);
 
         return [$engagement->refresh(), $manager, $engagement->businessOwner()->firstOrFail()];
+    }
+
+    private function recordOnboarding(ThirdPartyEngagement $engagement): void
+    {
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $owner = User::factory()->create();
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $service = app(ThirdPartyEngagementOnboardingManager::class);
+        $requirement = $service->define($manager, $engagement, ['category' => 'security', 'title' => 'Monitoring prerequisite', 'acceptance_criteria' => 'Onboarding is complete.', 'owner_id' => $owner->id, 'due_at' => today()->addMonth()->toDateString(), 'required' => true]);
+        $service->complete($owner, $requirement, ['completion_summary' => 'Onboarding completed.', 'source_reference' => 'MONITOR-ONBOARD']);
+        $service->review($reviewer, $engagement, ['decision' => 'ready', 'summary' => 'Ready for activation.', 'next_review_at' => $engagement->next_review_at->toDateString()]);
     }
 }

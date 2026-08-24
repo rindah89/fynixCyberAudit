@@ -249,6 +249,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/third-party-engagements/{engagement}/contract-risk-reviews', [ThirdPartyRiskController::class, 'contractRiskReviews']);
     Route::post('/third-party-engagements/{engagement}/due-diligence-reviews', [ThirdPartyRiskController::class, 'reviewDueDiligence']);
     Route::get('/third-party-engagements/{engagement}/due-diligence-reviews', [ThirdPartyRiskController::class, 'dueDiligenceReviews']);
+    Route::post('/third-party-engagements/{engagement}/onboarding-requirements', [ThirdPartyRiskController::class, 'defineOnboardingRequirement']);
+    Route::get('/third-party-engagements/{engagement}/onboarding-requirements', [ThirdPartyRiskController::class, 'onboardingRequirements']);
+    Route::post('/third-party-engagement-onboarding-requirements/{requirement}/complete', [ThirdPartyRiskController::class, 'completeOnboardingRequirement']);
+    Route::post('/third-party-engagements/{engagement}/onboarding-readiness-reviews', [ThirdPartyRiskController::class, 'reviewOnboardingReadiness']);
+    Route::get('/third-party-engagements/{engagement}/onboarding-readiness-reviews', [ThirdPartyRiskController::class, 'onboardingReadinessReviews']);
     Route::get('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'monitoringIndicators']);
     Route::post('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'defineMonitoringIndicator']);
     Route::get('/third-party-engagement-monitoring-indicators/{indicator}/observations', [ThirdPartyRiskController::class, 'monitoringObservations']);

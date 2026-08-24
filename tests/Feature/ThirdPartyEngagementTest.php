@@ -20,6 +20,7 @@ use App\Models\Vendor;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementOnboardingManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -64,6 +65,7 @@ class ThirdPartyEngagementTest extends TestCase
             ->assertJsonPath('data.engagement_snapshot.approval_snapshot.decision.decided_by', $decider->id);
         Sanctum::actingAs($contractReviewer);
         $this->postJson("/api/third-party-engagements/{$id}/contract-risk-reviews", $this->contractReviewPayload(today()->addYear()))->assertCreated();
+        $this->recordOnboarding($engagement);
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'active', 'summary' => 'Term activated after current approval check.'])
             ->assertOk()->assertJsonPath('data.to_status', 'active');
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'renewal_review', 'summary' => 'Engagement entered renewal review.'])->assertOk();
@@ -208,6 +210,7 @@ class ThirdPartyEngagementTest extends TestCase
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.contract_reference', 'MSA-2026-0042');
 
         Sanctum::actingAs($contractReviewer);
+        $this->recordOnboarding($engagement);
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", [
             'status' => 'active', 'summary' => 'Activated after current contract and vendor-risk reviews.',
         ])->assertOk()->assertJsonPath('data.to_status', 'active');
@@ -241,6 +244,7 @@ class ThirdPartyEngagementTest extends TestCase
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Old contract review is stale.'])
             ->assertUnprocessable()->assertJsonValidationErrors('contract_review');
         app(ThirdPartyContractRiskManager::class)->review($contractReviewer, $engagement, $this->contractReviewPayload(today()->addYear(), 'MSA-2026-REAPPROVED'));
+        $this->recordOnboarding($engagement);
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Activated after both reapprovals.'])->assertOk();
     }
 
@@ -281,6 +285,17 @@ class ThirdPartyEngagementTest extends TestCase
         return ['likelihood' => 4, 'impact' => 5, 'residual_likelihood' => 2, 'residual_impact' => 3,
             'risk_categories' => ['cybersecurity', 'privacy', 'operational'], 'assessment_summary' => 'Material hosted service exposure.',
             'treatment_summary' => 'Contractual controls, assurance review, notification, and exit planning.'];
+    }
+
+    private function recordOnboarding(ThirdPartyEngagement $engagement): void
+    {
+        $managerActor = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $owner = User::factory()->create();
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $manager = app(ThirdPartyEngagementOnboardingManager::class);
+        $requirement = $manager->define($managerActor, $engagement, ['category' => 'security', 'title' => 'Factory-aligned onboarding control', 'acceptance_criteria' => 'Required access and security configuration is complete.', 'owner_id' => $owner->id, 'due_at' => today()->addMonth()->toDateString(), 'required' => true]);
+        $manager->complete($owner, $requirement, ['completion_summary' => 'Required onboarding control completed.', 'source_reference' => 'ONBOARD-TEST']);
+        $manager->review($reviewer, $engagement, ['decision' => 'ready', 'summary' => 'Required onboarding completion is attributable and ready.', 'next_review_at' => $engagement->next_review_at->toDateString()]);
     }
 
     private function contractReviewPayload(\DateTimeInterface $expiresAt, string $reference = 'MSA-2026-0042'): array

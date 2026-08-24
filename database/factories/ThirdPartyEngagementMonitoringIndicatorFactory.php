@@ -9,6 +9,7 @@ use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementOnboardingManager;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Arr;
 
@@ -49,6 +50,12 @@ class ThirdPartyEngagementMonitoringIndicatorFactory extends Factory
         $engagement = $review->engagement()->firstOrFail();
         $actor = User::query()->findOrFail($engagement->approved_by);
         $actor->givePermissionTo('Manage Third Party Risk');
+        $owner = User::factory()->create();
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $onboarding = app(ThirdPartyEngagementOnboardingManager::class);
+        $requirement = $onboarding->define($actor, $engagement, ['category' => 'security', 'title' => 'Factory onboarding control', 'acceptance_criteria' => 'Factory readiness criteria.', 'owner_id' => $owner->id, 'due_at' => today()->addMonth()->toDateString(), 'required' => true]);
+        $onboarding->complete($owner, $requirement, ['completion_summary' => 'Factory onboarding complete.', 'source_reference' => 'FACTORY-ONBOARD']);
+        $onboarding->review($reviewer, $engagement, ['decision' => 'ready', 'summary' => 'Factory readiness accepted.', 'next_review_at' => $engagement->next_review_at->toDateString()]);
         app(ThirdPartyEngagementManager::class)->transition($actor, $engagement, ['status' => 'active', 'summary' => 'Factory activation.']);
 
         return $engagement->refresh();

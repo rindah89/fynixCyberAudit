@@ -6,6 +6,7 @@ use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\VendorStatus;
+use App\Models\ThirdPartyContractRiskReview;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementEvent;
 use App\Models\User;
@@ -86,7 +87,7 @@ class ThirdPartyEngagementManager
                     if ($newEnd <= $locked->term_end_at->toDateString() || $newReview < today()->toDateString() || $newReview > $newEnd) {
                         throw ValidationException::withMessages(['renewed_term_end_at' => 'Renewal must extend the term and retain a current review date within it.']);
                     }
-                    $this->assertContractReviewCurrent($locked, $newEnd, $snapshot, $actor, $newReview);
+                    $this->currentAcceptedContractReview($locked, $newEnd, $snapshot, $actor, $newReview);
                     $changes += ['term_end_at' => $newEnd, 'next_review_at' => $newReview];
                 }
             }
@@ -95,8 +96,9 @@ class ThirdPartyEngagementManager
                     throw ValidationException::withMessages(['status' => 'An engagement cannot become active before its retained term start.']);
                 }
                 $this->assertApprovalStillCurrent($vendor, $locked);
-                $this->assertContractReviewCurrent($locked, $locked->term_end_at->toDateString());
-                $changes['activated_at'] = now()->startOfSecond();
+                $this->currentAcceptedContractReview($locked, $locked->term_end_at->toDateString());
+                $readiness = app(ThirdPartyEngagementOnboardingManager::class)->currentAcceptedReview($locked, $actor);
+                $changes += ['activated_at' => now()->startOfSecond(), 'onboarding_readiness_snapshot' => Arr::only($readiness->toArray(), ['id', 'version', 'decision', 'conditions', 'next_review_at', 'reviewed_by', 'reviewed_at', 'fingerprint'])];
             }
             if ($next === ThirdPartyEngagementStatus::Exited) {
                 $changes += ['exit_summary' => $data['exit_summary'], 'data_disposition_statement' => $data['data_disposition_statement'], 'exited_at' => now()->startOfSecond()];
@@ -151,10 +153,10 @@ class ThirdPartyEngagementManager
         }
     }
 
-    private function assertContractReviewCurrent(ThirdPartyEngagement $engagement, string $requiredThrough, ?array $riskApprovalSnapshot = null, ?User $approver = null, ?string $requiredNextReview = null): void
+    public function currentAcceptedContractReview(ThirdPartyEngagement $engagement, string $requiredThrough, ?array $riskApprovalSnapshot = null, ?User $approver = null, ?string $requiredNextReview = null): ThirdPartyContractRiskReview
     {
-        $latestEvent = $engagement->events()->lockForUpdate()->latest('version')->firstOrFail();
-        $review = $engagement->contractRiskReviews()->lockForUpdate()->latest('version')->first();
+        $latestEvent = ThirdPartyEngagementEvent::query()->where('third_party_engagement_id', $engagement->id)->lockForUpdate()->latest('version')->firstOrFail();
+        $review = ThirdPartyContractRiskReview::query()->where('third_party_engagement_id', $engagement->id)->lockForUpdate()->latest('version')->first();
         $expectedRiskApproval = $riskApprovalSnapshot ?? $engagement->approval_snapshot;
         abort_if($approver && $review?->reviewed_by === $approver->id, 403, 'Engagement renewal approval must be separated from the contract-risk reviewer.');
         if (! $review
@@ -167,6 +169,8 @@ class ThirdPartyEngagementManager
             || $review->expires_at->toDateString() < $requiredThrough) {
             throw ValidationException::withMessages(['contract_review' => 'A current accepted contract-risk review covering the engagement term is required.']);
         }
+
+        return $review;
     }
 
     private function vendorSnapshot(Vendor $vendor): array
@@ -177,7 +181,7 @@ class ThirdPartyEngagementManager
     private function appendEvent(ThirdPartyEngagement $engagement, User $actor, ?ThirdPartyEngagementStatus $from, ThirdPartyEngagementStatus $to, string $summary, Carbon $at): ThirdPartyEngagementEvent
     {
         $engagement->load(['businessOwner:id,name,email', 'proposer:id,name,email', 'approver:id,name,email']);
-        $snapshot = Arr::only($engagement->toArray(), ['id', 'vendor_id', 'code', 'name', 'service_description', 'criticality', 'data_access', 'status', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'governed_at'])
+        $snapshot = Arr::only($engagement->toArray(), ['id', 'vendor_id', 'code', 'name', 'service_description', 'criticality', 'data_access', 'status', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'onboarding_readiness_snapshot', 'governed_at'])
             + ['business_owner' => $engagement->businessOwner?->only(['id', 'name', 'email']), 'proposer' => $engagement->proposer?->only(['id', 'name', 'email']), 'approver' => $engagement->approver?->only(['id', 'name', 'email'])];
         $payload = ['third_party_engagement_id' => $engagement->id, 'version' => ((int) $engagement->events()->max('version')) + 1, 'from_status' => $from?->value, 'to_status' => $to->value,
             'summary' => $summary, 'engagement_snapshot' => $snapshot, 'recorded_by' => $actor->id, 'recorded_at' => $at->toIso8601String()];

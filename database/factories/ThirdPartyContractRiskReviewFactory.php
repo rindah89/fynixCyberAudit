@@ -45,7 +45,7 @@ class ThirdPartyContractRiskReviewFactory extends Factory
             $engagement->load(['businessOwner:id,name,email', 'proposer:id,name,email', 'approver:id,name,email']);
             $engagementSnapshot = $engagement->toArray();
             unset($engagementSnapshot['contract_risk_reviews'], $engagementSnapshot['events']);
-            $latestEvent = $engagement->events()->latest('version')->firstOrFail();
+            $latestEvent = $engagement->events()->reorder()->orderByDesc('version')->firstOrFail();
             $fields = ['contract_reference', 'agreement_type', 'effective_at', 'expires_at', 'proposed_term_end_at', 'proposed_next_review_at', 'confidentiality_terms', 'data_protection_terms', 'incident_notification_terms', 'audit_rights', 'subcontractor_controls', 'business_continuity_terms', 'termination_assistance', 'service_level_summary', 'liability_summary', 'exit_terms_summary', 'exceptions_summary', 'decision', 'conditions', 'rationale'];
             $canonicalData = [];
             foreach ($fields as $field) {

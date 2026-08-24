@@ -79,7 +79,7 @@ class ThirdPartyContractRiskManager
                     throw ValidationException::withMessages(['proposed_term_end_at' => 'The proposed renewal must extend the term and remain covered by the reviewed contract.']);
                 }
             }
-            $latestEvent = $locked->events()->lockForUpdate()->latest('version')->firstOrFail();
+            $latestEvent = $locked->events()->reorder()->orderByDesc('version')->lockForUpdate()->firstOrFail();
             $locked->load(['businessOwner:id,name,email', 'proposer:id,name,email', 'approver:id,name,email']);
             $engagementSnapshot = $locked->toArray();
             unset($engagementSnapshot['contract_risk_reviews'], $engagementSnapshot['events']);
