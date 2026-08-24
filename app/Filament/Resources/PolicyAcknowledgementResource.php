@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\PolicyAcknowledgementResource\Pages\ListPolicyAcknowledgements;
 use App\Filament\Resources\PolicyAcknowledgementResource\Pages\ViewPolicyAcknowledgement;
 use App\Models\PolicyAcknowledgementAssignment;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -57,6 +58,7 @@ class PolicyAcknowledgementResource extends Resource
             TextColumn::make('campaign.title')->label('Campaign'),
             TextColumn::make('acknowledgement_status')->label('Status')->badge()->color(fn (string $state): string => self::statusColor($state)),
             TextColumn::make('campaign.due_at')->label('Due')->dateTime()->sortable(),
+            TextColumn::make('reminders_count')->label('Reminders')->counts('reminders'),
             TextColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged')->dateTime()->placeholder('Pending'),
         ])->defaultSort('assigned_at', 'desc');
     }
@@ -82,13 +84,30 @@ class PolicyAcknowledgementResource extends Resource
                 TextEntry::make('acknowledgement.acknowledged_at')->dateTime()->placeholder('Not acknowledged'),
                 TextEntry::make('acknowledgement.client_reference')->placeholder('Not provided'),
             ]),
+            Section::make('In-app delivery evidence')->columns(2)->schema([
+                TextEntry::make('delivery.delivered_at')->label('Assignment delivered')->dateTime()->placeholder('Not delivered'),
+                TextEntry::make('delivery.notification_id')->label('Assignment notification ID')->copyable()->placeholder('Not delivered'),
+                TextEntry::make('delivery.fingerprint')->label('Assignment delivery fingerprint')->copyable()->columnSpanFull()->placeholder('Not delivered'),
+                RepeatableEntry::make('reminders')->schema([
+                    TextEntry::make('type')->label('Reminder')->badge()
+                        ->formatStateUsing(fn ($state): string => $state->getLabel())
+                        ->color(fn ($state): string => $state->getColor()),
+                    TextEntry::make('delivered_at')->label('Delivered')->dateTime(),
+                    TextEntry::make('notification_id')->label('Notification ID')->copyable(),
+                    TextEntry::make('fingerprint')->label('Fingerprint')->copyable()->columnSpanFull(),
+                    TextEntry::make('recipient_snapshot')->label('Recipient snapshot')
+                        ->formatStateUsing(fn ($state): string => json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))->columnSpanFull(),
+                    TextEntry::make('campaign_snapshot')->label('Campaign snapshot')
+                        ->formatStateUsing(fn ($state): string => json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))->columnSpanFull(),
+                ])->columnSpanFull(),
+            ]),
         ]);
     }
 
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->where('user_id', auth()->id())
-            ->with(['campaign.policy:id,code,name', 'acknowledgement']);
+            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'acknowledgement']);
     }
 
     public static function getPages(): array

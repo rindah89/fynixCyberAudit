@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
@@ -40,6 +41,11 @@ class PolicyAcknowledgementAssignment extends Model
     public function delivery(): HasOne
     {
         return $this->hasOne(PolicyAcknowledgementDelivery::class);
+    }
+
+    public function reminders(): HasMany
+    {
+        return $this->hasMany(PolicyAcknowledgementReminder::class);
     }
 
     public function getAcknowledgementStatusAttribute(): string

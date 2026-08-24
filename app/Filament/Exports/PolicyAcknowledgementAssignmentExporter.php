@@ -32,6 +32,20 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
                 ->formatStateUsing(fn ($state): ?string => $state ? json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
             ExportColumn::make('delivery.campaign_snapshot')->label('Delivery Campaign Snapshot JSON')
                 ->formatStateUsing(fn ($state): ?string => $state ? json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
+            ExportColumn::make('reminder_history')->label('Reminder History JSON')
+                ->state(fn (PolicyAcknowledgementAssignment $record): string => json_encode(
+                    $record->reminders->sortBy('delivered_at')->map(fn ($reminder): array => [
+                        'type' => $reminder->type->value,
+                        'channel' => $reminder->channel,
+                        'notification_id' => $reminder->notification_id,
+                        'recipient_snapshot' => $reminder->recipient_snapshot,
+                        'campaign_snapshot' => $reminder->campaign_snapshot,
+                        'attempted_at' => $reminder->attempted_at?->toISOString(),
+                        'delivered_at' => $reminder->delivered_at?->toISOString(),
+                        'fingerprint' => $reminder->fingerprint,
+                    ])->values()->all(),
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                )),
             ExportColumn::make('campaign.due_at')->label('Due At'),
             ExportColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged At'),
             ExportColumn::make('acknowledgement.statement')->label('Statement'),
@@ -45,7 +59,7 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
 
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'acknowledgement']);
+        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'reminders', 'acknowledgement']);
     }
 
     public static function getCompletedNotificationBody(Export $export): string

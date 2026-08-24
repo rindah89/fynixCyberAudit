@@ -16,7 +16,7 @@ class AssignmentsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['user:id,name,email', 'campaign', 'delivery', 'acknowledgement.acknowledger:id,name,email']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['user:id,name,email', 'campaign', 'delivery', 'reminders', 'acknowledgement.acknowledger:id,name,email']))
             ->columns([
                 TextColumn::make('user.name')->label('User')->searchable(), TextColumn::make('user.email')->label('Email')->searchable(),
                 TextColumn::make('acknowledgement_status')->label('Status')->badge()->color(fn (string $state): string => match ($state) {
@@ -24,6 +24,7 @@ class AssignmentsRelationManager extends RelationManager
                 }),
                 TextColumn::make('assigned_at')->dateTime()->sortable(),
                 TextColumn::make('delivery.delivered_at')->label('Notification delivered')->dateTime()->placeholder('Not delivered')->sortable(),
+                TextColumn::make('reminders_count')->label('Reminders')->counts('reminders'),
                 TextColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged at')->dateTime()->placeholder('Not acknowledged'),
             ])->headerActions([ExportAction::make()->exporter(PolicyAcknowledgementAssignmentExporter::class)])
             ->recordActions([Action::make('inspect')->label('Inspect')->icon('heroicon-o-eye')

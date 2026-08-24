@@ -16,6 +16,18 @@
         <div><span class="text-gray-500">Delivery fingerprint</span><div class="break-all font-mono text-xs">{{ $assignment->delivery->fingerprint }}</div></div>
         <div><span class="text-gray-500">Immutable delivery snapshot</span><pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border p-3 text-xs">{{ json_encode(['recipient' => $assignment->delivery->recipient_snapshot, 'campaign' => $assignment->delivery->campaign_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre></div>
     @endif
+    @foreach ($assignment->reminders->sortBy('delivered_at') as $reminder)
+        <div class="rounded-lg border p-3">
+            <div class="font-medium">{{ $reminder->type->getLabel() }} in-app reminder</div>
+            <div>Delivered {{ $reminder->delivered_at?->toDateTimeString() }} · channel {{ $reminder->channel }}</div>
+            <div class="mt-2 break-all font-mono text-xs">Notification {{ $reminder->notification_id }}</div>
+            <div class="mt-2 break-all font-mono text-xs">SHA-256 {{ $reminder->fingerprint }}</div>
+            <details class="mt-2">
+                <summary class="cursor-pointer font-medium">Immutable reminder snapshot</summary>
+                <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border p-3 text-xs">{{ json_encode(['recipient' => $reminder->recipient_snapshot, 'campaign' => $reminder->campaign_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+            </details>
+        </div>
+    @endforeach
     <div><span class="text-gray-500">Assigned policy</span><div>{{ data_get($assignment->campaign->policy_snapshot, 'code') }} — {{ data_get($assignment->campaign->policy_snapshot, 'name') }}</div></div>
     <div><span class="text-gray-500">Policy body snapshot</span><div class="whitespace-pre-wrap">{{ strip_tags((string) data_get($assignment->campaign->policy_snapshot, 'body')) }}</div></div>
 </div>
