@@ -6,7 +6,9 @@ use App\Access\FileAccess;
 use App\Enums\IncidentPhase;
 use App\Enums\IncidentTimelineVisibility;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\GenerateIncidentFinalReportRequest;
 use App\Http\Requests\ListIncidentAffectedEntitiesRequest;
+use App\Http\Requests\ListIncidentFinalReportsRequest;
 use App\Http\Requests\ListIncidentLessonEventsRequest;
 use App\Http\Requests\ListIncidentLessonsRequest;
 use App\Http\Requests\ListIncidentNotificationEventsRequest;
@@ -26,6 +28,7 @@ use App\Http\Requests\StoreIncidentTimelineEntryRequest;
 use App\Http\Requests\TransitionIncidentPhaseRequest;
 use App\Incidents\IncidentAffectedEntityManager;
 use App\Incidents\IncidentDesk;
+use App\Incidents\IncidentFinalReportManager;
 use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
 use App\Incidents\IncidentTimelineManager;
@@ -164,6 +167,17 @@ class IncidentGovernanceController extends Controller
     public function storeTimelineEntry(StoreIncidentTimelineEntryRequest $request, Incident $incident, IncidentTimelineManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->record($request->user(), $incident, $request->validated())->load('recorder:id,name')], JsonResponse::HTTP_CREATED);
+    }
+
+    public function finalReports(ListIncidentFinalReportsRequest $request, Incident $incident): JsonResponse
+    {
+        return response()->json($incident->finalReports()->with('generator:id,name')
+            ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function generateFinalReport(GenerateIncidentFinalReportRequest $request, Incident $incident, IncidentFinalReportManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->generate($request->user(), $incident, $request->validated())->load('generator:id,name')], JsonResponse::HTTP_CREATED);
     }
 
     public function storeAffectedEntity(StoreIncidentAffectedEntityRequest $request, Incident $incident, IncidentAffectedEntityManager $manager): JsonResponse

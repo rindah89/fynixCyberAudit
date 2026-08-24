@@ -9,6 +9,7 @@ use App\Http\Controllers\AuditProcedureExecutionEvidenceController;
 use App\Http\Controllers\Auth\SsoController;
 use App\Http\Controllers\ControlTestExecutionEvidenceController;
 use App\Http\Controllers\GovernanceIssueClosureEvidenceController;
+use App\Http\Controllers\IncidentFinalReportController;
 use App\Http\Controllers\IncidentPhaseTransitionEvidenceController;
 use App\Http\Controllers\IncidentTaskEventEvidenceController;
 use App\Http\Controllers\MediaProxyController;
@@ -76,6 +77,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('incident-task-event-evidence.download');
     Route::get('/app/incident-phase-transition-evidence/{evidence}/download', [IncidentPhaseTransitionEvidenceController::class, 'download'])
         ->name('incident-phase-transition-evidence.download');
+    Route::get('/app/incident-final-reports/{report}/download', [IncidentFinalReportController::class, 'download'])
+        ->name('incident-final-reports.download');
 
     // Media proxy route for serving private S3/cloud storage files
     Route::get('/media/{path}', [MediaProxyController::class, 'show'])

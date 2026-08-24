@@ -104,6 +104,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/incidents/{incident}/affected-entities', [IncidentGovernanceController::class, 'storeAffectedEntity']);
     Route::get('/incidents/{incident}/timeline', [IncidentGovernanceController::class, 'timeline']);
     Route::post('/incidents/{incident}/timeline', [IncidentGovernanceController::class, 'storeTimelineEntry']);
+    Route::get('/incidents/{incident}/final-reports', [IncidentGovernanceController::class, 'finalReports']);
+    Route::post('/incidents/{incident}/final-reports', [IncidentGovernanceController::class, 'generateFinalReport']);
     Route::post('/incidents/{incident}/lessons', [IncidentGovernanceController::class, 'storeLesson']);
     Route::post('/incident-lessons/{lesson}/progress', [IncidentGovernanceController::class, 'lessonProgress']);
     Route::get('/incident-lessons/{lesson}/events', [IncidentGovernanceController::class, 'lessonEvents']);

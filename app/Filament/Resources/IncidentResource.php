@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\IncidentResource\Pages\ListIncidents;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
 use App\Filament\Resources\IncidentResource\RelationManagers\AffectedEntitiesRelationManager;
+use App\Filament\Resources\IncidentResource\RelationManagers\FinalReportsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
@@ -85,6 +86,7 @@ class IncidentResource extends Resource
             TasksRelationManager::class, PhaseTransitionsRelationManager::class,
             NotificationsRelationManager::class, LessonsRelationManager::class, AffectedEntitiesRelationManager::class,
             TimelineEntriesRelationManager::class,
+            FinalReportsRelationManager::class,
         ];
     }
 

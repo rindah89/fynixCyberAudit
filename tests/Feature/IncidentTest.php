@@ -13,6 +13,7 @@ use App\Enums\IncidentTimelineEntryType;
 use App\Enums\IncidentTimelineVisibility;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
 use App\Filament\Resources\IncidentResource\RelationManagers\AffectedEntitiesRelationManager;
+use App\Filament\Resources\IncidentResource\RelationManagers\FinalReportsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
@@ -20,6 +21,7 @@ use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManage
 use App\Filament\Resources\IncidentResource\RelationManagers\TimelineEntriesRelationManager;
 use App\Incidents\IncidentAffectedEntityManager;
 use App\Incidents\IncidentDesk;
+use App\Incidents\IncidentFinalReportManager;
 use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
 use App\Incidents\IncidentTimelineManager;
@@ -30,6 +32,7 @@ use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
 use App\Models\Incident;
+use App\Models\IncidentFinalReport;
 use App\Models\IncidentLesson;
 use App\Models\IncidentNotification;
 use App\Models\IncidentPhaseTransition;
@@ -432,6 +435,140 @@ class IncidentTest extends TestCase
             $this->assertArrayHasKey('incident', $exception->errors());
         }
         $this->assertSame(500, $incident->timelineEntries()->count());
+    }
+
+    public function test_manager_generates_versioned_verified_final_incident_report_with_exact_acl(): void
+    {
+        Storage::fake('private');
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $reader = User::factory()->create();
+        $reader->assignRole('Regular User');
+        $reader->givePermissionTo('Manage Incident Evidence');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Governed final report incident', 'severity' => 'Critical', 'involves_data' => true,
+        ]);
+        $evidence = $this->acceptedEvidence($manager, 'incidents/final-report.txt', 'retained report evidence');
+        $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/final-reports', [
+            'executive_summary' => 'Too early.', 'conclusions' => 'Not final.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('incident');
+        app(IncidentDesk::class)->advancePhase($manager, $incident, IncidentPhase::Containment, 'Containment approved.', [$evidence->id]);
+        foreach ([IncidentPhase::Eradication, IncidentPhase::Recovery, IncidentPhase::LessonsLearned] as $phase) {
+            app(IncidentDesk::class)->advancePhase($manager, $incident->refresh(), $phase, 'Advance to '.$phase->value.'.');
+        }
+        $notification = app(IncidentNotificationManager::class)->register($manager, $incident, [
+            'audience' => IncidentNotificationAudience::Other->value, 'recipient' => 'Executive response team',
+            'rationale' => 'Retain the notification decision chain in the report.',
+        ]);
+        $lessonOwner = User::factory()->create();
+        $lesson = app(IncidentLessonManager::class)->register($manager, $incident, [
+            'area' => IncidentLessonArea::Process->value, 'observation' => 'Escalation ownership was delayed.',
+            'recommendation' => 'Exercise the escalation matrix.', 'owner_id' => $lessonOwner->id,
+            'rationale' => 'Retain the lesson decision chain in the report.',
+        ]);
+        $asset = Asset::factory()->create(['asset_tag' => 'FINAL-01', 'name' => 'Final report server']);
+        app(IncidentAffectedEntityManager::class)->link($manager, $incident, [
+            'entity_type' => IncidentAffectedEntityType::Asset->value, 'entity_id' => $asset->id,
+            'impact_summary' => 'The server was isolated.',
+        ]);
+        app(IncidentTimelineManager::class)->record($manager, $incident, [
+            'entry_type' => IncidentTimelineEntryType::Observation->value, 'visibility' => IncidentTimelineVisibility::Internal->value,
+            'occurred_at' => now()->subMinutes(2), 'summary' => 'Internal-only hypothesis must not enter the report.',
+        ]);
+        app(IncidentTimelineManager::class)->record($manager, $incident, [
+            'entry_type' => IncidentTimelineEntryType::Action->value, 'visibility' => IncidentTimelineVisibility::Auditor->value,
+            'occurred_at' => now()->subMinute(), 'summary' => 'Auditor-visible containment milestone.',
+        ]);
+
+        try {
+            app(IncidentFinalReportManager::class)->generate($reader, $incident, [
+                'executive_summary' => 'Unauthorized.', 'conclusions' => 'Unauthorized.',
+            ]);
+            $this->fail('Expected direct final-report service authorization to fail.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $response = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/final-reports', [
+            'executive_summary' => 'The response contained the incident and preserved decision evidence.',
+            'conclusions' => 'The point-in-time report records operator conclusions without effectiveness inference.',
+            'version' => 99,
+        ])->assertUnprocessable()->assertJsonValidationErrors('version');
+        $reportId = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/final-reports', [
+            'executive_summary' => 'The response contained the incident and preserved decision evidence.',
+            'conclusions' => 'The point-in-time report records operator conclusions without effectiveness inference.',
+        ])->assertCreated()->assertJsonMissingPath('data.report_snapshot')->assertJsonMissingPath('data.report_path')->json('data.id');
+        $report = IncidentFinalReport::query()->findOrFail($reportId);
+        $this->assertSame(1, $report->version);
+        $this->assertSame('Final report server', data_get($report->report_snapshot, 'affected_entities.0.entity_snapshot.name'));
+        $this->assertSame('Auditor-visible containment milestone.', data_get($report->report_snapshot, 'auditor_timeline.0.summary'));
+        $this->assertStringNotContainsString('Internal-only hypothesis', json_encode($report->report_snapshot, JSON_THROW_ON_ERROR));
+        $this->assertSame($evidence->id, data_get($report->report_snapshot, 'evidence_manifest.0.file_attachment_id'));
+        $this->assertSame($notification->events()->latest('version')->value('fingerprint'), data_get($report->report_snapshot, 'notifications.0.latest_event_fingerprint'));
+        $this->assertSame($lesson->events()->latest('version')->value('fingerprint'), data_get($report->report_snapshot, 'lessons.0.latest_event_fingerprint'));
+        $this->assertSame(data_get($report->report_snapshot, 'notifications.0.latest_event_fingerprint'), data_get($report->report_snapshot, 'source_fingerprints.notification_latest_events.0'));
+        $this->assertSame(data_get($report->report_snapshot, 'lessons.0.latest_event_fingerprint'), data_get($report->report_snapshot, 'source_fingerprints.lesson_latest_events.0'));
+        Storage::disk('private')->assertExists($report->report_path);
+        $payload = [
+            'incident_id' => $report->incident_id, 'version' => $report->version, 'report_snapshot' => $report->report_snapshot,
+            'evidence_attachment_ids' => $report->evidence_attachment_ids, 'generated_by' => $report->generated_by,
+            'generated_at' => $report->generated_at->toIso8601String(), 'report_disk' => $report->report_disk,
+            'report_path' => $report->report_path, 'report_size' => $report->report_size, 'report_sha256' => $report->report_sha256,
+        ];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $report->fingerprint);
+        $download = $this->actingAs($manager)->get(route('incident-final-reports.download', $report))->assertOk();
+        $this->assertSame($report->report_sha256, hash('sha256', $download->streamedContent()));
+        $this->actingAs($reader)->get(route('incident-final-reports.download', $report))->assertForbidden();
+        $this->actingAs($reader)->getJson('/api/incidents/'.$incident->id.'/final-reports')
+            ->assertOk()->assertJsonMissingPath('data.0.report_snapshot')->assertJsonMissingPath('data.0.report_path');
+
+        Livewire::actingAs($manager);
+        Livewire::test(FinalReportsRelationManager::class, ['ownerRecord' => $incident, 'pageClass' => ViewIncident::class])
+            ->assertCanSeeTableRecords([$report])->assertTableActionVisible('inspect', $report);
+        $report->load('generator:id,name');
+        $rendered = view('filament.incident-final-report', ['record' => $report])->render();
+        $this->assertStringContainsString('The response contained the incident', $rendered);
+        $this->assertStringContainsString($report->report_sha256, $rendered);
+
+        Storage::disk('private')->put($report->report_path, 'tampered report');
+        $this->actingAs($manager)->get(route('incident-final-reports.download', $report))->assertStatus(409);
+        try {
+            $report->delete();
+            $this->fail('Expected final-report evidence to remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+        $migration = require database_path('migrations/2026_08_24_640000_create_incident_final_reports.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_final_reports', ['id' => $report->id, 'fingerprint' => $report->fingerprint]);
+    }
+
+    public function test_final_report_version_bound_is_exact(): void
+    {
+        Storage::fake('private');
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Bounded final reporting', 'severity' => 'Medium',
+        ]);
+        foreach ([IncidentPhase::Containment, IncidentPhase::Eradication, IncidentPhase::Recovery, IncidentPhase::LessonsLearned] as $phase) {
+            app(IncidentDesk::class)->advancePhase($manager, $incident->refresh(), $phase, 'Advance.');
+        }
+        foreach (range(1, 19) as $version) {
+            IncidentFinalReport::factory()->create([
+                'incident_id' => $incident->id, 'generated_by' => $manager->id, 'version' => $version,
+                'report_path' => 'incident-final-reports/existing-'.$version.'.pdf',
+            ]);
+        }
+        $service = app(IncidentFinalReportManager::class);
+        $twentieth = $service->generate($manager, $incident, ['executive_summary' => 'Version twenty.', 'conclusions' => 'Bounded.']);
+        $this->assertSame(20, $twentieth->version);
+        try {
+            $service->generate($manager, $incident, ['executive_summary' => 'Version twenty one.', 'conclusions' => 'Rejected.']);
+            $this->fail('Expected final-report version 21 to be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+        $this->assertSame(20, $incident->finalReports()->count());
     }
 
     public function test_non_manager_cannot_advance_phase(): void
