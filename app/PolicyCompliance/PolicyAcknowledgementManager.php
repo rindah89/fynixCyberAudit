@@ -103,8 +103,13 @@ class PolicyAcknowledgementManager
     public function acknowledge(PolicyAcknowledgementAssignment $assignment, User $actor, array $data): PolicyAcknowledgement
     {
         return DB::transaction(function () use ($assignment, $actor, $data): PolicyAcknowledgement {
+            $campaignId = PolicyAcknowledgementAssignment::query()->whereKey($assignment->id)
+                ->value('policy_acknowledgement_campaign_id');
+            $campaign = PolicyAcknowledgementCampaign::query()->lockForUpdate()->findOrFail($campaignId);
             $locked = PolicyAcknowledgementAssignment::query()->lockForUpdate()->findOrFail($assignment->id);
-            $campaign = PolicyAcknowledgementCampaign::query()->lockForUpdate()->findOrFail($locked->policy_acknowledgement_campaign_id);
+            if ($locked->policy_acknowledgement_campaign_id !== $campaign->id) {
+                abort(409, 'The acknowledgement assignment changed campaigns.');
+            }
             if ($locked->user_id !== $actor->id) {
                 abort(403, 'Only the assigned user can acknowledge this policy campaign.');
             }
@@ -153,7 +158,7 @@ class PolicyAcknowledgementManager
     public function assignments(User $actor): Builder
     {
         return PolicyAcknowledgementAssignment::query()->where('user_id', $actor->id)
-            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'acknowledgement:id,policy_acknowledgement_assignment_id,acknowledged_at'])
+            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'escalation', 'acknowledgement:id,policy_acknowledgement_assignment_id,acknowledged_at'])
             ->latest('assigned_at');
     }
 
@@ -162,7 +167,7 @@ class PolicyAcknowledgementManager
         $policy = $campaign->relationLoaded('policy') ? $campaign->policy : $campaign->policy()->firstOrFail();
         $this->authorizeManage($policy, $actor);
 
-        return $campaign->assignments()->getQuery()->with(['campaign', 'user:id,name,email', 'delivery', 'reminders', 'acknowledgement.acknowledger:id,name,email'])->latest('assigned_at');
+        return $campaign->assignments()->getQuery()->with(['campaign', 'user:id,name,email', 'delivery', 'reminders', 'escalation.recipient:id,name,email', 'acknowledgement.acknowledger:id,name,email'])->latest('assigned_at');
     }
 
     public static function launchRules(): array

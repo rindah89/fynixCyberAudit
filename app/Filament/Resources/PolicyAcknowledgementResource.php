@@ -100,6 +100,9 @@ class PolicyAcknowledgementResource extends Resource
                     TextEntry::make('campaign_snapshot')->label('Campaign snapshot')
                         ->formatStateUsing(fn ($state): string => json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))->columnSpanFull(),
                 ])->columnSpanFull(),
+                TextEntry::make('escalation.delivered_at')->label('Policy-owner escalation delivered')->dateTime()->placeholder('Not escalated'),
+                TextEntry::make('escalation.notification_id')->label('Escalation notification ID')->copyable()->placeholder('Not escalated'),
+                TextEntry::make('escalation.fingerprint')->label('Escalation fingerprint')->copyable()->columnSpanFull()->placeholder('Not escalated'),
             ]),
         ]);
     }
@@ -107,7 +110,7 @@ class PolicyAcknowledgementResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->where('user_id', auth()->id())
-            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'acknowledgement']);
+            ->with(['campaign.policy:id,code,name', 'delivery', 'reminders', 'escalation', 'acknowledgement']);
     }
 
     public static function getPages(): array

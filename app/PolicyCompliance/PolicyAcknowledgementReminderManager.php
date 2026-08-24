@@ -41,9 +41,13 @@ class PolicyAcknowledgementReminderManager
     private function remind(int $assignmentId, Carbon $asOf): bool
     {
         return DB::transaction(function () use ($assignmentId, $asOf): bool {
+            $campaignId = PolicyAcknowledgementAssignment::query()->whereKey($assignmentId)
+                ->value('policy_acknowledgement_campaign_id');
+            $campaign = PolicyAcknowledgementCampaign::query()->lockForUpdate()->findOrFail($campaignId);
             $assignment = PolicyAcknowledgementAssignment::query()->lockForUpdate()->findOrFail($assignmentId);
-            $campaign = PolicyAcknowledgementCampaign::query()->lockForUpdate()
-                ->findOrFail($assignment->policy_acknowledgement_campaign_id);
+            if ($assignment->policy_acknowledgement_campaign_id !== $campaign->id) {
+                return false;
+            }
             if ($campaign->closed_at || $assignment->acknowledgement()->lockForUpdate()->exists()
                 || $campaign->due_at->greaterThan($asOf->copy()->addDays(self::DUE_SOON_DAYS))) {
                 return false;

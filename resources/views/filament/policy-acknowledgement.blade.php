@@ -28,6 +28,10 @@
             </details>
         </div>
     @endforeach
+    @if ($assignment->escalation)
+        <div><span class="text-gray-500">Policy-owner escalation delivered</span><div>{{ $assignment->escalation->delivered_at->toDateTimeString() }}</div></div>
+        <div><span class="text-gray-500">Escalation fingerprint</span><div class="break-all font-mono text-xs">{{ $assignment->escalation->fingerprint }}</div></div>
+    @endif
     <div><span class="text-gray-500">Assigned policy</span><div>{{ data_get($assignment->campaign->policy_snapshot, 'code') }} — {{ data_get($assignment->campaign->policy_snapshot, 'name') }}</div></div>
     <div><span class="text-gray-500">Policy body snapshot</span><div class="whitespace-pre-wrap">{{ strip_tags((string) data_get($assignment->campaign->policy_snapshot, 'body')) }}</div></div>
 </div>

@@ -46,6 +46,16 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
                     ])->values()->all(),
                     JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
                 )),
+            ExportColumn::make('escalation_fingerprint')->label('Escalation Fingerprint')
+                ->state(fn (PolicyAcknowledgementAssignment $record): ?string => $record->escalation?->fingerprint),
+            ExportColumn::make('escalation_snapshot')->label('Escalation Snapshot JSON')
+                ->state(fn (PolicyAcknowledgementAssignment $record): ?string => $record->escalation ? json_encode([
+                    'assigned_user' => $record->escalation->assignment_snapshot,
+                    'recipient' => $record->escalation->recipient_snapshot,
+                    'campaign' => $record->escalation->campaign_snapshot,
+                    'notification_id' => $record->escalation->notification_id,
+                    'delivered_at' => $record->escalation->delivered_at?->toISOString(),
+                ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
             ExportColumn::make('campaign.due_at')->label('Due At'),
             ExportColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged At'),
             ExportColumn::make('acknowledgement.statement')->label('Statement'),
@@ -59,7 +69,7 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
 
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'reminders', 'acknowledgement']);
+        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'reminders', 'escalation', 'acknowledgement']);
     }
 
     public static function getCompletedNotificationBody(Export $export): string
