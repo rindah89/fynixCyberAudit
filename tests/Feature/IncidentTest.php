@@ -3,18 +3,22 @@
 namespace Tests\Feature;
 
 use App\Enums\IncidentPhase;
+use App\Enums\IncidentTaskStatus;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
+use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
 use App\Incidents\IncidentDesk;
 use App\Models\Incident;
 use App\Models\IncidentPhaseTransition;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentPlaybookTask;
+use App\Models\IncidentTaskEvent;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -250,6 +254,19 @@ class IncidentTest extends TestCase
         }
 
         $this->assertDatabaseCount('incident_phase_transitions', 0);
+        $legacyTask = $legacy->tasks()->create([
+            'title' => 'Imported task', 'phase' => IncidentPhase::Identification,
+            'status' => IncidentTaskStatus::Open->value, 'priority' => 'Medium',
+        ]);
+        try {
+            app(IncidentDesk::class)->recordTaskEvent($manager, $legacyTask, [
+                'status' => IncidentTaskStatus::InProgress->value, 'summary' => 'Attempted legacy task transition.',
+            ]);
+            $this->fail('Expected legacy task event to be rejected.');
+        } catch (HttpException $exception) {
+            $this->assertSame(422, $exception->getStatusCode());
+        }
+        $this->assertDatabaseCount('incident_task_events', 0);
     }
 
     public function test_governance_migration_repairs_a_missing_snapshot_column(): void
@@ -263,5 +280,168 @@ class IncidentTest extends TestCase
         $this->assertTrue(Schema::hasColumn('incidents', 'incident_playbook_id'));
         $this->assertTrue(Schema::hasColumn('incidents', 'playbook_snapshot'));
         $this->assertTrue(Schema::hasColumn('incidents', 'governed_at'));
+    }
+
+    public function test_governed_response_tasks_retain_assignment_and_execution_history(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $responder = User::factory()->create();
+        $outsider = User::factory()->create();
+        $playbook = IncidentPlaybook::factory()->create();
+        IncidentPlaybookTask::factory()->create([
+            'incident_playbook_id' => $playbook->id, 'title' => 'Preserve volatile evidence',
+            'phase' => IncidentPhase::Identification, 'priority' => 'High',
+        ]);
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, $playbook, ['title' => 'Endpoint compromise']);
+        $task = $incident->tasks()->firstOrFail();
+        $this->assertSame('governed', $task->governance_status);
+        $this->assertDatabaseHas('incident_task_events', ['incident_task_id' => $task->id, 'version' => 1, 'event_type' => 'seeded']);
+
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::InProgress->value,
+            'assignee_id' => $responder->id,
+            'due_date' => now()->addDay()->toDateString(),
+            'summary' => 'Assigned collection to the endpoint responder.',
+        ])->assertCreated()->assertJsonPath('task.status', IncidentTaskStatus::InProgress->value)
+            ->assertJsonPath('task.assignee.id', $responder->id);
+
+        $completed = $this->actingAs($responder)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::Completed->value,
+            'summary' => 'Memory and volatile network state captured.',
+        ])->assertCreated()->json('data');
+        $this->assertSame(3, $completed['version']);
+        $this->assertSame($responder->id, $completed['recorded_by']);
+
+        $event = IncidentTaskEvent::query()->findOrFail($completed['id']);
+        $payload = [
+            'incident_id' => $event->incident_id, 'incident_task_id' => $event->incident_task_id,
+            'version' => $event->version, 'event_type' => $event->event_type,
+            'from_status' => $event->from_status?->value, 'to_status' => $event->to_status->value,
+            'before_snapshot' => $event->before_snapshot, 'after_snapshot' => $event->after_snapshot,
+            'summary' => $event->summary, 'recorded_by' => $event->recorded_by,
+            'recorded_at' => $event->recorded_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $event->fingerprint);
+        try {
+            $event->update(['summary' => 'Rewritten event']);
+            $this->fail('Expected task event history to be immutable.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+
+        $this->actingAs($outsider)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::Blocked->value, 'summary' => 'Unauthorized.',
+        ])->assertForbidden();
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::Cancelled->value, 'summary' => 'Rewrite terminal state.', 'version' => 99,
+        ])->assertUnprocessable()->assertJsonValidationErrors('version');
+
+        $this->actingAs($manager)->getJson('/api/incidents/'.$incident->id)
+            ->assertOk()->assertJsonPath('data.tasks.0.events_count', 3)
+            ->assertJsonMissingPath('data.tasks.0.events');
+        $this->actingAs($manager)->getJson('/api/incident-tasks/'.$task->id.'/events?per_page=2')
+            ->assertOk()->assertJsonPath('total', 3)->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.1.after_snapshot.status', IncidentTaskStatus::InProgress->value);
+        Livewire::actingAs($manager);
+        Livewire::test(TasksRelationManager::class, ['ownerRecord' => $incident, 'pageClass' => ViewIncident::class])
+            ->assertCanSeeTableRecords([$task])->assertTableActionVisible('inspect_history', $task);
+
+        $migration = require database_path('migrations/2026_08_24_570000_create_governed_incident_task_events.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_task_events', ['id' => $event->id, 'fingerprint' => $event->fingerprint]);
+    }
+
+    public function test_task_phase_assignee_authority_and_terminal_state_are_enforced(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $responder = User::factory()->create();
+        $inactive = User::factory()->create();
+        $playbook = IncidentPlaybook::factory()->create();
+        IncidentPlaybookTask::factory()->create([
+            'incident_playbook_id' => $playbook->id, 'title' => 'Restore service',
+            'phase' => IncidentPhase::Recovery, 'priority' => 'High',
+        ]);
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, $playbook, ['title' => 'Recovery controls']);
+        $task = $incident->tasks()->firstOrFail();
+
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::InProgress->value, 'summary' => 'Started before recovery.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('status');
+
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'assignee_id' => $responder->id, 'summary' => 'Assigned recovery owner.',
+        ])->assertCreated();
+        $this->actingAs($responder)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'assignee_id' => $manager->id, 'summary' => 'Attempted reassignment.',
+        ])->assertForbidden();
+
+        $inactive->delete();
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'assignee_id' => $inactive->id, 'summary' => 'Attempted inactive assignment.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('assignee_id');
+
+        foreach ([IncidentPhase::Containment, IncidentPhase::Eradication, IncidentPhase::Recovery] as $phase) {
+            app(IncidentDesk::class)->advancePhase($manager, $incident->refresh(), $phase, 'Advanced response phase.');
+        }
+        app(IncidentDesk::class)->recordTaskEvent($manager, $task, [
+            'status' => IncidentTaskStatus::InProgress->value, 'summary' => 'Recovery work started.',
+        ]);
+        app(IncidentDesk::class)->recordTaskEvent($responder, $task, [
+            'status' => IncidentTaskStatus::Completed->value, 'summary' => 'Recovery work completed.',
+        ]);
+
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'due_date' => now()->addWeek()->toDateString(), 'summary' => 'Attempted terminal rewrite.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->assertSame(IncidentTaskStatus::Completed->value, $task->fresh()->status);
+    }
+
+    public function test_incident_task_and_event_history_bounds_are_exact(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $maximum = IncidentPlaybook::factory()->create();
+        IncidentPlaybookTask::factory()->count(100)->create(['incident_playbook_id' => $maximum->id]);
+        $maximumIncident = app(IncidentDesk::class)->createFromPlaybook($manager, $maximum, ['title' => 'Maximum governed playbook']);
+        $this->assertSame(100, $maximumIncident->tasks()->count());
+        $this->assertSame(100, IncidentTaskEvent::query()->where('incident_id', $maximumIncident->id)->count());
+
+        $oversized = IncidentPlaybook::factory()->create();
+        IncidentPlaybookTask::factory()->count(101)->create(['incident_playbook_id' => $oversized->id]);
+        try {
+            app(IncidentDesk::class)->createFromPlaybook($manager, $oversized, ['title' => 'Oversized playbook']);
+            $this->fail('Expected the governed task bound to reject the playbook.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident_playbook_id', $exception->errors());
+        }
+        $this->assertDatabaseCount('incidents', 1);
+
+        $playbook = IncidentPlaybook::factory()->create();
+        IncidentPlaybookTask::factory()->create([
+            'incident_playbook_id' => $playbook->id, 'phase' => IncidentPhase::Identification,
+        ]);
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, $playbook, ['title' => 'Bounded events']);
+        $task = $incident->tasks()->firstOrFail();
+        app(IncidentDesk::class)->recordTaskEvent($manager, $task, [
+            'status' => IncidentTaskStatus::InProgress->value, 'summary' => 'Started.',
+        ]);
+        for ($version = 3; $version <= 100; $version++) {
+            $next = $version % 2 === 1 ? IncidentTaskStatus::Blocked : IncidentTaskStatus::InProgress;
+            app(IncidentDesk::class)->recordTaskEvent($manager, $task, [
+                'status' => $next->value, 'summary' => 'Bounded event '.$version.'.',
+            ]);
+        }
+        $this->assertSame(100, $task->events()->count());
+        try {
+            app(IncidentDesk::class)->recordTaskEvent($manager, $task, [
+                'status' => IncidentTaskStatus::Blocked->value, 'summary' => 'One event too many.',
+            ]);
+            $this->fail('Expected the governed event bound to reject the event.');
+        } catch (HttpException $exception) {
+            $this->assertSame(422, $exception->getStatusCode());
+        }
+        $this->assertSame(100, $task->events()->count());
     }
 }

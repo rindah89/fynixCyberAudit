@@ -5,12 +5,15 @@ namespace App\Http\Controllers\API;
 use App\Enums\IncidentPhase;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListIncidentsRequest;
+use App\Http\Requests\ListIncidentTaskEventsRequest;
+use App\Http\Requests\RecordIncidentTaskEventRequest;
 use App\Http\Requests\ShowIncidentRequest;
 use App\Http\Requests\StoreIncidentRequest;
 use App\Http\Requests\TransitionIncidentPhaseRequest;
 use App\Incidents\IncidentDesk;
 use App\Models\Incident;
 use App\Models\IncidentPlaybook;
+use App\Models\IncidentTask;
 use Illuminate\Http\JsonResponse;
 
 class IncidentGovernanceController extends Controller
@@ -28,9 +31,13 @@ class IncidentGovernanceController extends Controller
 
     public function show(ShowIncidentRequest $request, Incident $incident): JsonResponse
     {
-        return response()->json(['data' => $incident->load([
-            'lead:id,name', 'reporter:id,name', 'tasks', 'phaseTransitions.actor:id,name',
-        ])]);
+        $incident->load([
+            'lead:id,name', 'reporter:id,name',
+            'tasks' => fn ($query) => $query->with('assignee:id,name')->withCount('events'),
+            'phaseTransitions.actor:id,name',
+        ]);
+
+        return response()->json(['data' => $incident]);
     }
 
     public function store(StoreIncidentRequest $request, IncidentDesk $desk): JsonResponse
@@ -53,5 +60,17 @@ class IncidentGovernanceController extends Controller
         );
 
         return response()->json(['data' => $updated]);
+    }
+
+    public function taskEvent(RecordIncidentTaskEventRequest $request, IncidentTask $task, IncidentDesk $desk): JsonResponse
+    {
+        $event = $desk->recordTaskEvent($request->user(), $task, $request->validated());
+
+        return response()->json(['data' => $event->load('actor:id,name'), 'task' => $task->refresh()->load('assignee:id,name')], JsonResponse::HTTP_CREATED);
+    }
+
+    public function taskEvents(ListIncidentTaskEventsRequest $request, IncidentTask $task): JsonResponse
+    {
+        return response()->json($task->events()->with('actor:id,name')->paginate($request->integer('per_page', 50)));
     }
 }

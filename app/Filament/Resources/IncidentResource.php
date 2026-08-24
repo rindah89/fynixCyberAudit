@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\IncidentResource\Pages\ListIncidents;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
+use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
 use App\Models\Incident;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -76,7 +77,7 @@ class IncidentResource extends Resource
 
     public static function getRelations(): array
     {
-        return [PhaseTransitionsRelationManager::class];
+        return [TasksRelationManager::class, PhaseTransitionsRelationManager::class];
     }
 
     public static function getPages(): array

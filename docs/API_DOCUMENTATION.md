@@ -766,5 +766,9 @@ The incidents module provides a deliberately operated register, not automated de
 - `POST /api/incidents`
 - `GET /api/incidents/{incident}`
 - `POST /api/incidents/{incident}/phase-transitions`
+- `POST /api/incident-tasks/{task}/events`
+- `GET /api/incident-tasks/{task}/events?page=1&per_page=50`
 
 Create with `incident_playbook_id`, `title`, `severity`, `detected_at`, and optional `type`, `involves_data`, `involves_pii`, and `is_breach`. The server owns number, status, phase, lead/reporter, playbook snapshot, and initial transition. Advance with the exact next `phase` and a required `summary`. Responses expose the immutable attributable transition snapshots and fingerprints. See `docs/INCIDENT_RESPONSE.md` for bounds and limitations.
+
+Record a task event with a required `summary` and at least one of `status`, `assignee_id`, or `due_date`. Managers may change all three; the current assignee may change status only. The server owns event version, before/after snapshots, actor/time, and fingerprint. Incident detail exposes task state and event counts; complete history uses the bounded task-events endpoint or operator history action.
