@@ -90,6 +90,11 @@ class RolePermissionSeeder extends Seeder
             'Own Privacy Activities',
             'Assess Privacy',
             'Manage Privacy',
+            'Read Model Risk',
+            'Own Governed Models',
+            'Develop Governed Models',
+            'Validate Models',
+            'Manage Model Risk',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -138,6 +143,11 @@ class RolePermissionSeeder extends Seeder
             'Own Privacy Activities',
             'Assess Privacy',
             'Manage Privacy',
+            'Read Model Risk',
+            'Own Governed Models',
+            'Develop Governed Models',
+            'Validate Models',
+            'Manage Model Risk',
         ]);
 
         // Assign specific Permissions to Internal Auditor

@@ -8,6 +8,7 @@ use App\Models\AiSystem;
 use App\Models\BusinessService;
 use App\Models\ComplianceCase;
 use App\Models\ControlTestDefinition;
+use App\Models\GovernedModel;
 use App\Models\Policy;
 use App\Models\PolicyObligation;
 use App\Models\PrivacyProcessingActivity;
@@ -18,6 +19,7 @@ use App\Policies\AiSystemPolicy;
 use App\Policies\BusinessServicePolicy;
 use App\Policies\ComplianceCasePolicy;
 use App\Policies\ControlTestDefinitionPolicy;
+use App\Policies\GovernedModelPolicy;
 use App\Policies\PermissionPolicy;
 use App\Policies\PolicyObligationPolicy;
 use App\Policies\PolicyPolicy;
@@ -50,6 +52,7 @@ class AuthServiceProvider extends ServiceProvider
         ControlTestDefinition::class => ControlTestDefinitionPolicy::class,
         BusinessService::class => BusinessServicePolicy::class,
         ComplianceCase::class => ComplianceCasePolicy::class,
+        GovernedModel::class => GovernedModelPolicy::class,
         PrivacyProcessingActivity::class => PrivacyProcessingActivityPolicy::class,
         AiSystem::class => AiSystemPolicy::class,
         Survey::class => SurveyPolicy::class,

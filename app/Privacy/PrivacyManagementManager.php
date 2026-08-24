@@ -67,7 +67,9 @@ class PrivacyManagementManager
             }
             $changes = Arr::except($data, ['change_summary']);
             $this->assertTransferContext(array_merge($locked->getAttributes(), $changes));
-            $materialChanges = Arr::except($changes, ['status']);
+            $candidate = clone $locked;
+            $candidate->fill($changes);
+            $materialChanges = Arr::except(Arr::only($changes, array_keys($candidate->getDirty())), ['status']);
             $targetStatus = isset($changes['status']) ? PrivacyActivityStatus::from($changes['status']) : $locked->status;
             if ($locked->status === PrivacyActivityStatus::Active && $materialChanges !== []) {
                 $changes['status'] = PrivacyActivityStatus::AssessmentRequired;

@@ -817,3 +817,18 @@ When `MODULE_PRIVACY_MANAGEMENT_ENABLED=true`, authenticated privacy users use:
 Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Registration/revision records complete immutable processing-context versions. Assessment records bind the exact latest activity version and require separation from the owner and latest version author. Server-owned number, state evidence, version, snapshots, attribution, timestamps, and fingerprints are prohibited in caller payloads. Activation requires an approved assessment of the unchanged latest version; later material change derives `Assessment Required`.
 
 Inputs and judgments are deliberate. These endpoints do not discover personal data, determine legal basis, provide legal advice, manage consent or data-subject requests, validate controls, or prove regulatory compliance.
+
+## Governed model risk management
+
+When `MODULE_MODEL_RISK_MANAGEMENT_ENABLED=true`, authenticated model-risk users use:
+
+- `GET|POST /api/governed-models`
+- `GET|PUT /api/governed-models/{governedModel}`
+- `GET /api/governed-models/{governedModel}/versions`
+- `GET|POST /api/governed-models/{governedModel}/validations`
+
+Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Registration/revision records immutable complete material versions. Independent validation binds the exact latest version and excludes its owner, developer, and latest author. Server-owned code, governance state, versions, snapshots, attribution, timestamps, and fingerprints are prohibited in caller payloads. Approved or conditionally approved validation derives production use; conditional approval requires explicit restrictions; a later material revision derives revalidation-required state.
+
+`validation_state` is derived from the latest exact-version review and becomes `Validation Expired` after its validity date passes.
+
+Inputs and judgments are deliberate. These endpoints do not discover or execute models, ingest telemetry, calculate performance or statistical tests, validate data or regulatory compliance, manage source code/deployment, or provide quantitative aggregate model-risk assurance.
