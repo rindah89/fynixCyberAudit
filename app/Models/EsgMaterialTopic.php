@@ -42,4 +42,9 @@ class EsgMaterialTopic extends Model
     {
         return $this->hasOne(EsgMaterialityAssessment::class)->latestOfMany('version');
     }
+
+    public function goals(): HasMany
+    {
+        return $this->hasMany(EsgGoal::class, 'esg_material_topic_id')->with(['owner:id,name', 'creator:id,name'])->orderBy('id');
+    }
 }

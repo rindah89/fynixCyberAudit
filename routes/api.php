@@ -206,6 +206,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/esg-material-topics/{topic}/versions', [EsgManagementController::class, 'versions']);
     Route::get('/esg-material-topics/{topic}/assessments', [EsgManagementController::class, 'assessments']);
     Route::post('/esg-material-topics/{topic}/assessments', [EsgManagementController::class, 'assess']);
+    Route::get('/esg-material-topics/{topic}/goals', [EsgManagementController::class, 'goals']);
+    Route::post('/esg-material-topics/{topic}/goals', [EsgManagementController::class, 'createGoal']);
+    Route::get('/esg-goals/{goal}', [EsgManagementController::class, 'showGoal']);
+    Route::get('/esg-goals/{goal}/kpis', [EsgManagementController::class, 'kpis']);
+    Route::post('/esg-goals/{goal}/kpis', [EsgManagementController::class, 'createKpi']);
+    Route::get('/esg-kpis/{kpi}', [EsgManagementController::class, 'showKpi']);
+    Route::get('/esg-kpis/{kpi}/observations', [EsgManagementController::class, 'observations']);
+    Route::post('/esg-kpis/{kpi}/observations', [EsgManagementController::class, 'observe']);
     Route::post('/ai-systems', [AiGovernanceController::class, 'storeSystem']);
     Route::post('/ai-systems/{system}/use-cases', [AiGovernanceController::class, 'storeUseCase']);
     Route::post('/ai-use-cases/{useCase}/assessments', [AiGovernanceController::class, 'storeAssessment']);

@@ -1,6 +1,6 @@
 # Governed ESG materiality management
 
-Enable this foundation with `MODULE_ESG_MANAGEMENT_ENABLED=true`. It governs deliberately identified environmental, social, and governance topics and independent double-materiality assessments. It does not discover impacts, ingest ESG data, calculate emissions, manage KPI performance, validate disclosures, or determine compliance with a reporting framework.
+Enable this foundation with `MODULE_ESG_MANAGEMENT_ENABLED=true`. It governs deliberately identified environmental, social, and governance topics, independent double-materiality assessments, linked goals, numeric KPIs, and attributable observations. It does not discover impacts, ingest ESG data automatically, calculate emissions, validate disclosures, or determine compliance with a reporting framework.
 
 ## Roles and access
 
@@ -23,6 +23,14 @@ An assessor scores impact materiality and financial materiality from one through
 
 REST provides maintenance and paginated history. The operator workspace is read-only and exposes the complete topic, version, and assessment evidence. Routine rollback retains the governance tables.
 
+## Goals, KPIs, and performance observations
+
+An authorized topic manager establishes one of at most 100 goals only when the latest exact topic version has an independent `Material` decision. Each goal retains its title, accountable owner, baseline/target dates, complete topic and assessment snapshots, creator/time, and SHA-256 fingerprint. A goal may contain at most 100 KPIs.
+
+Each KPI defines a unit, increase/decrease direction, fixed-decimal baseline and target, deliberate measurement method and source reference, accountable owner, and one-to-365-day frequency. Its immutable definition fingerprint binds the complete goal snapshot. The target must move beyond the baseline in the declared direction.
+
+An authorized KPI, goal, or topic owner—or an ESG manager—records at most 1,000 observations per KPI. Each append-only observation retains the exact KPI/goal/topic/assessment definition snapshot, fixed-decimal value, optional notes/source reference, actor/time, and SHA-256 fingerprint. The server derives only whether the configured target has been met and the next due time. A goal is `Achieved` only when every active KPI has met its configured target; otherwise an observed goal is `At Risk`. This is target comparison, not forecasting or verification of the measurement.
+
 ## Evidence boundary
 
-The scores, stakeholder statements, framework references, methodology, and decisions are deliberate operator inputs. Their retention and fingerprints prove attributable record identity, not the truth, completeness, authenticity, or sufficiency of the underlying evidence. Fynix does not yet provide ESG goals/KPIs, observation ingestion, emissions accounting, target validation, external assurance, automatic materiality analysis, disclosure generation, or reporting-framework compliance assurance.
+The scores, stakeholder statements, framework references, methodology, KPI definitions, values, sources, and decisions are deliberate operator inputs. Their retention and fingerprints prove attributable record identity, not the truth, completeness, authenticity, or sufficiency of the underlying evidence. Fynix does not provide automatic ESG data collection, emissions calculation, trajectory forecasting, evidence or target validation, external assurance, automatic materiality analysis, disclosure generation, or reporting-framework compliance assurance.

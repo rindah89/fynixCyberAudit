@@ -43,7 +43,11 @@ class EsgMaterialTopicResource extends Resource
         $q = parent::getEloquentQuery()->with(['owner:id,name', 'latestVersion', 'latestAssessment']);
         $u = auth()->user();
         if ($u && ! $u->can('Read ESG') && ! $u->can('Manage ESG') && ! $u->can('Assess ESG')) {
-            $q->where('owner_id', $u->id);
+            $q->where(function (Builder $scope) use ($u): void {
+                $scope->where('owner_id', $u->id)
+                    ->orWhereHas('goals', fn (Builder $goal): Builder => $goal->where('owner_id', $u->id))
+                    ->orWhereHas('goals.kpis', fn (Builder $kpi): Builder => $kpi->where('owner_id', $u->id));
+            });
         }
 
         return $q;

@@ -855,9 +855,16 @@ When `MODULE_ESG_MANAGEMENT_ENABLED=true`, authenticated ESG users use:
 - `GET|PUT /api/esg-material-topics/{topic}`
 - `GET /api/esg-material-topics/{topic}/versions`
 - `GET|POST /api/esg-material-topics/{topic}/assessments`
+- `GET|POST /api/esg-material-topics/{topic}/goals`
+- `GET /api/esg-goals/{goal}`
+- `GET|POST /api/esg-goals/{goal}/kpis`
+- `GET /api/esg-kpis/{kpi}`
+- `GET|POST /api/esg-kpis/{kpi}/observations`
 
 Lists and histories validate `page >= 1` and `per_page` from 1 through 100. `Manage ESG` registers topics. `Own ESG Topics` users inspect and revise their assigned topics. `Assess ESG` records decisions, and `Read ESG` inspects all retained history. The owner and latest-version author cannot assess that version.
 
 Registration requires a pillar, owner, description, impact/risk/opportunity context, stakeholder groups, organizational boundary, review date, and change summary. Framework and source references are deliberate inputs. The server owns the code, status, version, snapshot, attribution, time, and fingerprint. Material changes append an immutable version and derive `Review Required`; only retirement may be caller-requested and it is terminal.
 
-Assessment requires one-through-five impact and financial scores, stakeholder evidence, methodology, decision, summary, and a future review date. It binds the exact latest unchanged version and derives `Material`, `Not Material`, or `Review Required`. Version and assessment histories are independently capped at 100 records. The REST interface maintains records; the operator workspace provides paginated read-only inspection. These endpoints do not discover topics or ESG data, calculate emissions, validate inputs or targets, manage KPIs, generate disclosures, provide external assurance, or establish reporting-framework compliance. See `docs/ESG_MANAGEMENT.md`.
+Assessment requires one-through-five impact and financial scores, stakeholder evidence, methodology, decision, summary, and a future review date. It binds the exact latest unchanged version and derives `Material`, `Not Material`, or `Review Required`. Version and assessment histories are independently capped at 100 records.
+
+Goals require the latest exact independent `Material` decision and retain complete topic/assessment evidence. KPIs define fixed-decimal baseline/target, unit, direction, method, source, owner, and one-to-365-day frequency. Observations retain the exact KPI/goal context and the server derives only `Target met` or `Target not met`, next due time, and aggregate goal state. Caps are 100 goals per topic, 100 KPIs per goal, and 1,000 observations per KPI. The REST interface maintains records; operator workspaces provide paginated read-only inspection. These endpoints do not discover topics or ESG data, collect observations automatically, calculate emissions, forecast trajectories, validate inputs or targets, generate disclosures, provide external assurance, or establish reporting-framework compliance. See `docs/ESG_MANAGEMENT.md`.

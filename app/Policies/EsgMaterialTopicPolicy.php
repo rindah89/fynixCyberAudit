@@ -14,7 +14,7 @@ class EsgMaterialTopicPolicy
 
     public function view(User $u, EsgMaterialTopic $t): bool
     {
-        return $u->can('Read ESG') || $u->can('Manage ESG') || $u->can('Assess ESG') || ($u->can('Own ESG Topics') && $t->owner_id === $u->id);
+        return $u->can('Read ESG') || $u->can('Manage ESG') || $u->can('Assess ESG') || ($u->can('Own ESG Topics') && ($t->owner_id === $u->id || $t->goals()->where('owner_id', $u->id)->exists() || $t->goals()->whereHas('kpis', fn ($kpi) => $kpi->where('owner_id', $u->id))->exists()));
     }
 
     public function create(User $u): bool
