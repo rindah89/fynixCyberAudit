@@ -8,6 +8,7 @@ use App\Http\Requests\ListEnterpriseRiskScenariosRequest;
 use App\Http\Requests\ListOperationalLossEventsRequest;
 use App\Http\Requests\ListRiskIndicatorObservationsRequest;
 use App\Http\Requests\ListRiskIndicatorsRequest;
+use App\Http\Requests\ListTechnologyExposureAssessmentsRequest;
 use App\Http\Requests\ShowEnterpriseRiskRollupRequest;
 use App\Http\Requests\ShowEnterpriseRiskScenarioRequest;
 use App\Http\Requests\StoreEnterpriseRiskParentRequest;
@@ -17,6 +18,7 @@ use App\Http\Requests\StoreRiskGovernanceProfileRequest;
 use App\Http\Requests\StoreRiskGovernanceReviewRequest;
 use App\Http\Requests\StoreRiskIndicatorObservationRequest;
 use App\Http\Requests\StoreRiskIndicatorRequest;
+use App\Http\Requests\StoreTechnologyExposureAssessmentRequest;
 use App\Http\Requests\UpdateRiskIndicatorRequest;
 use App\Models\EnterpriseRiskScenario;
 use App\Models\Risk;
@@ -26,10 +28,21 @@ use App\Services\EnterpriseRiskScenarioAnalyzer;
 use App\Services\OperationalLossEventManager;
 use App\Services\RiskIndicatorManager;
 use App\Services\RiskPortfolioManager;
+use App\Services\TechnologyExposureAssessmentManager;
 use Illuminate\Http\JsonResponse;
 
 class RiskPortfolioController extends Controller
 {
+    public function assessTechnologyExposure(StoreTechnologyExposureAssessmentRequest $request, Risk $risk, TechnologyExposureAssessmentManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->assess($risk, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function technologyExposureAssessments(ListTechnologyExposureAssessmentsRequest $request, Risk $risk): JsonResponse
+    {
+        return response()->json($risk->technologyExposureAssessments()->with(['asset:id,asset_tag,name', 'assessor:id,name'])->latest('version')->paginate($request->integer('per_page', 50)));
+    }
+
     public function storeIndicator(StoreRiskIndicatorRequest $request, Risk $risk, RiskIndicatorManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->define($risk, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);

@@ -121,7 +121,7 @@ class RiskPortfolioManager
         }
     }
 
-    protected function lockContextGraph(Risk $risk, RiskGovernanceProfile $profile): void
+    public function lockContextGraph(Risk $risk, RiskGovernanceProfile $profile): void
     {
         $assetIds = DB::table('asset_risk')->where('risk_id', $risk->id)->lockForUpdate()->pluck('asset_id');
         Asset::query()->whereKey($assetIds)->lockForUpdate()->get();

@@ -117,6 +117,11 @@ class Risk extends Model
         return $this->hasManyThrough(RiskIndicatorObservation::class, RiskIndicator::class);
     }
 
+    public function technologyExposureAssessments(): HasMany
+    {
+        return $this->hasMany(TechnologyExposureAssessment::class);
+    }
+
     public function mitigations(): MorphMany
     {
         return $this->morphMany(Mitigation::class, 'mitigatable');
