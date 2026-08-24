@@ -11,6 +11,7 @@ use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
+use App\Models\IncidentPhaseTransitionEvidence;
 use App\Models\IncidentTaskEventEvidence;
 use App\Models\PolicyAttestationEvidence;
 use App\Models\PolicyExceptionMonitoringReviewEvidence;
@@ -291,6 +292,17 @@ class FileAccess
         return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
     }
 
+    public function streamIncidentPhaseTransitionEvidence(User $actor, IncidentPhaseTransitionEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['transition.incident', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $incident = $evidence->transition?->incident;
+        if (! $incident || ! $actor->can('view', $incident) || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed incident phase evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
@@ -304,6 +316,7 @@ class FileAccess
                 ->orWhereHas('riskGovernanceReviewEvidence')
                 ->orWhereHas('auditFindingFollowUpEvidence')
                 ->orWhereHas('auditProcedureExecutionEvidence')
+                ->orWhereHas('incidentPhaseTransitionEvidence')
                 ->orWhereHas('incidentTaskEventEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([

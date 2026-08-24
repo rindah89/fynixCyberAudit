@@ -24,6 +24,7 @@ use App\Models\Incident;
 use App\Models\IncidentLesson;
 use App\Models\IncidentNotification;
 use App\Models\IncidentPhaseTransition;
+use App\Models\IncidentPhaseTransitionEvidence;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentPlaybookTask;
 use App\Models\IncidentTaskEvent;
@@ -109,6 +110,71 @@ class IncidentTest extends TestCase
         $this->assertSame(IncidentPhase::Containment, $advanced->fresh()->phase);
     }
 
+    public function test_phase_decision_can_bind_retained_acl_scoped_accepted_evidence_atomically(): void
+    {
+        Storage::fake('private');
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $reader = User::factory()->create();
+        $reader->assignRole('Regular User');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Evidence-backed phase decision', 'severity' => 'High',
+        ]);
+        $authorized = $this->acceptedEvidence($manager, 'incidents/phase-authorized.txt', 'original phase decision bytes');
+        $foreign = $this->acceptedEvidence($reader, 'incidents/phase-foreign.txt', 'foreign phase bytes');
+
+        $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/phase-transitions', [
+            'phase' => IncidentPhase::Containment->value,
+            'summary' => 'Mixed selection must fail atomically.',
+            'evidence_attachment_ids' => [$authorized->id, $foreign->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertSame(IncidentPhase::Identification, $incident->fresh()->phase);
+        $this->assertDatabaseCount('incident_phase_transition_evidence', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles('governed-evidence/incident-phase-transition'));
+
+        $response = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/phase-transitions', [
+            'phase' => IncidentPhase::Containment->value,
+            'summary' => 'Containment was approved against accepted evidence.',
+            'evidence_attachment_ids' => [$authorized->id],
+        ])->assertOk();
+        $transition = IncidentPhaseTransition::query()->findOrFail($response->json('data.phase_transitions.1.id'));
+        $evidence = $transition->evidence()->firstOrFail();
+        $this->assertInstanceOf(IncidentPhaseTransitionEvidence::class, $evidence);
+        $this->assertSame(hash('sha256', 'original phase decision bytes'), $evidence->sha256);
+        $payload = [
+            'incident_id' => $transition->incident_id,
+            'from_phase' => $transition->from_phase?->value,
+            'to_phase' => $transition->to_phase->value,
+            'summary' => $transition->summary,
+            'incident_snapshot' => $transition->incident_snapshot,
+            'evidence_manifest' => $transition->evidence_manifest,
+            'transitioned_by' => $transition->transitioned_by,
+            'transitioned_at' => $transition->transitioned_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $transition->fingerprint);
+
+        Storage::disk('private')->put($authorized->file_path, 'replacement phase source bytes');
+        $download = $this->actingAs($manager)->get(route('incident-phase-transition-evidence.download', $evidence))->assertOk();
+        $this->assertSame('original phase decision bytes', $download->streamedContent());
+        $readerResponse = $this->actingAs($reader)->getJson('/api/incidents/'.$incident->id)
+            ->assertOk()->assertJsonCount(0, 'data.phase_transitions.1.evidence')
+            ->assertJsonMissingPath('data.phase_transitions.1.evidence_manifest');
+        $this->assertStringNotContainsString($evidence->file_name_snapshot, $readerResponse->getContent());
+        $this->assertStringNotContainsString($evidence->sha256, $readerResponse->getContent());
+        $this->assertStringNotContainsString($evidence->file_path_snapshot, $readerResponse->getContent());
+        $this->actingAs($reader)->get(route('incident-phase-transition-evidence.download', $evidence))->assertForbidden();
+
+        try {
+            $evidence->update(['sha256' => str_repeat('0', 64)]);
+            $this->fail('Expected phase-decision evidence to remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+        $migration = require database_path('migrations/2026_08_24_610000_create_incident_phase_transition_evidence.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_phase_transition_evidence', ['id' => $evidence->id, 'sha256' => $evidence->getOriginal('sha256')]);
+    }
+
     public function test_evidence_stores_a_content_hash(): void
     {
         $lead = User::factory()->create();
@@ -187,6 +253,7 @@ class IncidentTest extends TestCase
             'to_phase' => $transition->to_phase->value,
             'summary' => $transition->summary,
             'incident_snapshot' => $transition->incident_snapshot,
+            'evidence_manifest' => $transition->evidence_manifest,
             'transitioned_by' => $transition->transitioned_by,
             'transitioned_at' => $transition->transitioned_at->toIso8601String(),
         ];

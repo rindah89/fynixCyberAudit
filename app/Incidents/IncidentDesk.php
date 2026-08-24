@@ -87,34 +87,49 @@ class IncidentDesk
                 $this->appendTaskEvent($incident, $task, $actor, 1, 'seeded', null, $this->taskSnapshot($task, $incident), [], 'Task seeded from governed playbook.', $occurredAt);
             }
 
-            $this->appendTransition($incident, $actor, null, IncidentPhase::Identification, 'Incident created from governed playbook.', $occurredAt);
+            $this->appendTransition($incident, $actor, null, IncidentPhase::Identification, 'Incident created from governed playbook.', [], $occurredAt);
 
             return $incident->fresh(['tasks', 'phaseTransitions.actor']);
         }, 3);
     }
 
-    public function advancePhase(User $actor, Incident $incident, IncidentPhase $phase, string $summary = 'Incident response phase advanced.'): Incident
+    /** @param list<int> $evidenceAttachmentIds */
+    public function advancePhase(User $actor, Incident $incident, IncidentPhase $phase, string $summary = 'Incident response phase advanced.', array $evidenceAttachmentIds = []): Incident
     {
         Enterprise::assertEnabled('incidents');
-        $summary = Validator::make(['summary' => $summary], ['summary' => 'required|string|max:10000'])->validate()['summary'];
+        $validated = Validator::make(['summary' => $summary, 'evidence_attachment_ids' => $evidenceAttachmentIds], [
+            'summary' => 'required|string|max:10000',
+            'evidence_attachment_ids' => 'array|max:20',
+            'evidence_attachment_ids.*' => 'integer|distinct',
+        ])->validate();
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-        return DB::transaction(function () use ($actor, $incident, $phase, $summary): Incident {
-            $locked = Incident::query()->lockForUpdate()->findOrFail($incident->id);
-            abort_unless($actor->can('update', $locked), 403, 'You cannot update this incident.');
-            abort_if($locked->governed_at === null, 422, 'Legacy incidents cannot enter governed phase history.');
-            $current = $locked->phase ?? IncidentPhase::Identification;
-            if ($phase->rank() !== $current->rank() + 1) {
-                throw new RuntimeException('Incident phase must advance exactly one phase and cannot reverse.');
-            }
+        try {
+            return DB::transaction(function () use ($actor, $incident, $phase, $validated, $snapshotter, $snapshotBatch, &$retainedCopies): Incident {
+                $locked = Incident::query()->lockForUpdate()->findOrFail($incident->id);
+                abort_unless($actor->can('update', $locked), 403, 'You cannot update this incident.');
+                abort_if($locked->governed_at === null, 422, 'Legacy incidents cannot enter governed phase history.');
+                $current = $locked->phase ?? IncidentPhase::Identification;
+                if ($phase->rank() !== $current->rank() + 1) {
+                    throw new RuntimeException('Incident phase must advance exactly one phase and cannot reverse.');
+                }
+                $manifest = $validated['evidence_attachment_ids'] === [] ? [] : $snapshotter->snapshot(
+                    $validated['evidence_attachment_ids'], $actor, 'incident-phase-transition', $snapshotBatch, $retainedCopies,
+                );
+                $occurredAt = now();
+                $timestamps = $locked->phase_timestamps ?? [];
+                $timestamps[$phase->value] = $occurredAt->toIso8601String();
+                $locked->update(['phase' => $phase, 'phase_timestamps' => $timestamps]);
+                $this->appendTransition($locked, $actor, $current, $phase, $validated['summary'], $manifest, $occurredAt);
 
-            $occurredAt = now();
-            $timestamps = $locked->phase_timestamps ?? [];
-            $timestamps[$phase->value] = $occurredAt->toIso8601String();
-            $locked->update(['phase' => $phase, 'phase_timestamps' => $timestamps]);
-            $this->appendTransition($locked, $actor, $current, $phase, $summary, $occurredAt);
-
-            return $locked->fresh(['tasks', 'phaseTransitions.actor']);
-        }, 3);
+                return $locked->fresh(['tasks', 'phaseTransitions.actor', 'phaseTransitions.evidence']);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+            throw $exception;
+        }
     }
 
     public function storeEvidence(User $actor, Incident $incident, string $contents, string $filename): IncidentEvidence
@@ -249,7 +264,8 @@ class IncidentDesk
         return sprintf('INC-%d-%04d', $year, $sequence->last_number);
     }
 
-    private function appendTransition(Incident $incident, User $actor, ?IncidentPhase $from, IncidentPhase $to, string $summary, mixed $occurredAt): IncidentPhaseTransition
+    /** @param list<array<string, mixed>> $evidenceManifest */
+    private function appendTransition(Incident $incident, User $actor, ?IncidentPhase $from, IncidentPhase $to, string $summary, array $evidenceManifest, mixed $occurredAt): IncidentPhaseTransition
     {
         $snapshot = [
             'id' => $incident->id, 'number' => $incident->number, 'title' => $incident->title,
@@ -263,11 +279,16 @@ class IncidentDesk
         ];
         $payload = [
             'incident_id' => $incident->id, 'from_phase' => $from?->value, 'to_phase' => $to->value,
-            'summary' => $summary, 'incident_snapshot' => $snapshot,
+            'summary' => $summary, 'incident_snapshot' => $snapshot, 'evidence_manifest' => $evidenceManifest,
             'transitioned_by' => $actor->id, 'transitioned_at' => $occurredAt->toIso8601String(),
         ];
 
-        return $incident->phaseTransitions()->create($payload + ['fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))]);
+        $transition = $incident->phaseTransitions()->create($payload + ['fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))]);
+        foreach ($evidenceManifest as $manifest) {
+            $transition->evidence()->create($manifest + ['linked_by' => $actor->id, 'linked_at' => $occurredAt]);
+        }
+
+        return $transition;
     }
 
     /** @return array<string, mixed> */

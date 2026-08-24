@@ -51,7 +51,11 @@ class IncidentGovernanceController extends Controller
             'lead:id,name', 'reporter:id,name',
             'tasks' => fn ($query) => $query->with('assignee:id,name')->withCount('events'),
             'phaseTransitions.actor:id,name',
+            'phaseTransitions.evidence.linkedBy:id,name',
+            'phaseTransitions.evidence.attachment.audit.members',
+            'phaseTransitions.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
         ]);
+        $incident->phaseTransitions->each(fn ($transition) => $this->filterPhaseEvidence($transition, $request->user()));
         $incident->loadCount('notifications');
         $incident->loadCount('lessons');
 
@@ -75,7 +79,13 @@ class IncidentGovernanceController extends Controller
             $incident,
             $request->enum('phase', IncidentPhase::class),
             $request->string('summary')->toString(),
+            $request->validated('evidence_attachment_ids', []),
         );
+
+        $updated->load(['phaseTransitions.actor:id,name', 'phaseTransitions.evidence.linkedBy:id,name',
+            'phaseTransitions.evidence.attachment.audit.members',
+            'phaseTransitions.evidence.attachment.dataRequestResponse.dataRequest.audit.members']);
+        $updated->phaseTransitions->each(fn ($transition) => $this->filterPhaseEvidence($transition, $request->user()));
 
         return response()->json(['data' => $updated]);
     }
@@ -184,5 +194,11 @@ class IncidentGovernanceController extends Controller
             && app(FileAccess::class)->canDownloadFileAttachment($actor, $evidence->attachment))->values());
 
         return $visible;
+    }
+
+    private function filterPhaseEvidence($transition, User $actor): void
+    {
+        $transition->setRelation('evidence', $transition->evidence->filter(fn ($evidence): bool => $evidence->attachment !== null
+            && app(FileAccess::class)->canDownloadFileAttachment($actor, $evidence->attachment))->values());
     }
 }

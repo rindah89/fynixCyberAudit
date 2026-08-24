@@ -24,7 +24,10 @@ class TransitionIncidentPhaseRequest extends FormRequest
         return [
             'phase' => ['required', Rule::enum(IncidentPhase::class)],
             'summary' => 'required|string|max:10000',
+            'evidence_attachment_ids' => 'sometimes|array|max:20',
+            'evidence_attachment_ids.*' => 'integer|distinct',
             'from_phase' => 'prohibited', 'incident_snapshot' => 'prohibited',
+            'evidence_manifest' => 'prohibited',
             'transitioned_by' => 'prohibited', 'transitioned_at' => 'prohibited', 'fingerprint' => 'prohibited',
         ];
     }
