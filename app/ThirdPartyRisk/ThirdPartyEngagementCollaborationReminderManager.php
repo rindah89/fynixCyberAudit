@@ -54,7 +54,9 @@ class ThirdPartyEngagementCollaborationReminderManager
             if (! $request || ! in_array($engagement->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)) {
                 return false;
             }
-            $recipient = VendorUser::query()->lockForUpdate()->find($request->recipient_vendor_user_id);
+            $reassignments = $request->reassignments()->orderBy('version')->lockForUpdate()->get();
+            $recipientContext = $request->setRelation('reassignments', $reassignments)->currentRecipientContext();
+            $recipient = VendorUser::query()->lockForUpdate()->find($recipientContext['recipient_vendor_user_id']);
             if (! $recipient || $recipient->vendor_id !== $engagement->vendor_id || ! $recipient->hasPassword()) {
                 return false;
             }

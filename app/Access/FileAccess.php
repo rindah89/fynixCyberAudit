@@ -329,7 +329,7 @@ class FileAccess
         $collaboration = $event ? ThirdPartyEngagementCollaborationRequest::query()->find($event->third_party_engagement_collaboration_request_id) : null;
         $engagement = $collaboration ? ThirdPartyEngagement::query()->find($collaboration->third_party_engagement_id) : null;
         $document = VendorDocument::withTrashed()->find($evidence->vendor_document_id);
-        if (! $collaboration || ! $engagement || (int) $collaboration->recipient_vendor_user_id !== (int) $actor->id
+        if (! $collaboration || ! $engagement || (int) $collaboration->current_recipient_vendor_user_id !== (int) $actor->id
             || (int) $engagement->vendor_id !== (int) $actor->vendor_id || ! $document || $document->trashed() || ! $this->canDownloadVendorDocument($actor, $document)) {
             abort(403, 'You do not have access to this governed collaboration evidence.');
         }

@@ -59,7 +59,9 @@ class ThirdPartyEngagementCollaborationEscalationManager
                 || $request->escalation()->lockForUpdate()->exists()) {
                 return false;
             }
-            $vendorRecipient = VendorUser::query()->lockForUpdate()->find($request->recipient_vendor_user_id);
+            $reassignments = $request->reassignments()->orderBy('version')->lockForUpdate()->get();
+            $recipientContext = $request->setRelation('reassignments', $reassignments)->currentRecipientContext();
+            $vendorRecipient = VendorUser::query()->lockForUpdate()->find($recipientContext['recipient_vendor_user_id']);
             if (! $vendorRecipient || $vendorRecipient->vendor_id !== $engagement->vendor_id || ! $vendorRecipient->hasPassword()) {
                 return false;
             }

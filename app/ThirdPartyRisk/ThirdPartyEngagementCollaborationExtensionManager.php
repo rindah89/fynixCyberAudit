@@ -26,7 +26,9 @@ class ThirdPartyEngagementCollaborationExtensionManager
     {
         return DB::transaction(function () use ($actor, $request, $data): ThirdPartyCollaborationExtension {
             [$locked, $engagement] = $this->lockRequest($request);
-            $recipient = VendorUser::query()->whereNull('deleted_at')->lockForUpdate()->find($locked->recipient_vendor_user_id);
+            $reassignments = $locked->reassignments()->orderBy('version')->lockForUpdate()->get();
+            $recipientContext = $locked->setRelation('reassignments', $reassignments)->currentRecipientContext();
+            $recipient = VendorUser::query()->whereNull('deleted_at')->lockForUpdate()->find($recipientContext['recipient_vendor_user_id']);
             abort_unless($recipient?->hasPassword() && $recipient->id === $actor->id && $recipient->vendor_id === $engagement->vendor_id, 403);
             $latestEvent = $this->latestEvent($locked);
             $extensions = $locked->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
@@ -65,7 +67,9 @@ class ThirdPartyEngagementCollaborationExtensionManager
         return DB::transaction(function () use ($actor, $extension, $data): ThirdPartyCollaborationExtensionDecision {
             $requestId = ThirdPartyCollaborationExtension::query()->whereKey($extension->id)->value('third_party_engagement_collaboration_request_id');
             [$request, $engagement] = $this->lockRequest(ThirdPartyEngagementCollaborationRequest::query()->findOrFail($requestId));
-            VendorUser::withTrashed()->lockForUpdate()->findOrFail($request->recipient_vendor_user_id);
+            $reassignments = $request->reassignments()->orderBy('version')->lockForUpdate()->get();
+            $recipientContext = $request->setRelation('reassignments', $reassignments)->currentRecipientContext();
+            VendorUser::withTrashed()->lockForUpdate()->findOrFail($recipientContext['recipient_vendor_user_id']);
             $latestEvent = $this->latestEvent($request);
             $extensions = $request->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
             $locked = $extensions->firstWhere('id', $extension->id) ?? throw ValidationException::withMessages(['extension' => 'The extension does not belong to the current request.']);

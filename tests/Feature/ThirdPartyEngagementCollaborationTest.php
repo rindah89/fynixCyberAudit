@@ -10,6 +10,7 @@ use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollabo
 use App\Models\ThirdPartyCollaborationEscalationIssue;
 use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyCollaborationExtensionDecision;
+use App\Models\ThirdPartyCollaborationRecipientReassignment;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
@@ -22,6 +23,7 @@ use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationRecipientManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationReminderManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationResolutionManager;
 use Database\Seeders\RolePermissionSeeder;
@@ -713,5 +715,139 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $this->assertDatabaseHas('third_party_collaboration_extensions', ['id' => $factoryExtension->id]);
         $this->assertDatabaseHas('third_party_collaboration_extension_decisions', ['id' => $factoryDecision->id]);
         Carbon::setTestNow();
+    }
+
+    public function test_manager_reassigns_an_awaiting_request_without_rewriting_original_recipient_evidence(): void
+    {
+        Carbon::setTestNow('2026-08-24 10:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $original = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $replacement = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $foreign = VendorUser::factory()->create();
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($manager, $engagement, [
+            'category' => 'assurance', 'subject' => 'Reassigned provider request', 'request_text' => 'Provide the current assurance response.',
+            'recipient_vendor_user_id' => $original->id, 'due_at' => '2026-08-30',
+        ]);
+        $document = VendorDocument::factory()->create(['vendor_id' => $engagement->vendor_id, 'uploaded_by' => $original->id, 'document_type' => 'other',
+            'name' => 'Reassignment evidence', 'file_path' => 'vendor-documents/reassignment.txt', 'file_name' => 'reassignment.txt', 'file_size' => 20,
+            'mime_type' => 'text/plain', 'status' => 'pending']);
+        Storage::disk('private')->put($document->file_path, 'reassignment evidence');
+        $response = app(ThirdPartyEngagementCollaborationManager::class)->respond($original, $request, ['response_text' => 'Initial evidence.', 'vendor_document_ids' => [$document->id]]);
+        app(ThirdPartyEngagementCollaborationManager::class)->decide($reviewer, $request, ['decision' => 'follow_up', 'summary' => 'A replacement contact must follow up.']);
+        $evidence = $response->evidence->first();
+        $reassignments = app(ThirdPartyEngagementCollaborationRecipientManager::class);
+        $extensions = app(ThirdPartyEngagementCollaborationExtensionManager::class);
+        $engagement->update(['term_end_at' => '2026-10-01']);
+        $pendingExtension = $extensions->request($original, $request, ['proposed_due_at' => '2026-09-03', 'reason' => 'The original contact needs more time.']);
+        try {
+            $reassignments->reassign($manager, $request, ['recipient_vendor_user_id' => $replacement->id, 'reason' => 'Premature reassignment.']);
+            $this->fail('A request with a pending due-date extension must not be reassigned.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        $extensions->decide($reviewer, $pendingExtension, ['decision' => 'rejected', 'summary' => 'The original deadline remains appropriate.']);
+
+        Carbon::setTestNow('2026-08-27 08:00:00');
+        $this->assertSame(1, app(ThirdPartyEngagementCollaborationReminderManager::class)->reconcile(now()));
+        $priorReminder = ThirdPartyEngagementCollaborationReminder::query()->firstOrFail();
+        $this->assertSame($original->id, $priorReminder->vendor_user_id);
+        $this->assertTrue(DB::table('notifications')->where('id', $priorReminder->notification_id)->exists());
+        $original->delete();
+        try {
+            $reassignments->reassign($manager, $request, ['recipient_vendor_user_id' => $foreign->id, 'reason' => 'Foreign recipient.']);
+            $this->fail('A collaboration request cannot be reassigned across vendors.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        Sanctum::actingAs($manager);
+        $reassignment = $this->postJson("/api/third-party-engagement-collaboration-requests/{$request->id}/reassign", [
+            'recipient_vendor_user_id' => $replacement->id, 'reason' => 'The original contact is unavailable.',
+        ])->assertCreated()->assertJsonPath('data.to_vendor_user_id', $replacement->id)->json('data');
+        $this->assertSame($original->id, $request->fresh()->recipient_vendor_user_id);
+        $this->assertSame($replacement->id, $request->fresh()->currentRecipientContext()['recipient_vendor_user_id']);
+        $this->assertFalse(DB::table('notifications')->where('id', $priorReminder->notification_id)->exists());
+        $this->assertDatabaseHas('third_party_engagement_collaboration_reminders', ['id' => $priorReminder->id]);
+        $this->actingAs($original, 'vendor')->get(route('vendor.third-party-collaboration-evidence.download', $evidence))->assertForbidden();
+        $this->actingAs($replacement, 'vendor')->get(route('vendor.third-party-collaboration-evidence.download', $evidence))->assertOk()->assertStreamedContent('reassignment evidence');
+        Carbon::setTestNow('2026-08-31 00:00:01');
+        $this->assertSame(1, app(ThirdPartyEngagementCollaborationReminderManager::class)->reconcile(now()));
+        $this->assertSame($replacement->id, ThirdPartyEngagementCollaborationReminder::query()->latest('id')->firstOrFail()->vendor_user_id);
+        $this->actingAs($manager, 'web');
+        Livewire::test(EngagementsRelationManager::class, ['ownerRecord' => $engagement->vendor, 'pageClass' => ViewThirdPartyRisk::class])
+            ->assertTableActionVisible('reassign_collaboration', $engagement);
+        $rendered = view('filament.third-party-engagement', ['engagement' => $engagement->fresh()->load(['collaborationRequests.reassignments.actor'])])->render();
+        $this->assertStringContainsString('The original contact is unavailable.', $rendered);
+
+        try {
+            app(ThirdPartyEngagementCollaborationManager::class)->respond($original, $request, ['response_text' => 'Stale recipient response.']);
+            $this->fail('The former recipient must lose response authority immediately.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $event = app(ThirdPartyEngagementCollaborationManager::class)->respond($replacement, $request, ['response_text' => 'Replacement recipient response.']);
+        $this->assertSame($replacement->id, $event->actor_id);
+        $this->assertSame($reassignment['fingerprint'], $event->request_snapshot['current_recipient_context']['fingerprint']);
+        $lateRecipient = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        try {
+            $reassignments->reassign($manager, $request, ['recipient_vendor_user_id' => $lateRecipient->id, 'reason' => 'Late reassignment.']);
+            $this->fail('A responded request must not be reassigned.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($original, 'vendor');
+        Livewire::test(ListCollaborationRequests::class)->assertCanNotSeeTableRecords([$request]);
+        $this->actingAs($replacement, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])->assertSee('The original contact is unavailable.');
+
+        $record = ThirdPartyCollaborationRecipientReassignment::query()->firstOrFail();
+        $payload = $record->only(['third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'request_snapshot', 'reason', 'reassigned_by', 'actor_snapshot']);
+        $payload['reassigned_at'] = $record->reassigned_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $record->fingerprint);
+        $this->assertThrows(fn () => $record->update(['reason' => 'Rewritten']), \LogicException::class);
+
+        Sanctum::actingAs($manager);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonPath('data.0.current_recipient_vendor_user_id', $replacement->id)
+            ->assertJsonPath('data.0.reassignments.0.reason', 'The original contact is unavailable.');
+        $factory = ThirdPartyCollaborationRecipientReassignment::factory()->create();
+        $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'request_snapshot', 'reason', 'reassigned_by', 'actor_snapshot']);
+        $factoryPayload['reassigned_at'] = $factory->reassigned_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
+        $migration = require database_path('migrations/2026_08_24_880000_create_third_party_collaboration_recipient_reassignments.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_recipient_reassignments', ['id' => $record->id]);
+        $this->assertDatabaseHas('third_party_collaboration_recipient_reassignments', ['id' => $factory->id]);
+        Carbon::setTestNow();
+    }
+
+    public function test_recipient_reassignment_history_bound_is_exact(): void
+    {
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $first = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $second = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($manager, $engagement, [
+            'category' => 'assurance', 'subject' => 'Bounded recipient history', 'request_text' => 'Provide the response.',
+            'recipient_vendor_user_id' => $first->id, 'due_at' => today()->addDays(14)->toDateString(),
+        ]);
+        $recipientManager = app(ThirdPartyEngagementCollaborationRecipientManager::class);
+        for ($version = 1; $version <= 20; $version++) {
+            $recipientManager->reassign($manager, $request, [
+                'recipient_vendor_user_id' => $version % 2 === 1 ? $second->id : $first->id,
+                'reason' => "Recipient reassignment {$version}.",
+            ]);
+        }
+        $this->assertDatabaseCount('third_party_collaboration_recipient_reassignments', 20);
+        try {
+            $recipientManager->reassign($manager, $request, ['recipient_vendor_user_id' => $second->id, 'reason' => 'Overflow reassignment.']);
+            $this->fail('The 21st recipient reassignment must fail.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
     }
 }

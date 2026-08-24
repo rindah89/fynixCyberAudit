@@ -45,7 +45,9 @@ class CollaborationRequestResource extends Resource
         $actor = self::vendorActor();
 
         return parent::getEloquentQuery()
-            ->where('recipient_vendor_user_id', $actor->id)
+            ->where(fn (Builder $query) => $query
+                ->whereHas('latestReassignment', fn (Builder $reassignment) => $reassignment->where('to_vendor_user_id', $actor->id))
+                ->orWhere(fn (Builder $original) => $original->where('recipient_vendor_user_id', $actor->id)->whereDoesntHave('latestReassignment')))
             ->with([
                 'engagement:id,code,name,status',
                 'opener:id,name,email',
@@ -55,6 +57,7 @@ class CollaborationRequestResource extends Resource
                         ->whereNull('deleted_at'))
                     ->with('document'),
                 'latestEvent',
+                'reassignments' => fn ($query) => $query->select(['id', 'third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'reason', 'reassigned_at', 'fingerprint']),
                 'extensions.decision' => fn ($query) => $query->select(['id', 'third_party_collaboration_extension_id', 'decision', 'summary', 'decided_at', 'fingerprint']),
                 'reminders',
                 'escalation:id,third_party_engagement_collaboration_request_id,effective_due_at,channel,delivered_at,fingerprint',
@@ -121,6 +124,13 @@ class CollaborationRequestResource extends Resource
                         TextEntry::make('file_size_snapshot')->numeric(), TextEntry::make('sha256'),
                     ])->columns(2)->columnSpanFull(),
                 ])->columns(2),
+            ]),
+            Section::make('Recipient reassignment history')->schema([
+                TextEntry::make('current_recipient_vendor_user_id')->label('Current recipient ID'),
+                RepeatableEntry::make('reassignments')->hiddenLabel()->schema([
+                    TextEntry::make('version'), TextEntry::make('from_recipient_snapshot.name')->label('From'), TextEntry::make('to_recipient_snapshot.name')->label('To'),
+                    TextEntry::make('reason')->columnSpanFull(), TextEntry::make('reassigned_at')->dateTime(), TextEntry::make('fingerprint')->columnSpanFull(),
+                ])->columns(3),
             ]),
             Section::make('Due-date extension history')->schema([
                 TextEntry::make('effective_due_at')->label('Current effective due date')->date(),

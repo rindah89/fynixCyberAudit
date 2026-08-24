@@ -31,7 +31,9 @@ class ThirdPartyEngagementCollaborationIssueManager
             $vendor = Vendor::withTrashed()->lockForUpdate()->findOrFail($vendorId);
             $engagement = ThirdPartyEngagement::query()->where('vendor_id', $vendor->id)->lockForUpdate()->findOrFail($engagementId);
             $request = ThirdPartyEngagementCollaborationRequest::query()->where('third_party_engagement_id', $engagement->id)->lockForUpdate()->findOrFail($requestId);
-            VendorUser::withTrashed()->lockForUpdate()->findOrFail($request->recipient_vendor_user_id);
+            $reassignments = $request->reassignments()->orderBy('version')->lockForUpdate()->get();
+            $recipientContext = $request->setRelation('reassignments', $reassignments)->currentRecipientContext();
+            VendorUser::withTrashed()->lockForUpdate()->findOrFail($recipientContext['recipient_vendor_user_id']);
             $latestEvent = ThirdPartyEngagementCollaborationEvent::query()->where('third_party_engagement_collaboration_request_id', $request->id)->orderByDesc('version')->lockForUpdate()->firstOrFail();
             $extensions = $request->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
             $dueContext = $request->setRelation('extensions', $extensions)->effectiveDueContext();

@@ -63,8 +63,10 @@ class ThirdPartyEngagementCollaborationManager
         try {
             return DB::transaction(function () use ($actor, $request, $data, $batch, &$retainedCopies, $snapshotter): ThirdPartyEngagementCollaborationEvent {
                 [$locked, $engagement] = $this->lockRequest($request);
+                $reassignments = $locked->reassignments()->orderBy('version')->lockForUpdate()->get();
+                $recipientContext = $locked->setRelation('reassignments', $reassignments)->currentRecipientContext();
                 $lockedActor = VendorUser::query()->whereNull('deleted_at')->lockForUpdate()->find($actor->id);
-                abort_unless($lockedActor?->hasPassword() && $lockedActor->id === $locked->recipient_vendor_user_id && $lockedActor->vendor_id === $engagement->vendor_id, 403);
+                abort_unless($lockedActor?->hasPassword() && $lockedActor->id === $recipientContext['recipient_vendor_user_id'] && $lockedActor->vendor_id === $engagement->vendor_id, 403);
                 $data = Validator::make($data, self::responseRules())->validate();
                 $this->assertCollaborativeState($engagement);
                 $latest = $this->latestEvent($locked);
@@ -202,7 +204,8 @@ class ThirdPartyEngagementCollaborationManager
 
     private function requestSnapshot(ThirdPartyEngagementCollaborationRequest $request): array
     {
-        return Arr::only($request->attributesToArray(), ['id', 'third_party_engagement_id', 'version', 'category', 'subject', 'request_text', 'recipient_vendor_user_id', 'due_at', 'engagement_snapshot', 'recipient_snapshot', 'opened_by', 'opened_at', 'fingerprint']);
+        return Arr::only($request->attributesToArray(), ['id', 'third_party_engagement_id', 'version', 'category', 'subject', 'request_text', 'recipient_vendor_user_id', 'due_at', 'engagement_snapshot', 'recipient_snapshot', 'opened_by', 'opened_at', 'fingerprint'])
+            + ['current_recipient_context' => $request->currentRecipientContext()];
     }
 
     private function assertManager(User $actor): void

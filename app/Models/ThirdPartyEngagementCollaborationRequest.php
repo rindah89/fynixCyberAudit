@@ -20,7 +20,7 @@ class ThirdPartyEngagementCollaborationRequest extends Model
 
     protected $casts = ['category' => ThirdPartyCollaborationCategory::class, 'due_at' => 'date', 'engagement_snapshot' => 'array', 'recipient_snapshot' => 'array', 'opened_at' => 'datetime'];
 
-    protected $appends = ['effective_due_at'];
+    protected $appends = ['effective_due_at', 'current_recipient_vendor_user_id'];
 
     protected static function booted(): void
     {
@@ -61,6 +61,30 @@ class ThirdPartyEngagementCollaborationRequest extends Model
     public function extensions(): HasMany
     {
         return $this->hasMany(ThirdPartyCollaborationExtension::class, 'third_party_engagement_collaboration_request_id')->orderBy('version');
+    }
+
+    public function reassignments(): HasMany
+    {
+        return $this->hasMany(ThirdPartyCollaborationRecipientReassignment::class, 'third_party_engagement_collaboration_request_id')->orderBy('version');
+    }
+
+    public function latestReassignment(): HasOne
+    {
+        return $this->hasOne(ThirdPartyCollaborationRecipientReassignment::class, 'third_party_engagement_collaboration_request_id')->latestOfMany('version');
+    }
+
+    public function currentRecipientContext(): array
+    {
+        $latest = ($this->relationLoaded('reassignments') ? $this->reassignments : $this->reassignments()->get())->last();
+
+        return $latest
+            ? ['recipient_vendor_user_id' => $latest->to_vendor_user_id, 'recipient_snapshot' => $latest->to_recipient_snapshot, 'fingerprint' => $latest->fingerprint, 'reassignment_id' => $latest->id]
+            : ['recipient_vendor_user_id' => $this->recipient_vendor_user_id, 'recipient_snapshot' => $this->recipient_snapshot, 'fingerprint' => $this->fingerprint, 'reassignment_id' => null];
+    }
+
+    public function getCurrentRecipientVendorUserIdAttribute(): int
+    {
+        return (int) $this->currentRecipientContext()['recipient_vendor_user_id'];
     }
 
     public function effectiveDueContext(): array

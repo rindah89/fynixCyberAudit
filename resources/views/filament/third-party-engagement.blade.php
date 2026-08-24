@@ -165,6 +165,15 @@
             <div>Recipient: {{ $request->recipient?->name }} · due {{ $request->due_at?->toDateString() }} · opened by {{ $request->opener?->name }}</div>
             <div class="mt-1 whitespace-pre-wrap">{{ $request->request_text }}</div>
             <details class="mt-2"><summary class="font-medium">Retained request context</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['engagement' => $request->engagement_snapshot, 'recipient' => $request->recipient_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+            <div>Current recipient ID: {{ $request->current_recipient_vendor_user_id }}</div>
+            @foreach ($request->reassignments->sortBy('version') as $reassignment)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div>Recipient reassignment v{{ $reassignment->version }} · {{ data_get($reassignment->from_recipient_snapshot, 'name') }} → {{ data_get($reassignment->to_recipient_snapshot, 'name') }} · {{ $reassignment->reassigned_at?->toDayDateTimeString() }}</div>
+                    <div class="whitespace-pre-wrap">{{ $reassignment->reason }}</div>
+                    <details class="mt-1"><summary class="font-medium">Retained recipient, request, and actor evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['from' => $reassignment->from_recipient_snapshot, 'to' => $reassignment->to_recipient_snapshot, 'prior_recipient_context' => $reassignment->prior_recipient_context, 'request' => $reassignment->request_snapshot, 'actor' => $reassignment->actor_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $reassignment->fingerprint }}</div>
+                </div>
+            @endforeach
             <div>Effective due date: {{ $request->effective_due_at }}</div>
             @foreach ($request->extensions->sortBy('version') as $extension)
                 <div class="mt-2 rounded-lg border p-2">
