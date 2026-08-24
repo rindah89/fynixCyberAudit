@@ -4,12 +4,16 @@ namespace App\Filament\Resources\ThirdPartyRiskResource\RelationManagers;
 
 use App\Enums\RiskIndicatorDirection;
 use App\Enums\ThirdPartyContractDecision;
+use App\Enums\ThirdPartyDueDiligenceDecision;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Enums\ThirdPartyMonitoringCategory;
+use App\Models\Survey;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
+use App\Models\VendorDocument;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
 use Filament\Actions\Action;
@@ -32,7 +36,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name'])->withCount('contractRiskReviews'))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name'])->withCount(['contractRiskReviews', 'dueDiligenceReviews']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -43,6 +47,7 @@ class EngagementsRelationManager extends RelationManager
                 TextColumn::make('businessOwner.name')->label('Business owner'),
                 TextColumn::make('next_review_at')->date()->sortable(),
                 TextColumn::make('contract_risk_reviews_count')->label('Contract reviews'),
+                TextColumn::make('due_diligence_reviews_count')->label('Due-diligence reviews'),
             ])->headerActions([
                 Action::make('propose')->label('Propose engagement')->icon('heroicon-o-plus')
                     ->visible(fn (): bool => auth()->user()?->can('Manage Third Party Risk') ?? false)
@@ -60,7 +65,33 @@ class EngagementsRelationManager extends RelationManager
             ])->recordActions([
                 Action::make('inspect')->label('Inspect')->icon('heroicon-o-eye')
                     ->modalHeading('Third-party engagement evidence')->modalSubmitAction(false)->modalCancelActionLabel('Close')
-                    ->modalContent(fn (ThirdPartyEngagement $record) => view('filament.third-party-engagement', ['engagement' => $record])),
+                    ->modalContent(function (ThirdPartyEngagement $record) {
+                        $manager = app(ThirdPartyEngagementDueDiligenceManager::class);
+                        $visible = clone $record;
+                        $visible->setRelation('dueDiligenceReviews', $manager->visibleReviews($record->dueDiligenceReviews, auth()->user()));
+
+                        return view('filament.third-party-engagement', ['engagement' => $visible]);
+                    }),
+                Action::make('due_diligence_review')->label('Record due-diligence review')->icon('heroicon-o-magnifying-glass-circle')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $record->status === ThirdPartyEngagementStatus::DueDiligence)
+                    ->schema(fn (ThirdPartyEngagement $record): array => [
+                        Select::make('survey_id')->label('Completed vendor assessment')->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => $this->surveyOptions($record, $search))
+                            ->getOptionLabelUsing(fn ($value): ?string => $this->surveyOptions($record, '', [(int) $value])[(int) $value] ?? null)->required(),
+                        Select::make('vendor_document_ids')->label('Approved supporting documents')->multiple()->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => $this->documentOptions($record, $search))
+                            ->getOptionLabelsUsing(fn (array $values): array => $this->documentOptions($record, '', array_map('intval', $values))),
+                        TextInput::make('cybersecurity_rating')->numeric()->minValue(1)->maxValue(5)->required(),
+                        TextInput::make('privacy_rating')->numeric()->minValue(1)->maxValue(5)->required(),
+                        TextInput::make('resilience_rating')->numeric()->minValue(1)->maxValue(5)->required(),
+                        TextInput::make('compliance_rating')->numeric()->minValue(1)->maxValue(5)->required(),
+                        TextInput::make('financial_rating')->numeric()->minValue(1)->maxValue(5)->required(),
+                        Textarea::make('findings_summary')->required()->maxLength(30000)->columnSpanFull(),
+                        Select::make('decision')->options(ThirdPartyDueDiligenceDecision::class)->required(),
+                        Textarea::make('conditions')->maxLength(30000)->columnSpanFull(),
+                        Textarea::make('rationale')->required()->maxLength(30000)->columnSpanFull(),
+                        DatePicker::make('next_review_at')->required(),
+                    ])->action(fn (ThirdPartyEngagement $record, array $data) => app(ThirdPartyEngagementDueDiligenceManager::class)->review(auth()->user(), $record, $data)),
                 Action::make('contract_review')->label('Review contract risk')->icon('heroicon-o-document-check')
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && in_array($record->status, [ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::RenewalReview], true))
                     ->schema([
@@ -122,5 +153,25 @@ class EngagementsRelationManager extends RelationManager
     public function isReadOnly(): bool
     {
         return true;
+    }
+
+    /** @param  array<int, int>  $ids */
+    private function surveyOptions(ThirdPartyEngagement $engagement, string $search, array $ids = []): array
+    {
+        return Survey::query()->where('vendor_id', $engagement->vendor_id)->where('type', 'vendor_assessment')->where('status', 'completed')
+            ->whereNotNull('risk_score')->whereNotNull('risk_score_calculated_at')
+            ->when($ids !== [], fn ($query) => $query->whereIn('id', $ids))
+            ->when($ids === [] && $search !== '', fn ($query) => $query->where('title', 'like', "%{$search}%"))
+            ->orderBy('title')->limit(50)->get()->filter(fn (Survey $survey) => auth()->user()->can('view', $survey))->pluck('title', 'id')->all();
+    }
+
+    /** @param  array<int, int>  $ids */
+    private function documentOptions(ThirdPartyEngagement $engagement, string $search, array $ids = []): array
+    {
+        return VendorDocument::query()->where('vendor_id', $engagement->vendor_id)->where('status', 'approved')
+            ->where(fn ($query) => $query->whereNull('expiration_date')->orWhereDate('expiration_date', '>=', today()))
+            ->when($ids !== [], fn ($query) => $query->whereIn('id', $ids))
+            ->when($ids === [] && $search !== '', fn ($query) => $query->where('name', 'like', "%{$search}%"))
+            ->orderBy('name')->limit(50)->get()->filter(fn (VendorDocument $document) => auth()->user()->can('view', $document))->pluck('name', 'id')->all();
     }
 }

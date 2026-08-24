@@ -247,6 +247,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/third-party-engagements/{engagement}/events', [ThirdPartyRiskController::class, 'transitionEngagement']);
     Route::post('/third-party-engagements/{engagement}/contract-risk-reviews', [ThirdPartyRiskController::class, 'reviewContractRisk']);
     Route::get('/third-party-engagements/{engagement}/contract-risk-reviews', [ThirdPartyRiskController::class, 'contractRiskReviews']);
+    Route::post('/third-party-engagements/{engagement}/due-diligence-reviews', [ThirdPartyRiskController::class, 'reviewDueDiligence']);
+    Route::get('/third-party-engagements/{engagement}/due-diligence-reviews', [ThirdPartyRiskController::class, 'dueDiligenceReviews']);
     Route::get('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'monitoringIndicators']);
     Route::post('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'defineMonitoringIndicator']);
     Route::get('/third-party-engagement-monitoring-indicators/{indicator}/observations', [ThirdPartyRiskController::class, 'monitoringObservations']);

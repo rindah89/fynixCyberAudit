@@ -13,6 +13,7 @@ use App\Http\Requests\MapVendorRiskRequest;
 use App\Http\Requests\ShowThirdPartyEngagementRequest;
 use App\Http\Requests\StoreFourthPartyDependencyRequest;
 use App\Http\Requests\StoreThirdPartyContractRiskReviewRequest;
+use App\Http\Requests\StoreThirdPartyEngagementDueDiligenceReviewRequest;
 use App\Http\Requests\StoreThirdPartyEngagementMonitoringIndicatorRequest;
 use App\Http\Requests\StoreThirdPartyEngagementMonitoringObservationRequest;
 use App\Http\Requests\StoreThirdPartyEngagementRequest;
@@ -26,6 +27,7 @@ use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
@@ -66,6 +68,19 @@ class ThirdPartyRiskController extends Controller
     public function contractRiskReviews(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
         return response()->json($engagement->contractRiskReviews()->with('reviewer:id,name')->latest('version')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function reviewDueDiligence(StoreThirdPartyEngagementDueDiligenceReviewRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementDueDiligenceManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $engagement, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function dueDiligenceReviews(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementDueDiligenceManager $manager): JsonResponse
+    {
+        $page = $engagement->dueDiligenceReviews()->with('reviewer:id,name')->latest('version')->paginate($request->integer('per_page', 50));
+        $page->setCollection($manager->visibleReviews($page->getCollection(), $request->user()));
+
+        return response()->json($page);
     }
 
     public function monitoringIndicators(ListThirdPartyEngagementMonitoringRequest $request, ThirdPartyEngagement $engagement): JsonResponse

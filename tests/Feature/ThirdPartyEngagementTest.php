@@ -3,18 +3,22 @@
 namespace Tests\Feature;
 
 use App\Enums\RiskDomain;
+use App\Enums\SurveyStatus;
+use App\Enums\SurveyType;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\VendorStatus;
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
 use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRelationManager;
 use App\Models\Risk;
+use App\Models\Survey;
 use App\Models\ThirdPartyContractRiskReview;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementEvent;
 use App\Models\User;
 use App\Models\Vendor;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
@@ -51,6 +55,7 @@ class ThirdPartyEngagementTest extends TestCase
         $engagement = ThirdPartyEngagement::query()->findOrFail($id);
 
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'due_diligence', 'summary' => 'Due diligence inputs completed.'])->assertOk();
+        $this->recordDueDiligence($contractReviewer, $engagement);
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'approved', 'summary' => 'Self approval attempt.'])->assertForbidden();
 
         Sanctum::actingAs($approver);
@@ -156,7 +161,7 @@ class ThirdPartyEngagementTest extends TestCase
 
     public function test_activation_requires_an_independent_current_contract_risk_review(): void
     {
-        [$vendor, $proposer, , , $approver, $owner] = $this->approvedContext();
+        [$vendor, $proposer, , , $approver, $owner, $reviewer] = $this->approvedContext();
         $engagementManager = app(ThirdPartyEngagementManager::class);
         $engagement = $engagementManager->propose($proposer, $vendor, [
             'code' => 'ENG-CONTRACT-01', 'name' => 'Contract-governed service',
@@ -165,6 +170,7 @@ class ThirdPartyEngagementTest extends TestCase
             'term_start_at' => today(), 'term_end_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6),
         ]);
         $engagementManager->transition($proposer, $engagement, ['status' => 'due_diligence', 'summary' => 'Due diligence completed.']);
+        $this->recordDueDiligence($reviewer, $engagement);
         $engagementManager->transition($approver, $engagement, ['status' => 'approved', 'summary' => 'Engagement independently approved.']);
 
         Sanctum::actingAs($approver);
@@ -219,6 +225,7 @@ class ThirdPartyEngagementTest extends TestCase
             'service_description' => 'Service with changing risk context.', 'business_owner_id' => $owner->id, 'criticality' => 'high', 'data_access' => true,
             'term_start_at' => today(), 'term_end_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6)]);
         $manager->transition($proposer, $engagement, ['status' => 'due_diligence', 'summary' => 'Initial due diligence.']);
+        $this->recordDueDiligence($contractReviewer, $engagement);
         $manager->transition($approver, $engagement, ['status' => 'approved', 'summary' => 'Initial approval.']);
         app(ThirdPartyContractRiskManager::class)->review($contractReviewer, $engagement, $this->contractReviewPayload(today()->addYear()));
 
@@ -229,6 +236,7 @@ class ThirdPartyEngagementTest extends TestCase
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Stale activation.'])
             ->assertUnprocessable()->assertJsonValidationErrors('approval');
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'due_diligence', 'summary' => 'Returned for current-context review.'])->assertOk();
+        $this->recordDueDiligence($contractReviewer, $engagement);
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'approved', 'summary' => 'Reapproved against current risk context.'])->assertOk();
         $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Old contract review is stale.'])
             ->assertUnprocessable()->assertJsonValidationErrors('contract_review');
@@ -238,7 +246,7 @@ class ThirdPartyEngagementTest extends TestCase
 
     private function approvedContext(): array
     {
-        $actors = collect(range(1, 5))->map(fn () => tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors'])));
+        $actors = collect(range(1, 5))->map(fn () => tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors', 'Read Surveys'])));
         [$proposer, $assessor, $decider, $approver] = $actors->take(4)->all();
         $owner = User::factory()->create();
         $vendor = Vendor::factory()->create(['vendor_manager_id' => $proposer->id, 'status' => VendorStatus::ACCEPTED]);
@@ -251,9 +259,21 @@ class ThirdPartyEngagementTest extends TestCase
         ]);
 
         $contractReviewer = User::factory()->create();
-        $contractReviewer->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']);
+        $contractReviewer->givePermissionTo(['Manage Third Party Risk', 'Read Vendors', 'Read Surveys']);
 
         return [$vendor, $proposer, $assessor, $decider, $approver, $owner, $contractReviewer];
+    }
+
+    private function recordDueDiligence(User $reviewer, ThirdPartyEngagement $engagement): void
+    {
+        $survey = Survey::factory()->create(['vendor_id' => $engagement->vendor_id, 'type' => SurveyType::VENDOR_ASSESSMENT,
+            'status' => SurveyStatus::COMPLETED, 'risk_score' => 75, 'risk_score_calculated_at' => now()->startOfSecond(), 'completed_at' => now()->subDay()]);
+        app(ThirdPartyEngagementDueDiligenceManager::class)->review($reviewer, $engagement, [
+            'survey_id' => $survey->id, 'cybersecurity_rating' => 3, 'privacy_rating' => 3, 'resilience_rating' => 3,
+            'compliance_rating' => 3, 'financial_rating' => 3, 'findings_summary' => 'Factory-aligned due diligence findings.',
+            'decision' => 'satisfactory', 'rationale' => 'Current survey and risk approval support progression.',
+            'next_review_at' => $engagement->next_review_at->toDateString(),
+        ]);
     }
 
     private function assessmentPayload(): array

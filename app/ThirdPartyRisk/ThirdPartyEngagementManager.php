@@ -73,6 +73,10 @@ class ThirdPartyEngagementManager
                 [$assessment, $decision, $snapshot] = $this->approvalContext($vendor);
                 abort_if(in_array($actor->id, [$locked->proposed_by, $assessment->assessor_id, $decision->decided_by], true), 403, 'Engagement approval must be separated from proposal and current risk assessment/decision actors.');
                 $changes += ['approval_snapshot' => $snapshot, 'approved_by' => $actor->id, 'approved_at' => now()->startOfSecond()];
+                if ($locked->status === ThirdPartyEngagementStatus::DueDiligence && $next === ThirdPartyEngagementStatus::Approved) {
+                    $review = app(ThirdPartyEngagementDueDiligenceManager::class)->currentAcceptedReview($locked, $snapshot, $actor);
+                    $changes['due_diligence_review_snapshot'] = app(ThirdPartyEngagementDueDiligenceManager::class)->approvalBinding($review);
+                }
                 if ($locked->status === ThirdPartyEngagementStatus::RenewalReview) {
                     if (blank($data['renewed_term_end_at'] ?? null) || blank($data['renewed_next_review_at'] ?? null)) {
                         throw ValidationException::withMessages(['renewed_term_end_at' => 'Renewal requires a new term end and review date.']);
@@ -173,7 +177,7 @@ class ThirdPartyEngagementManager
     private function appendEvent(ThirdPartyEngagement $engagement, User $actor, ?ThirdPartyEngagementStatus $from, ThirdPartyEngagementStatus $to, string $summary, Carbon $at): ThirdPartyEngagementEvent
     {
         $engagement->load(['businessOwner:id,name,email', 'proposer:id,name,email', 'approver:id,name,email']);
-        $snapshot = Arr::only($engagement->toArray(), ['id', 'vendor_id', 'code', 'name', 'service_description', 'criticality', 'data_access', 'status', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'governed_at'])
+        $snapshot = Arr::only($engagement->toArray(), ['id', 'vendor_id', 'code', 'name', 'service_description', 'criticality', 'data_access', 'status', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'governed_at'])
             + ['business_owner' => $engagement->businessOwner?->only(['id', 'name', 'email']), 'proposer' => $engagement->proposer?->only(['id', 'name', 'email']), 'approver' => $engagement->approver?->only(['id', 'name', 'email'])];
         $payload = ['third_party_engagement_id' => $engagement->id, 'version' => ((int) $engagement->events()->max('version')) + 1, 'from_status' => $from?->value, 'to_status' => $to->value,
             'summary' => $summary, 'engagement_snapshot' => $snapshot, 'recorded_by' => $actor->id, 'recorded_at' => $at->toIso8601String()];

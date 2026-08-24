@@ -3,14 +3,18 @@
 namespace Database\Factories;
 
 use App\Enums\RiskDomain;
+use App\Enums\SurveyStatus;
+use App\Enums\SurveyType;
 use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\VendorStatus;
 use App\Models\Risk;
+use App\Models\Survey;
 use App\Models\ThirdPartyContractRiskReview;
 use App\Models\ThirdPartyEngagement;
 use App\Models\User;
 use App\Models\Vendor;
+use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -64,8 +68,8 @@ class ThirdPartyContractRiskReviewFactory extends Factory
 
     private function approvedEngagement(): ThirdPartyEngagement
     {
-        $actors = collect(range(1, 4))->map(fn () => tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk')));
-        [$proposer, $assessor, $decider, $approver] = $actors->all();
+        $actors = collect(range(1, 5))->map(fn () => tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Surveys'])));
+        [$proposer, $assessor, $decider, $reviewer, $approver] = $actors->all();
         $owner = User::factory()->create();
         $vendor = Vendor::factory()->create(['status' => VendorStatus::ACCEPTED]);
         $riskManager = app(ThirdPartyRiskManager::class);
@@ -78,6 +82,12 @@ class ThirdPartyContractRiskReviewFactory extends Factory
             'service_description' => 'Factory service.', 'business_owner_id' => $owner->id, 'criticality' => 'high', 'data_access' => true,
             'term_start_at' => today(), 'term_end_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6)]);
         $manager->transition($proposer, $engagement, ['status' => 'due_diligence', 'summary' => 'Factory due diligence.']);
+        $survey = Survey::factory()->create(['vendor_id' => $vendor->id, 'type' => SurveyType::VENDOR_ASSESSMENT, 'status' => SurveyStatus::COMPLETED,
+            'risk_score' => 70, 'risk_score_calculated_at' => now()->startOfSecond(), 'completed_at' => now()->subDay()]);
+        app(ThirdPartyEngagementDueDiligenceManager::class)->review($reviewer, $engagement, ['survey_id' => $survey->id,
+            'cybersecurity_rating' => 3, 'privacy_rating' => 3, 'resilience_rating' => 3, 'compliance_rating' => 3, 'financial_rating' => 3,
+            'findings_summary' => 'Factory due diligence findings.', 'decision' => 'satisfactory', 'rationale' => 'Factory due diligence accepted.',
+            'next_review_at' => today()->addMonths(6)->toDateString()]);
         $manager->transition($approver, $engagement, ['status' => 'approved', 'summary' => 'Factory engagement approval.']);
 
         return $engagement->refresh();

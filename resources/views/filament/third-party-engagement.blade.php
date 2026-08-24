@@ -19,6 +19,35 @@
         @endforeach
     </div>
     <div class="space-y-2">
+        <div class="font-medium">Structured due-diligence review history</div>
+        @forelse ($engagement->dueDiligenceReviews->sortBy('version') as $review)
+            <div class="rounded-lg border p-3">
+                <div>v{{ $review->version }} · {{ $review->decision->getLabel() }} · {{ $review->reviewer?->name }} · {{ $review->reviewed_at?->toDayDateTimeString() }}</div>
+                <dl class="mt-2 grid grid-cols-2 gap-2 md:grid-cols-5">
+                    <div><dt class="font-medium">Cybersecurity</dt><dd>{{ $review->cybersecurity_rating }}/5</dd></div>
+                    <div><dt class="font-medium">Privacy</dt><dd>{{ $review->privacy_rating }}/5</dd></div>
+                    <div><dt class="font-medium">Resilience</dt><dd>{{ $review->resilience_rating }}/5</dd></div>
+                    <div><dt class="font-medium">Compliance</dt><dd>{{ $review->compliance_rating }}/5</dd></div>
+                    <div><dt class="font-medium">Financial</dt><dd>{{ $review->financial_rating }}/5</dd></div>
+                </dl>
+                <div class="mt-2 whitespace-pre-wrap"><span class="font-medium">Findings:</span> {{ $review->findings_summary }}</div>
+                <div class="whitespace-pre-wrap"><span class="font-medium">Conditions:</span> {{ $review->conditions ?: 'None recorded' }}</div>
+                <div class="whitespace-pre-wrap"><span class="font-medium">Rationale:</span> {{ $review->rationale }}</div>
+                <div>Next review: {{ $review->next_review_at?->toDateString() }}</div>
+                @if ($review->survey_snapshot)
+                    <details class="mt-2"><summary class="font-medium">Authorized survey evidence snapshot</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode($review->survey_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                @endif
+                @if ($review->document_snapshots)
+                    <details class="mt-2"><summary class="font-medium">Authorized document metadata snapshots</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode($review->document_snapshots, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                @endif
+                <details class="mt-2"><summary class="font-medium">Engagement and vendor-risk approval snapshots</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['engagement' => $review->engagement_snapshot, 'risk_approval' => $review->risk_approval_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                <div class="mt-1 break-all font-mono text-xs">{{ $review->fingerprint }}</div>
+            </div>
+        @empty
+            <div>No structured due-diligence review has been recorded.</div>
+        @endforelse
+    </div>
+    <div class="space-y-2">
         <div class="font-medium">Contract-risk review history</div>
         @forelse ($engagement->contractRiskReviews->sortBy('version') as $review)
             <div class="rounded-lg border p-3">
