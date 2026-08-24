@@ -44,4 +44,9 @@ class ThirdPartyEngagementCollaborationEscalation extends Model
     {
         return $this->hasOne(ThirdPartyEngagementCollaborationEscalationAction::class)->latestOfMany('version');
     }
+
+    public function issue(): HasOne
+    {
+        return $this->hasOne(ThirdPartyCollaborationEscalationIssue::class, 'third_party_engagement_collaboration_escalation_id');
+    }
 }

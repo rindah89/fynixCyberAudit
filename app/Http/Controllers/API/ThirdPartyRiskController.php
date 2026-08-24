@@ -15,6 +15,7 @@ use App\Http\Requests\ListThirdPartyEngagementMonitoringRequest;
 use App\Http\Requests\ListThirdPartyEngagementsRequest;
 use App\Http\Requests\ListVendorFourthPartyDependenciesRequest;
 use App\Http\Requests\MapVendorRiskRequest;
+use App\Http\Requests\OpenThirdPartyCollaborationEscalationIssueRequest;
 use App\Http\Requests\ResolveThirdPartyCollaborationEscalationRequest;
 use App\Http\Requests\ShowThirdPartyEngagementRequest;
 use App\Http\Requests\StoreFourthPartyDependencyRequest;
@@ -42,6 +43,7 @@ use App\Models\ThirdPartyEngagementOnboardingRequirement;
 use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationIssueManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationResolutionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
@@ -191,7 +193,7 @@ class ThirdPartyRiskController extends Controller
 
     public function collaborationRequests(ListThirdPartyCollaborationRequestsRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'events.evidence.document', 'reminders', 'escalation.actions.actor:id,name,email'])->latest('version')->paginate($request->integer('per_page', 50));
+        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'events.evidence.document', 'reminders', 'escalation.actions.actor:id,name,email', 'escalation.issue.owner:id,name', 'escalation.issue.lifecycle'])->latest('version')->paginate($request->integer('per_page', 50));
         $history->setCollection(app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($history->getCollection(), $request->user()));
 
         return response()->json($history);
@@ -205,6 +207,13 @@ class ThirdPartyRiskController extends Controller
     public function resolveCollaborationEscalation(ResolveThirdPartyCollaborationEscalationRequest $request, ThirdPartyEngagementCollaborationEscalation $escalation, ThirdPartyEngagementCollaborationResolutionManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->resolve($request->user(), $escalation, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function openCollaborationEscalationIssue(OpenThirdPartyCollaborationEscalationIssueRequest $request, ThirdPartyEngagementCollaborationEscalation $escalation, ThirdPartyEngagementCollaborationIssueManager $manager): JsonResponse
+    {
+        $issue = $manager->open($request->user(), $escalation, $request->validated());
+
+        return response()->json(['data' => $issue], $issue->wasRecentlyCreated ? JsonResponse::HTTP_CREATED : JsonResponse::HTTP_OK);
     }
 
     public function fourthPartyDependencies(ListVendorFourthPartyDependenciesRequest $request, Vendor $vendor, FourthPartyDependencyManager $manager): JsonResponse

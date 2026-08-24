@@ -650,6 +650,7 @@ Third-party risk mutation endpoints require `Manage Third Party Risk` unless an 
 - `POST /api/third-party-engagement-collaboration-requests/{collaborationRequest}/decisions`
 - `POST /api/third-party-engagement-collaboration-escalations/{escalation}/acknowledge`
 - `POST /api/third-party-engagement-collaboration-escalations/{escalation}/resolve`
+- `POST /api/third-party-engagement-collaboration-escalations/{escalation}/issues`
 
 Dependency history is readable through `GET /api/vendors/{vendor}/fourth-party-dependencies` by third-party risk managers, users with `Read Vendors`, and the assigned vendor manager. Cross-vendor concentration is readable through `GET /api/third-party-risk/fourth-party-concentrations` only by third-party risk managers and users with `Read Vendors`. Both reads accept `page` and `per_page` with a maximum page size of 100.
 
@@ -676,6 +677,8 @@ The daily `fynix:reconcile-third-party-collaboration-reminders` process inserts 
 The daily `fynix:reconcile-third-party-collaboration-escalations` process escalates once after three full overdue grace days when the governed overdue reminder exists and the latest event is still `requested` or `follow_up`. It resolves the current active engagement business owner and vendor relationship manager under the governed lock boundary, deduplicates a shared user, and transactionally inserts every internal database notification plus one immutable escalation record. Staff REST/operator history exposes internal recipient roles and snapshots, notification identities, exact request/latest-event/overdue-reminder snapshots, times, and fingerprint. The exact provider recipient's portal exposes only escalation occurrence, channel, delivery time, and fingerprint. This proves database-store insertion—not reading, email/external delivery, response resolution, management action, or automatic remediation.
 
 The current business owner or vendor relationship manager acknowledges an escalation with `summary`, `action_plan`, and a canonical current/future `target_resolution_at`. A different currently accountable user or caller with `Manage Third Party Risk` resolves it with a `summary` only after a later collaboration event is independently accepted; the resolver must also differ from the acceptance actor. Both writes allocate immutable versions and bind the complete escalation, actor, time, and, for resolution, accepted-event evidence into SHA-256 fingerprints. Collaboration history is also readable by the current business owner and exposes full internal action evidence; the exact provider portal exposes only lifecycle status, time, and fingerprint. Notification delivery alone never resolves an escalation. These are deliberate internal decisions, not proof of reading, response truth, plan execution, remediation, external delivery, or provider performance.
+
+Once an acknowledged target date has ended and the latest event still awaits the provider, a caller with `Manage Third Party Risk` may post a required `rationale` to the escalation issue endpoint. Retries return the same single source issue. The server selects an active accountable owner, retains and fingerprints the exact escalation, acknowledgement, latest event, owner, opener, rationale, and time, and registers an `open` issue under source alias `third_party_collaboration` with the missed target as its lifecycle due date. Staff REST/operator history exposes the issue; the exact provider portal does not expose its existence or internal contents. Later response acceptance or escalation resolution does not imply remediation and does not close the issue. Shared remediation and independent closure use the governance-issue endpoints below.
 
 ### Enterprise, Operational, and Technology Risk Portfolios
 
@@ -714,7 +717,7 @@ Technology exposure assessment creation requires `Manage Risk Portfolio`, an act
 
 ### Governance Issue and Remediation Lifecycle
 
-Issue lifecycle endpoints use source type `risk`, `vendor`, `ai`, `resilience`, `control_test`, or `policy_exception`:
+Issue lifecycle endpoints use source type `risk`, `vendor`, `ai`, `resilience`, `control_test`, `policy_exception`, or `third_party_collaboration`:
 
 - `GET /api/governance-issues/{type}/{issue}`
 - `POST /api/governance-issues/{type}/{issue}/remediation`

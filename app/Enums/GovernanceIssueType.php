@@ -7,6 +7,7 @@ use App\Models\ControlTestFinding;
 use App\Models\PolicyExceptionMonitoringIssue;
 use App\Models\ResilienceIssue;
 use App\Models\RiskGovernanceIssue;
+use App\Models\ThirdPartyCollaborationEscalationIssue;
 use App\Models\VendorRiskIssue;
 use Filament\Support\Contracts\HasLabel;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ enum GovernanceIssueType: string implements HasLabel
     case Resilience = 'resilience';
     case ControlTest = 'control_test';
     case PolicyException = 'policy_exception';
+    case ThirdPartyCollaboration = 'third_party_collaboration';
 
     public function modelClass(): string
     {
@@ -29,6 +31,7 @@ enum GovernanceIssueType: string implements HasLabel
             self::Resilience => ResilienceIssue::class,
             self::ControlTest => ControlTestFinding::class,
             self::PolicyException => PolicyExceptionMonitoringIssue::class,
+            self::ThirdPartyCollaboration => ThirdPartyCollaborationEscalationIssue::class,
         };
     }
 
@@ -46,6 +49,7 @@ enum GovernanceIssueType: string implements HasLabel
             self::Resilience => __('Operational resilience'),
             self::ControlTest => __('Control test'),
             self::PolicyException => __('Policy exception monitoring'),
+            self::ThirdPartyCollaboration => __('Third-party collaboration escalation'),
         };
     }
 

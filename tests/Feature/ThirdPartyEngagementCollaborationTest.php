@@ -7,6 +7,7 @@ use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRe
 use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
+use App\Models\ThirdPartyCollaborationEscalationIssue;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
@@ -487,6 +488,97 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $migration = require database_path('migrations/2026_08_24_850000_create_third_party_collaboration_escalation_actions.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_engagement_collaboration_escalation_actions', ['id' => $resolved->id]);
+        Carbon::setTestNow();
+    }
+
+    public function test_missed_internal_target_is_handed_to_one_retained_governance_issue_without_implying_remediation(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $businessOwner = User::factory()->create();
+        $vendorManager = User::factory()->create();
+        $engagement->update(['business_owner_id' => $businessOwner->id]);
+        $engagement->vendor->update(['vendor_manager_id' => $vendorManager->id]);
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($manager, $engagement, [
+            'category' => 'assurance', 'subject' => 'Missed internal target', 'request_text' => 'Provide the overdue response.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-27',
+        ]);
+        $reminders = app(ThirdPartyEngagementCollaborationReminderManager::class);
+        $reminders->reconcile(now());
+        Carbon::setTestNow('2026-08-28 00:00:01');
+        $reminders->reconcile(now());
+        Carbon::setTestNow('2026-08-31 00:00:00');
+        app(ThirdPartyEngagementCollaborationEscalationManager::class)->reconcile(now());
+        $escalation = $request->escalation()->firstOrFail();
+        app(ThirdPartyEngagementCollaborationResolutionManager::class)->acknowledge($businessOwner, $escalation, [
+            'summary' => 'Ownership accepted.', 'action_plan' => 'Secure an acceptable response.', 'target_resolution_at' => '2026-08-31',
+        ]);
+
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/issues", [
+            'rationale' => 'Caller-owned evidence.', 'owner_id' => $manager->id,
+        ])->assertUnprocessable();
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/issues", [
+            'rationale' => 'Target has not ended.',
+        ])->assertUnprocessable();
+        Carbon::setTestNow('2026-09-01 00:00:00');
+        Sanctum::actingAs(User::factory()->create());
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/issues", [
+            'rationale' => 'Unauthorized probe.',
+        ])->assertForbidden();
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        $this->actingAs($manager, 'web');
+        Livewire::test(EngagementsRelationManager::class, ['ownerRecord' => $engagement->vendor, 'pageClass' => ViewThirdPartyRisk::class])
+            ->assertTableActionVisible('open_collaboration_issue', $engagement);
+        Sanctum::actingAs($manager);
+        $first = $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/issues", [
+            'rationale' => 'The committed internal target elapsed without an accepted response.',
+        ])->assertCreated()->assertJsonPath('data.status', 'open')->assertJsonPath('data.lifecycle.status', 'open')->json('data');
+        $second = $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/issues", [
+            'rationale' => 'Idempotent retry.',
+        ])->assertOk()->json('data');
+        $this->assertSame($first['id'], $second['id']);
+        $this->assertDatabaseCount('third_party_collaboration_escalation_issues', 1);
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_id' => $first['id'], 'status' => 'open']);
+        $issue = ThirdPartyCollaborationEscalationIssue::query()->findOrFail($first['id']);
+        $payload = $issue->only(['third_party_engagement_collaboration_escalation_id', 'third_party_engagement_collaboration_escalation_action_id', 'third_party_engagement_id', 'owner_id', 'opened_by', 'title', 'description', 'severity', 'status', 'source_snapshot']);
+        $payload['status'] = $issue->status->value;
+        $payload['opened_at'] = $issue->opened_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $issue->fingerprint);
+        $this->assertThrows(fn () => $issue->update(['title' => 'Rewritten issue']), \LogicException::class);
+        $this->assertThrows(fn () => $issue->delete(), \LogicException::class);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonPath('data.0.escalation.issue.lifecycle.status', 'open');
+        Sanctum::actingAs($businessOwner);
+        $this->getJson("/api/governance-issues/third_party_collaboration/{$issue->id}")
+            ->assertOk()->assertJsonPath('data.issue.fingerprint', $issue->fingerprint);
+        Sanctum::actingAs(User::factory()->create());
+        $this->getJson("/api/governance-issues/third_party_collaboration/{$issue->id}")->assertForbidden();
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        $this->actingAs($manager, 'web');
+        Livewire::test(EngagementsRelationManager::class, ['ownerRecord' => $engagement->vendor, 'pageClass' => ViewThirdPartyRisk::class])
+            ->assertTableActionHidden('open_collaboration_issue', $engagement);
+
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($contact, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertDontSee('The committed internal target elapsed')
+            ->assertDontSee($issue->fingerprint);
+
+        app(ThirdPartyEngagementCollaborationManager::class)->respond($contact, $request, ['response_text' => 'Late provider response.']);
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        app(ThirdPartyEngagementCollaborationManager::class)->decide($reviewer, $request, ['decision' => 'accepted', 'summary' => 'Late response accepted.']);
+        app(ThirdPartyEngagementCollaborationResolutionManager::class)->resolve($vendorManager, $escalation, ['summary' => 'Internal escalation resolved.']);
+        $this->assertDatabaseHas('governance_issue_lifecycles', ['issue_id' => $first['id'], 'status' => 'open']);
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/issues", [
+            'rationale' => 'Retry after response resolution.',
+        ])->assertOk()->assertJsonPath('data.id', $first['id']);
+        $migration = require database_path('migrations/2026_08_24_860000_create_third_party_collaboration_escalation_issues.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_escalation_issues', ['id' => $first['id']]);
         Carbon::setTestNow();
     }
 }

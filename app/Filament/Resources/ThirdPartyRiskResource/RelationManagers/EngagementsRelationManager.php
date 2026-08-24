@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ThirdPartyRiskResource\RelationManagers;
 
 use App\Enums\RiskIndicatorDirection;
 use App\Enums\ThirdPartyCollaborationCategory;
+use App\Enums\ThirdPartyCollaborationEscalationStatus;
 use App\Enums\ThirdPartyCollaborationStatus;
 use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyDueDiligenceDecision;
@@ -15,6 +16,7 @@ use App\Enums\ThirdPartyOnboardingCategory;
 use App\Enums\ThirdPartyOnboardingDecision;
 use App\Models\Survey;
 use App\Models\ThirdPartyEngagement;
+use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\ThirdPartyEngagementOffboardingRequirement;
@@ -23,6 +25,7 @@ use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationIssueManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
@@ -49,7 +52,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor:id,name,email'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor:id,name,email', 'collaborationRequests.escalation.issue.owner:id,name', 'collaborationRequests.escalation.issue.lifecycle'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -116,6 +119,15 @@ class EngagementsRelationManager extends RelationManager
                         $request = ThirdPartyEngagementCollaborationRequest::query()->findOrFail($data['collaboration_request_id']);
                         unset($data['collaboration_request_id']);
                         app(ThirdPartyEngagementCollaborationManager::class)->decide(auth()->user(), $request, $data);
+                    }),
+                Action::make('open_collaboration_issue')->label('Open missed-target issue')->icon('heroicon-o-exclamation-triangle')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $this->missedEscalationOptions($record) !== [])
+                    ->schema(fn (ThirdPartyEngagement $record): array => [
+                        Select::make('escalation_id')->label('Missed escalation target')->options($this->missedEscalationOptions($record))->required(),
+                        Textarea::make('rationale')->required()->maxLength(30000)->columnSpanFull(),
+                    ])->action(function (array $data): void {
+                        $escalation = ThirdPartyEngagementCollaborationEscalation::query()->findOrFail($data['escalation_id']);
+                        app(ThirdPartyEngagementCollaborationIssueManager::class)->open(auth()->user(), $escalation, ['rationale' => $data['rationale']]);
                     }),
                 Action::make('due_diligence_review')->label('Record due-diligence review')->icon('heroicon-o-magnifying-glass-circle')
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $record->status === ThirdPartyEngagementStatus::DueDiligence)
@@ -236,6 +248,21 @@ class EngagementsRelationManager extends RelationManager
     public function isReadOnly(): bool
     {
         return true;
+    }
+
+    private function missedEscalationOptions(ThirdPartyEngagement $engagement): array
+    {
+        return $engagement->collaborationRequests
+            ->filter(function (ThirdPartyEngagementCollaborationRequest $request): bool {
+                $action = $request->escalation?->actions->last();
+
+                return $request->escalation?->issue === null
+                    && $action?->status === ThirdPartyCollaborationEscalationStatus::Acknowledged
+                    && ($action->target_resolution_at?->copy()->endOfDay()->isPast() ?? false)
+                    && in_array($request->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true);
+            })->mapWithKeys(fn (ThirdPartyEngagementCollaborationRequest $request): array => [
+                $request->escalation->id => "v{$request->version} — {$request->subject}",
+            ])->all();
     }
 
     /** @param  array<int, int>  $ids */

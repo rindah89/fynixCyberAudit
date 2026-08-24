@@ -200,6 +200,15 @@
                             <div class="break-all font-mono text-xs">{{ $action->fingerprint }}</div>
                         </div>
                     @endforeach
+                    @if ($request->escalation->issue)
+                        <div class="mt-2 rounded-lg border p-2">
+                            <div class="font-medium">Governance issue · {{ $request->escalation->issue->status->getLabel() }} · owner {{ $request->escalation->issue->owner?->name }}</div>
+                            <div>{{ $request->escalation->issue->title }}</div>
+                            <div class="whitespace-pre-wrap">{{ $request->escalation->issue->description }}</div>
+                            <details class="mt-1"><summary class="font-medium">Retained missed-target source evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode($request->escalation->issue->source_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                            <div class="break-all font-mono text-xs">{{ $request->escalation->issue->fingerprint }}</div>
+                        </div>
+                    @endif
                 </div>
             @endif
             <div class="mt-1 break-all font-mono text-xs">{{ $request->fingerprint }}</div>
