@@ -5,19 +5,26 @@ namespace App\Http\Controllers\API;
 use App\Access\FileAccess;
 use App\Enums\IncidentPhase;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ListIncidentLessonEventsRequest;
+use App\Http\Requests\ListIncidentLessonsRequest;
 use App\Http\Requests\ListIncidentNotificationEventsRequest;
 use App\Http\Requests\ListIncidentNotificationsRequest;
 use App\Http\Requests\ListIncidentsRequest;
 use App\Http\Requests\ListIncidentTaskEventsRequest;
+use App\Http\Requests\RecordIncidentLessonProgressRequest;
 use App\Http\Requests\RecordIncidentNotificationDecisionRequest;
 use App\Http\Requests\RecordIncidentTaskEventRequest;
 use App\Http\Requests\ShowIncidentRequest;
+use App\Http\Requests\StoreIncidentLessonRequest;
 use App\Http\Requests\StoreIncidentNotificationRequest;
 use App\Http\Requests\StoreIncidentRequest;
 use App\Http\Requests\TransitionIncidentPhaseRequest;
 use App\Incidents\IncidentDesk;
+use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
 use App\Models\Incident;
+use App\Models\IncidentLesson;
+use App\Models\IncidentLessonEvent;
 use App\Models\IncidentNotification;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentTask;
@@ -46,6 +53,7 @@ class IncidentGovernanceController extends Controller
             'phaseTransitions.actor:id,name',
         ]);
         $incident->loadCount('notifications');
+        $incident->loadCount('lessons');
 
         return response()->json(['data' => $incident]);
     }
@@ -112,6 +120,57 @@ class IncidentGovernanceController extends Controller
     {
         return response()->json($notification->events()->with('actor:id,name')
             ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function lessons(ListIncidentLessonsRequest $request, Incident $incident): JsonResponse
+    {
+        return response()->json($incident->lessons()->with('owner:id,name,email')->withCount('events')->latest('id')
+            ->paginate($request->integer('per_page', 50)));
+    }
+
+    public function storeLesson(StoreIncidentLessonRequest $request, Incident $incident, IncidentLessonManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->register($request->user(), $incident, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function lessonProgress(RecordIncidentLessonProgressRequest $request, IncidentLesson $lesson, IncidentLessonManager $manager): JsonResponse
+    {
+        $event = $manager->recordProgress($request->user(), $lesson, $request->validated());
+
+        return response()->json(['data' => $this->visibleLessonEvent($event, $request->user()), 'lesson' => $lesson->refresh()->load('owner:id,name,email')]);
+    }
+
+    public function lessonEvents(ListIncidentLessonEventsRequest $request, IncidentLesson $lesson): JsonResponse
+    {
+        $events = $lesson->events()->with(['actor:id,name', 'lesson.incident'])
+            ->paginate($request->integer('per_page', 50));
+        $events->getCollection()->transform(fn (IncidentLessonEvent $event) => $this->visibleLessonEvent($event, $request->user()));
+
+        return response()->json($events);
+    }
+
+    private function visibleLessonEvent(IncidentLessonEvent $event, User $actor): IncidentLessonEvent
+    {
+        $event->loadMissing(['actor:id,name', 'lesson.incident']);
+        $visible = clone $event;
+        $canViewIncident = $event->lesson?->incident && $actor->can('view', $event->lesson->incident);
+        $visible->unsetRelation('lesson');
+        if ($canViewIncident) {
+            return $visible;
+        }
+
+        $before = $visible->before_snapshot;
+        $after = $visible->after_snapshot;
+        if (is_array($before)) {
+            unset($before['incident']);
+        }
+        if (is_array($after)) {
+            unset($after['incident']);
+        }
+        $visible->setAttribute('before_snapshot', $before);
+        $visible->setAttribute('after_snapshot', $after);
+
+        return $visible;
     }
 
     private function visibleEvent(IncidentTaskEvent $event, User $actor): IncidentTaskEvent

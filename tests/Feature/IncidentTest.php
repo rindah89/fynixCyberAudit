@@ -2,21 +2,26 @@
 
 namespace Tests\Feature;
 
+use App\Enums\IncidentLessonArea;
+use App\Enums\IncidentLessonStatus;
 use App\Enums\IncidentNotificationAudience;
 use App\Enums\IncidentNotificationStatus;
 use App\Enums\IncidentPhase;
 use App\Enums\IncidentTaskStatus;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
+use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
 use App\Incidents\IncidentDesk;
+use App\Incidents\IncidentLessonManager;
 use App\Incidents\IncidentNotificationManager;
 use App\Models\Audit;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
 use App\Models\Incident;
+use App\Models\IncidentLesson;
 use App\Models\IncidentNotification;
 use App\Models\IncidentPhaseTransition;
 use App\Models\IncidentPlaybook;
@@ -706,6 +711,159 @@ class IncidentTest extends TestCase
             $this->fail('Expected notification event bound to reject the 51st event.');
         } catch (ValidationException $exception) {
             $this->assertArrayHasKey('notification', $exception->errors());
+        }
+        $this->assertSame(50, $first->events()->count());
+    }
+
+    public function test_lessons_learned_are_attributable_owner_scoped_and_forward_only(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $owner = User::factory()->create();
+        $reader = User::factory()->create();
+        $reader->assignRole('Regular User');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Lessons governance', 'severity' => 'High',
+        ]);
+        $payload = [
+            'area' => IncidentLessonArea::Process->value,
+            'observation' => 'Escalation ownership was unclear during containment.',
+            'recommendation' => 'Publish and exercise a named escalation matrix.',
+            'owner_id' => $owner->id, 'target_date' => now()->addMonth()->toDateString(),
+            'rationale' => 'Capture the post-incident review conclusion.',
+        ];
+        $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/lessons', $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('incident');
+
+        foreach ([IncidentPhase::Containment, IncidentPhase::Eradication, IncidentPhase::Recovery, IncidentPhase::LessonsLearned] as $phase) {
+            app(IncidentDesk::class)->advancePhase($manager, $incident, $phase, 'Advance to '.$phase->value.'.');
+            $incident->refresh();
+        }
+        $invalid = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/lessons', $payload + [
+            'status' => IncidentLessonStatus::Implemented->value,
+        ])->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->assertNull($invalid->json('data'));
+        $lessonId = $this->actingAs($manager)->postJson('/api/incidents/'.$incident->id.'/lessons', $payload)
+            ->assertCreated()->assertJsonPath('data.status', IncidentLessonStatus::Proposed->value)->json('data.id');
+        $lesson = IncidentLesson::query()->findOrFail($lessonId);
+        $this->assertSame('pending', $lesson->target_status);
+
+        try {
+            app(IncidentLessonManager::class)->recordProgress($reader, $lesson, [
+                'status' => IncidentLessonStatus::InProgress->value, 'rationale' => 'Direct unauthorized update.',
+            ]);
+            $this->fail('Expected direct lesson service authorization to fail.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        $this->actingAs($owner)->postJson('/api/incident-lessons/'.$lesson->id.'/progress', [
+            'recommendation' => 'Owner rewrite', 'rationale' => 'Unauthorized scope.',
+        ])->assertForbidden();
+        $this->actingAs($manager)->postJson('/api/incident-lessons/'.$lesson->id.'/progress', [
+            'status' => IncidentLessonStatus::Implemented->value, 'rationale' => 'Cannot skip work.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('status');
+        $this->actingAs($owner)->postJson('/api/incident-lessons/'.$lesson->id.'/progress', [
+            'status' => IncidentLessonStatus::InProgress->value, 'rationale' => 'Owner began the improvement.',
+        ])->assertOk()->assertJsonPath('lesson.status', IncidentLessonStatus::InProgress->value)
+            ->assertJsonMissingPath('data.after_snapshot.incident');
+        $this->actingAs($manager)->postJson('/api/incident-lessons/'.$lesson->id.'/progress', [
+            'status' => IncidentLessonStatus::Implemented->value, 'rationale' => 'Manager recorded implementation.',
+        ])->assertOk()->assertJsonPath('lesson.status', IncidentLessonStatus::Implemented->value);
+
+        $lesson->refresh();
+        $this->assertSame('not_applicable', $lesson->target_status);
+        $this->assertSame(3, $lesson->events()->count());
+        $event = $lesson->events()->reorder()->latest('version')->firstOrFail();
+        $fingerprintPayload = [
+            'incident_id' => $event->incident_id, 'incident_lesson_id' => $event->incident_lesson_id,
+            'version' => $event->version, 'event_type' => $event->event_type,
+            'before_snapshot' => $event->before_snapshot, 'after_snapshot' => $event->after_snapshot,
+            'rationale' => $event->rationale, 'recorded_by' => $event->recorded_by,
+            'recorded_at' => $event->recorded_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($fingerprintPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $event->fingerprint);
+        $this->assertSame($owner->email, data_get($event->after_snapshot, 'owner.email'));
+        $this->assertSame(IncidentPhase::LessonsLearned->value, data_get($event->after_snapshot, 'incident.phase'));
+        $this->actingAs($owner)->postJson('/api/incident-lessons/'.$lesson->id.'/progress', [
+            'status' => IncidentLessonStatus::ClosedWithoutAction->value, 'rationale' => 'Rewrite terminal state.',
+        ])->assertUnprocessable();
+        $this->actingAs($reader)->getJson('/api/incidents/'.$incident->id.'/lessons')
+            ->assertOk()->assertJsonPath('data.0.events_count', 3);
+        $this->actingAs($owner)->getJson('/api/incident-lessons/'.$lesson->id.'/events?per_page=2')
+            ->assertOk()->assertJsonCount(2, 'data')->assertJsonPath('total', 3)
+            ->assertJsonMissingPath('data.0.after_snapshot.incident')
+            ->assertJsonMissingPath('data.1.after_snapshot.incident');
+        $this->actingAs($reader)->getJson('/api/incident-lessons/'.$lesson->id.'/events?per_page=1')
+            ->assertOk()->assertJsonPath('data.0.after_snapshot.incident.number', $incident->number);
+        Livewire::actingAs($reader);
+        Livewire::test(LessonsRelationManager::class, ['ownerRecord' => $incident, 'pageClass' => ViewIncident::class])
+            ->assertCanSeeTableRecords([$lesson])
+            ->assertTableActionHidden('record_progress', $lesson)
+            ->assertTableActionVisible('inspect_history', $lesson);
+        $lesson->load('events.actor:id,name');
+        $renderedHistory = view('filament.incident-lesson-history', ['lesson' => $lesson])->render();
+        $this->assertStringContainsString('Escalation ownership was unclear', $renderedHistory);
+        $this->assertStringContainsString($event->fingerprint, $renderedHistory);
+
+        try {
+            $event->update(['rationale' => 'Rewrite']);
+            $this->fail('Expected lesson history to remain append-only.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('append-only', $exception->getMessage());
+        }
+        $migration = require database_path('migrations/2026_08_24_600000_create_governed_incident_lessons.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_lesson_events', ['id' => $event->id, 'fingerprint' => $event->fingerprint]);
+    }
+
+    public function test_lesson_record_and_event_history_bounds_are_exact(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, IncidentPlaybook::factory()->create(), [
+            'title' => 'Bounded lesson register', 'severity' => 'Medium',
+        ]);
+        foreach ([IncidentPhase::Containment, IncidentPhase::Eradication, IncidentPhase::Recovery, IncidentPhase::LessonsLearned] as $phase) {
+            app(IncidentDesk::class)->advancePhase($manager, $incident, $phase, 'Advance.');
+            $incident->refresh();
+        }
+        $service = app(IncidentLessonManager::class);
+        $first = null;
+        for ($index = 1; $index <= 100; $index++) {
+            $record = $service->register($manager, $incident, [
+                'area' => IncidentLessonArea::Other->value, 'observation' => 'Observation '.$index,
+                'recommendation' => 'Recommendation '.$index, 'owner_id' => $manager->id,
+                'rationale' => 'Register lesson '.$index.'.',
+            ]);
+            $first ??= $record;
+        }
+        $this->assertSame(100, $incident->lessons()->count());
+        try {
+            $service->register($manager, $incident, [
+                'area' => IncidentLessonArea::Other->value, 'observation' => 'Observation 101',
+                'recommendation' => 'Recommendation 101', 'owner_id' => $manager->id, 'rationale' => 'One too many.',
+            ]);
+            $this->fail('Expected lesson record bound to reject the 101st record.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+        $this->assertSame(100, $incident->lessons()->count());
+
+        for ($version = 2; $version <= 50; $version++) {
+            $service->recordProgress($manager, $first, [
+                'recommendation' => 'Recommendation version '.$version,
+                'rationale' => 'Refine the lesson recommendation.',
+            ]);
+        }
+        $this->assertSame(50, $first->events()->count());
+        try {
+            $service->recordProgress($manager, $first, [
+                'recommendation' => 'Event 51', 'rationale' => 'One too many.',
+            ]);
+            $this->fail('Expected lesson event bound to reject the 51st event.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('lesson', $exception->errors());
         }
         $this->assertSame(50, $first->events()->count());
     }

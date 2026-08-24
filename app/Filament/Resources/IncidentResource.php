@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\IncidentResource\Pages\ListIncidents;
 use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
+use App\Filament\Resources\IncidentResource\RelationManagers\LessonsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\NotificationsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
@@ -78,7 +79,10 @@ class IncidentResource extends Resource
 
     public static function getRelations(): array
     {
-        return [TasksRelationManager::class, PhaseTransitionsRelationManager::class, NotificationsRelationManager::class];
+        return [
+            TasksRelationManager::class, PhaseTransitionsRelationManager::class,
+            NotificationsRelationManager::class, LessonsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array
