@@ -36,7 +36,7 @@ enum ThirdPartyEngagementStatus: string implements HasColor, HasLabel
         return match ($this) {
             self::Proposed => [self::DueDiligence, self::Rejected],
             self::DueDiligence => [self::Approved, self::Rejected],
-            self::Approved => [self::Active, self::Rejected],
+            self::Approved => [self::DueDiligence, self::Active, self::Rejected],
             self::Active => [self::RenewalReview, self::Exited],
             self::RenewalReview => [self::Active, self::Exited],
             self::Exited, self::Rejected => [],

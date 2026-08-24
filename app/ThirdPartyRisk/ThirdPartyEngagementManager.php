@@ -2,6 +2,7 @@
 
 namespace App\ThirdPartyRisk;
 
+use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\VendorStatus;
@@ -81,6 +82,7 @@ class ThirdPartyEngagementManager
                     if ($newEnd <= $locked->term_end_at->toDateString() || $newReview < today()->toDateString() || $newReview > $newEnd) {
                         throw ValidationException::withMessages(['renewed_term_end_at' => 'Renewal must extend the term and retain a current review date within it.']);
                     }
+                    $this->assertContractReviewCurrent($locked, $newEnd, $snapshot, $actor, $newReview);
                     $changes += ['term_end_at' => $newEnd, 'next_review_at' => $newReview];
                 }
             }
@@ -89,6 +91,7 @@ class ThirdPartyEngagementManager
                     throw ValidationException::withMessages(['status' => 'An engagement cannot become active before its retained term start.']);
                 }
                 $this->assertApprovalStillCurrent($vendor, $locked);
+                $this->assertContractReviewCurrent($locked, $locked->term_end_at->toDateString());
                 $changes['activated_at'] = now()->startOfSecond();
             }
             if ($next === ThirdPartyEngagementStatus::Exited) {
@@ -141,6 +144,24 @@ class ThirdPartyEngagementManager
         [, $decision, $snapshot] = $this->approvalContext($vendor);
         if (($engagement->approval_snapshot['decision']['id'] ?? null) !== $decision->id || ($engagement->approval_snapshot['governance']['fingerprint'] ?? null) !== $snapshot['governance']['fingerprint']) {
             throw ValidationException::withMessages(['approval' => 'The engagement approval is stale; return through governed due diligence.']);
+        }
+    }
+
+    private function assertContractReviewCurrent(ThirdPartyEngagement $engagement, string $requiredThrough, ?array $riskApprovalSnapshot = null, ?User $approver = null, ?string $requiredNextReview = null): void
+    {
+        $latestEvent = $engagement->events()->lockForUpdate()->latest('version')->firstOrFail();
+        $review = $engagement->contractRiskReviews()->lockForUpdate()->latest('version')->first();
+        $expectedRiskApproval = $riskApprovalSnapshot ?? $engagement->approval_snapshot;
+        abort_if($approver && $review?->reviewed_by === $approver->id, 403, 'Engagement renewal approval must be separated from the contract-risk reviewer.');
+        if (! $review
+            || ! in_array($review->decision, [ThirdPartyContractDecision::Approved, ThirdPartyContractDecision::ConditionallyApproved], true)
+            || $review->engagement_event_fingerprint !== $latestEvent->fingerprint
+            || data_get($review->risk_approval_snapshot, 'decision.id') !== data_get($expectedRiskApproval, 'decision.id')
+            || data_get($review->risk_approval_snapshot, 'governance.fingerprint') !== data_get($expectedRiskApproval, 'governance.fingerprint')
+            || ($requiredNextReview && $review->proposed_next_review_at?->toDateString() !== $requiredNextReview)
+            || ($requiredNextReview && $review->proposed_term_end_at?->toDateString() !== $requiredThrough)
+            || $review->expires_at->toDateString() < $requiredThrough) {
+            throw ValidationException::withMessages(['contract_review' => 'A current accepted contract-risk review covering the engagement term is required.']);
         }
     }
 

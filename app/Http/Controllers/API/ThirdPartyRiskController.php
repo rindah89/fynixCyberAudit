@@ -11,6 +11,7 @@ use App\Http\Requests\ListVendorFourthPartyDependenciesRequest;
 use App\Http\Requests\MapVendorRiskRequest;
 use App\Http\Requests\ShowThirdPartyEngagementRequest;
 use App\Http\Requests\StoreFourthPartyDependencyRequest;
+use App\Http\Requests\StoreThirdPartyContractRiskReviewRequest;
 use App\Http\Requests\StoreThirdPartyEngagementRequest;
 use App\Http\Requests\StoreVendorRiskAssessmentRequest;
 use App\Http\Requests\StoreVendorRiskDecisionRequest;
@@ -20,6 +21,7 @@ use App\Models\Risk;
 use App\Models\ThirdPartyEngagement;
 use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
+use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Illuminate\Http\JsonResponse;
@@ -38,7 +40,7 @@ class ThirdPartyRiskController extends Controller
 
     public function showEngagement(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name'])]);
+        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name'])]);
     }
 
     public function engagementEvents(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
@@ -49,6 +51,16 @@ class ThirdPartyRiskController extends Controller
     public function transitionEngagement(TransitionThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->transition($request->user(), $engagement, $request->validated())]);
+    }
+
+    public function reviewContractRisk(StoreThirdPartyContractRiskReviewRequest $request, ThirdPartyEngagement $engagement, ThirdPartyContractRiskManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $engagement, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function contractRiskReviews(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    {
+        return response()->json($engagement->contractRiskReviews()->with('reviewer:id,name')->latest('version')->paginate($request->integer('per_page', 50)));
     }
 
     public function fourthPartyDependencies(ListVendorFourthPartyDependenciesRequest $request, Vendor $vendor, FourthPartyDependencyManager $manager): JsonResponse

@@ -46,4 +46,9 @@ class ThirdPartyEngagement extends Model
     {
         return $this->hasMany(ThirdPartyEngagementEvent::class)->orderBy('version');
     }
+
+    public function contractRiskReviews(): HasMany
+    {
+        return $this->hasMany(ThirdPartyContractRiskReview::class);
+    }
 }

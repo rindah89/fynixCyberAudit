@@ -9,10 +9,12 @@ use App\Enums\VendorStatus;
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
 use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRelationManager;
 use App\Models\Risk;
+use App\Models\ThirdPartyContractRiskReview;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementEvent;
 use App\Models\User;
 use App\Models\Vendor;
+use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
@@ -33,7 +35,7 @@ class ThirdPartyEngagementTest extends TestCase
 
     public function test_governed_engagement_moves_from_proposal_through_renewal_and_exit(): void
     {
-        [$vendor, $proposer, $assessor, $decider, $approver, $owner] = $this->approvedContext();
+        [$vendor, $proposer, $assessor, $decider, $approver, $owner, $contractReviewer] = $this->approvedContext();
         Sanctum::actingAs($proposer);
         $payload = [
             'code' => 'ENG-CLOUD-01', 'name' => 'Hosted resilience platform',
@@ -55,6 +57,8 @@ class ThirdPartyEngagementTest extends TestCase
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'approved', 'summary' => 'Independent engagement approval.'])
             ->assertOk()->assertJsonPath('data.version', 3)->assertJsonPath('data.engagement_snapshot.approval_snapshot.assessment.assessor_id', $assessor->id)
             ->assertJsonPath('data.engagement_snapshot.approval_snapshot.decision.decided_by', $decider->id);
+        Sanctum::actingAs($contractReviewer);
+        $this->postJson("/api/third-party-engagements/{$id}/contract-risk-reviews", $this->contractReviewPayload(today()->addYear()))->assertCreated();
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'active', 'summary' => 'Term activated after current approval check.'])
             ->assertOk()->assertJsonPath('data.to_status', 'active');
         $this->postJson("/api/third-party-engagements/{$id}/events", ['status' => 'renewal_review', 'summary' => 'Engagement entered renewal review.'])->assertOk();
@@ -65,6 +69,16 @@ class ThirdPartyEngagementTest extends TestCase
             'rationale' => 'Renewal risk accepted.', 'conditions' => 'Continue annual assurance.',
             'expires_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6),
         ]);
+        $renewalDates = ['proposed_term_end_at' => today()->addYears(2)->toDateString(), 'proposed_next_review_at' => today()->addYear()->toDateString()];
+        $this->postJson("/api/third-party-engagements/{$id}/contract-risk-reviews", array_replace($this->contractReviewPayload(today()->addYears(2), 'MSA-INVALID-GAP'), $renewalDates, [
+            'effective_at' => today()->addYear()->addDay()->toDateString(),
+        ]))->assertUnprocessable()->assertJsonValidationErrors('effective_at');
+        $this->postJson("/api/third-party-engagements/{$id}/contract-risk-reviews", array_replace($this->contractReviewPayload(today()->addYears(2), 'MSA-2026-RENEWAL'), $renewalDates))->assertCreated();
+        $this->postJson("/api/third-party-engagements/{$id}/events", [
+            'status' => 'active', 'summary' => 'Independent renewal approved against current risk evidence.',
+            'renewed_term_end_at' => today()->addYears(2)->toDateString(), 'renewed_next_review_at' => today()->addYear()->toDateString(),
+        ])->assertForbidden();
+        Sanctum::actingAs($approver);
         $this->postJson("/api/third-party-engagements/{$id}/events", [
             'status' => 'active', 'summary' => 'Independent renewal approved against current risk evidence.',
             'renewed_term_end_at' => today()->addYears(2)->toDateString(), 'renewed_next_review_at' => today()->addYear()->toDateString(),
@@ -124,6 +138,102 @@ class ThirdPartyEngagementTest extends TestCase
         $migration = include database_path('migrations/2026_08_24_750000_create_third_party_engagement_history.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_engagement_events', ['id' => $event->id, 'fingerprint' => $event->fingerprint]);
+
+        $contractReview = ThirdPartyContractRiskReview::factory()->create();
+        $payload = [];
+        foreach (['contract_reference', 'agreement_type', 'effective_at', 'expires_at', 'proposed_term_end_at', 'proposed_next_review_at', 'confidentiality_terms', 'data_protection_terms', 'incident_notification_terms', 'audit_rights', 'subcontractor_controls', 'business_continuity_terms', 'termination_assistance', 'service_level_summary', 'liability_summary', 'exit_terms_summary', 'exceptions_summary', 'decision', 'conditions', 'rationale'] as $field) {
+            $payload[$field] = match ($field) {
+                'effective_at', 'expires_at', 'proposed_term_end_at', 'proposed_next_review_at' => $contractReview->{$field}?->toDateString(), 'decision' => $contractReview->decision->value, default => $contractReview->{$field},
+            };
+        }
+        $payload += $contractReview->only(['third_party_engagement_id', 'version', 'engagement_snapshot', 'risk_approval_snapshot', 'engagement_event_fingerprint', 'reviewed_by']);
+        $payload['reviewed_at'] = $contractReview->reviewed_at->toIso8601String();
+        $this->assertSame($contractReview->fingerprint, hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
+        $contractMigration = include database_path('migrations/2026_08_24_760000_create_third_party_contract_risk_reviews.php');
+        $contractMigration->down();
+        $this->assertDatabaseHas('third_party_contract_risk_reviews', ['id' => $contractReview->id, 'fingerprint' => $contractReview->fingerprint]);
+    }
+
+    public function test_activation_requires_an_independent_current_contract_risk_review(): void
+    {
+        [$vendor, $proposer, , , $approver, $owner] = $this->approvedContext();
+        $engagementManager = app(ThirdPartyEngagementManager::class);
+        $engagement = $engagementManager->propose($proposer, $vendor, [
+            'code' => 'ENG-CONTRACT-01', 'name' => 'Contract-governed service',
+            'service_description' => 'Service requiring contract risk review before activation.',
+            'business_owner_id' => $owner->id, 'criticality' => 'critical', 'data_access' => true,
+            'term_start_at' => today(), 'term_end_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6),
+        ]);
+        $engagementManager->transition($proposer, $engagement, ['status' => 'due_diligence', 'summary' => 'Due diligence completed.']);
+        $engagementManager->transition($approver, $engagement, ['status' => 'approved', 'summary' => 'Engagement independently approved.']);
+
+        Sanctum::actingAs($approver);
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", [
+            'status' => 'active', 'summary' => 'Attempt activation without contract review.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('contract_review');
+
+        $contractReviewer = User::factory()->create();
+        $contractReviewer->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']);
+        Sanctum::actingAs($contractReviewer);
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/contract-risk-reviews", $this->contractReviewPayload(today()->addYear()) + ['version' => 99])
+            ->assertUnprocessable()->assertJsonValidationErrors('version');
+        Sanctum::actingAs($approver);
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/contract-risk-reviews", $this->contractReviewPayload(today()->addYear()))->assertForbidden();
+        Sanctum::actingAs($contractReviewer);
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/contract-risk-reviews", array_replace($this->contractReviewPayload(today()->addYear()), ['audit_rights' => false]))
+            ->assertUnprocessable()->assertJsonValidationErrors('decision');
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/contract-risk-reviews", [
+            'contract_reference' => 'MSA-2026-0042', 'agreement_type' => 'master_service',
+            'effective_at' => today()->toDateString(), 'expires_at' => today()->addYear()->toDateString(),
+            'confidentiality_terms' => 1, 'data_protection_terms' => 1, 'incident_notification_terms' => 1,
+            'audit_rights' => 1, 'subcontractor_controls' => 1, 'business_continuity_terms' => 1,
+            'termination_assistance' => 1, 'service_level_summary' => 'Availability and response commitments retained.',
+            'liability_summary' => 'Liability allocation reviewed by the operator.', 'exit_terms_summary' => 'Transition assistance and data disposition addressed.',
+            'decision' => 'approved', 'rationale' => 'Required risk clauses are present for the retained engagement term.',
+        ])->assertCreated()->assertJsonPath('data.version', 1)->assertJsonPath('data.decision', 'approved');
+        $numericBooleanReview = $engagement->contractRiskReviews()->firstOrFail();
+        $this->assertTrue($numericBooleanReview->audit_rights);
+        $this->assertContractReviewFingerprint($numericBooleanReview);
+
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Vendors');
+        Sanctum::actingAs($reader);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/contract-risk-reviews?per_page=100")
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.contract_reference', 'MSA-2026-0042');
+
+        Sanctum::actingAs($contractReviewer);
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", [
+            'status' => 'active', 'summary' => 'Activated after current contract and vendor-risk reviews.',
+        ])->assertOk()->assertJsonPath('data.to_status', 'active');
+        $this->view('filament.third-party-engagement', ['engagement' => $engagement->fresh(['businessOwner', 'events.actor', 'contractRiskReviews.reviewer'])])
+            ->assertSee('MSA-2026-0042')->assertSee('Contract-risk review history')->assertSee('Incident notification')
+            ->assertSee('Availability and response commitments retained.')->assertSee('Vendor-risk approval snapshot')
+            ->assertSee($engagement->contractRiskReviews()->firstOrFail()->engagement_event_fingerprint);
+    }
+
+    public function test_stale_risk_or_contract_context_requires_attributable_reapproval(): void
+    {
+        [$vendor, $proposer, $assessor, $decider, $approver, $owner, $contractReviewer] = $this->approvedContext();
+        $manager = app(ThirdPartyEngagementManager::class);
+        $engagement = $manager->propose($proposer, $vendor, ['code' => 'ENG-REAPPROVE-01', 'name' => 'Reapproval service',
+            'service_description' => 'Service with changing risk context.', 'business_owner_id' => $owner->id, 'criticality' => 'high', 'data_access' => true,
+            'term_start_at' => today(), 'term_end_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6)]);
+        $manager->transition($proposer, $engagement, ['status' => 'due_diligence', 'summary' => 'Initial due diligence.']);
+        $manager->transition($approver, $engagement, ['status' => 'approved', 'summary' => 'Initial approval.']);
+        app(ThirdPartyContractRiskManager::class)->review($contractReviewer, $engagement, $this->contractReviewPayload(today()->addYear()));
+
+        $riskManager = app(ThirdPartyRiskManager::class);
+        $riskManager->assess($vendor, $assessor, $this->assessmentPayload());
+        $riskManager->decide($vendor, $decider, ThirdPartyRiskDecisionType::Approved, ['rationale' => 'Changed risk context approved.', 'expires_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6)]);
+        Sanctum::actingAs($approver);
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Stale activation.'])
+            ->assertUnprocessable()->assertJsonValidationErrors('approval');
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'due_diligence', 'summary' => 'Returned for current-context review.'])->assertOk();
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'approved', 'summary' => 'Reapproved against current risk context.'])->assertOk();
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Old contract review is stale.'])
+            ->assertUnprocessable()->assertJsonValidationErrors('contract_review');
+        app(ThirdPartyContractRiskManager::class)->review($contractReviewer, $engagement, $this->contractReviewPayload(today()->addYear(), 'MSA-2026-REAPPROVED'));
+        $this->postJson("/api/third-party-engagements/{$engagement->id}/events", ['status' => 'active', 'summary' => 'Activated after both reapprovals.'])->assertOk();
     }
 
     private function approvedContext(): array
@@ -140,7 +250,10 @@ class ThirdPartyEngagementTest extends TestCase
             'expires_at' => today()->addYear(), 'next_review_at' => today()->addMonths(6),
         ]);
 
-        return [$vendor, $proposer, $assessor, $decider, $approver, $owner];
+        $contractReviewer = User::factory()->create();
+        $contractReviewer->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']);
+
+        return [$vendor, $proposer, $assessor, $decider, $approver, $owner, $contractReviewer];
     }
 
     private function assessmentPayload(): array
@@ -148,5 +261,28 @@ class ThirdPartyEngagementTest extends TestCase
         return ['likelihood' => 4, 'impact' => 5, 'residual_likelihood' => 2, 'residual_impact' => 3,
             'risk_categories' => ['cybersecurity', 'privacy', 'operational'], 'assessment_summary' => 'Material hosted service exposure.',
             'treatment_summary' => 'Contractual controls, assurance review, notification, and exit planning.'];
+    }
+
+    private function contractReviewPayload(\DateTimeInterface $expiresAt, string $reference = 'MSA-2026-0042'): array
+    {
+        return ['contract_reference' => $reference, 'agreement_type' => 'master_service', 'effective_at' => today()->toDateString(), 'expires_at' => $expiresAt->format('Y-m-d'),
+            'confidentiality_terms' => true, 'data_protection_terms' => true, 'incident_notification_terms' => true, 'audit_rights' => true,
+            'subcontractor_controls' => true, 'business_continuity_terms' => true, 'termination_assistance' => true,
+            'service_level_summary' => 'Availability and response commitments retained.', 'liability_summary' => 'Liability allocation reviewed by the operator.',
+            'exit_terms_summary' => 'Transition assistance and data disposition addressed.', 'decision' => 'approved',
+            'rationale' => 'Required risk clauses are present for the retained engagement term.'];
+    }
+
+    private function assertContractReviewFingerprint(ThirdPartyContractRiskReview $review): void
+    {
+        $payload = [];
+        foreach (['contract_reference', 'agreement_type', 'effective_at', 'expires_at', 'proposed_term_end_at', 'proposed_next_review_at', 'confidentiality_terms', 'data_protection_terms', 'incident_notification_terms', 'audit_rights', 'subcontractor_controls', 'business_continuity_terms', 'termination_assistance', 'service_level_summary', 'liability_summary', 'exit_terms_summary', 'exceptions_summary', 'decision', 'conditions', 'rationale'] as $field) {
+            $payload[$field] = match ($field) {
+                'effective_at', 'expires_at', 'proposed_term_end_at', 'proposed_next_review_at' => $review->{$field}?->toDateString(), 'decision' => $review->decision->value, default => $review->{$field},
+            };
+        }
+        $payload += $review->only(['third_party_engagement_id', 'version', 'engagement_snapshot', 'risk_approval_snapshot', 'engagement_event_fingerprint', 'reviewed_by']);
+        $payload['reviewed_at'] = $review->reviewed_at->toIso8601String();
+        $this->assertSame($review->fingerprint, hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
     }
 }
