@@ -7,6 +7,7 @@ use Database\Factories\PolicyExceptionMonitoringReviewFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class PolicyExceptionMonitoringReview extends Model
 {
@@ -39,5 +40,10 @@ class PolicyExceptionMonitoringReview extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by')->withTrashed();
+    }
+
+    public function issue(): HasOne
+    {
+        return $this->hasOne(PolicyExceptionMonitoringIssue::class);
     }
 }

@@ -110,7 +110,15 @@ class PolicyExceptionGovernanceManager
         $this->authorizeWorkspace($policy, $actor);
 
         return PolicyException::query()->where('policy_id', $policy->id)->whereNotNull('governance_fingerprint')
-            ->with(['requester:id,name', 'approver:id,name', 'decisions.decider:id,name', 'monitoringReviews.reviewer:id,name'])->latest('submitted_at');
+            ->with([
+                'requester:id,name', 'approver:id,name', 'decisions.decider:id,name',
+                'monitoringReviews.reviewer:id,name', 'monitoringReviews.issue.lifecycle',
+                'openMonitoringIssues' => fn ($issues) => $issues->select([
+                    'policy_exception_monitoring_issues.id',
+                    'policy_exception_monitoring_issues.policy_exception_monitoring_review_id',
+                    'policy_exception_monitoring_issues.status',
+                ]),
+            ])->latest('submitted_at');
     }
 
     public static function requestRules(): array

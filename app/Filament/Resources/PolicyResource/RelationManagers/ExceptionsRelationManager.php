@@ -33,6 +33,12 @@ class ExceptionsRelationManager extends RelationManager
             'requester' => fn ($query) => $query->withTrashed(), 'approver' => fn ($query) => $query->withTrashed(),
             'decisions.decider' => fn ($query) => $query->withTrashed(),
             'monitoringReviews.reviewer' => fn ($query) => $query->withTrashed(),
+            'monitoringReviews.issue.lifecycle',
+            'openMonitoringIssues' => fn ($issues) => $issues->select([
+                'policy_exception_monitoring_issues.id',
+                'policy_exception_monitoring_issues.policy_exception_monitoring_review_id',
+                'policy_exception_monitoring_issues.status',
+            ]),
         ]))->defaultSort('created_at', 'desc')->columns([
             TextColumn::make('name')->searchable()->sortable()->wrap()->limit(50),
             TextColumn::make('status')->badge()->sortable(),

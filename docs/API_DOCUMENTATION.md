@@ -307,7 +307,7 @@ Policy owners and authenticated users with `Read Policies` or `Update Policies` 
 
 A different `Update Policies` user posts `decision` (`approved` or `denied`) and `decision_summary` to `POST /api/policy-exceptions/{exception}/decisions`. Approval requires the submission-time policy context to remain current. For an approved exception, the same endpoint accepts a later `revoked` decision. Each allowed transition appends an immutable versioned decision snapshot, actor/time, and fingerprint; caller-supplied server fields are rejected.
 
-Approval schedules monitoring at the requested frequency, capped by expiration. A user with `Update Policies` who is different from the requester and latest decision maker posts `outcome` (`effective`, `needs_action`, or `revoke_recommended`), `review_summary`, `control_effectiveness`, and optional unverified `evidence_reference` to `POST /api/policy-exceptions/{exception}/monitoring-reviews`. The server rejects `effective` when the approved policy context has changed and owns the immutable exception/decision/context snapshot, version, actor/time, next review date, and fingerprint. `GET /api/policy-exceptions/{exception}/monitoring-reviews?page=1&per_page=50` returns newest-first history, capped at 100 records per page.
+Approval schedules monitoring at the requested frequency, capped by expiration. A user with `Update Policies` who is different from the requester and latest decision maker posts `outcome` (`effective`, `needs_action`, or `revoke_recommended`), `review_summary`, `control_effectiveness`, and optional unverified `evidence_reference` to `POST /api/policy-exceptions/{exception}/monitoring-reviews`. The server rejects `effective` when the approved policy context has changed and owns the immutable exception/decision/context snapshot, version, actor/time, next review date, and fingerprint. `needs_action` and `revoke_recommended` return an owner-attributed `issue` registered in the shared lifecycle; its REST source alias is `policy_exception`. `GET /api/policy-exceptions/{exception}/monitoring-reviews?page=1&per_page=50` returns newest-first history, capped at 100 records per page.
 
 `GET /api/policies/{policy}/exception-requests?page=1&per_page=50` returns governed history, capped at 100 records per page. The operator relation exposes governed and visibly labeled legacy history, while private export retains full request/decision/monitoring snapshots. Legacy rows cannot enter the governed decision or monitoring service. These records do not prove legal approval, risk quantification, evidence-reference authenticity, compensating-control effectiveness, qualified signatures, automatic evidence collection, automatic expiry decisions, or remediation execution.
 
@@ -675,7 +675,7 @@ Technology exposure assessment creation requires `Manage Risk Portfolio`, an act
 
 ### Governance Issue and Remediation Lifecycle
 
-Issue lifecycle endpoints use source type `risk`, `vendor`, `ai`, `resilience`, or `control_test`:
+Issue lifecycle endpoints use source type `risk`, `vendor`, `ai`, `resilience`, `control_test`, or `policy_exception`:
 
 - `GET /api/governance-issues/{type}/{issue}`
 - `POST /api/governance-issues/{type}/{issue}/remediation`

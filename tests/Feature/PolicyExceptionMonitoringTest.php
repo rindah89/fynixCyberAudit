@@ -5,14 +5,22 @@ namespace Tests\Feature;
 use App\Filament\Exports\PolicyExceptionExporter;
 use App\Filament\Resources\PolicyResource\Pages\ViewPolicy;
 use App\Filament\Resources\PolicyResource\RelationManagers\ExceptionsRelationManager;
+use App\Models\Audit;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\Policy;
 use App\Models\PolicyExceptionMonitoringReview;
 use App\Models\User;
 use App\PolicyCompliance\PolicyExceptionGovernanceManager;
 use App\PolicyCompliance\PolicyExceptionMonitoringManager;
 use App\PolicyCompliance\PolicyRevisionManager;
+use App\Remediation\Remediation;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Livewire\Livewire;
@@ -27,6 +35,8 @@ class PolicyExceptionMonitoringTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        Config::set('enterprise.modules.remediation', true);
+        Storage::fake('private');
     }
 
     public function test_independent_editor_records_attributable_periodic_exception_review(): void
@@ -189,5 +199,77 @@ class PolicyExceptionMonitoringTest extends TestCase
         ]));
         $this->assertFalse($review->exception_snapshot['approval_context_current']);
         $this->assertSame('action_required', $exception->fresh()->monitoring_status->value);
+        $this->assertSame('open', $review->issue->status->value);
+        $this->assertSame($policy->owner_id, $review->issue->owner_id);
+        $this->assertDatabaseHas('governance_issue_lifecycles', [
+            'issue_type' => 'App\\Models\\PolicyExceptionMonitoringIssue',
+            'issue_id' => $review->issue->id,
+            'status' => 'open',
+        ]);
+
+        $lifecycleId = $review->issue->lifecycle->id;
+        DB::table('governance_issue_transitions')->where('governance_issue_lifecycle_id', $lifecycleId)->delete();
+        DB::table('governance_issue_lifecycles')->whereKey($lifecycleId)->delete();
+        $migration = require database_path('migrations/2026_08_24_490000_create_policy_exception_monitoring_issues.php');
+        $migration->up();
+        $this->assertDatabaseHas('governance_issue_lifecycles', [
+            'issue_type' => 'App\\Models\\PolicyExceptionMonitoringIssue', 'issue_id' => $review->issue->id, 'status' => 'open',
+        ]);
+        $this->assertDatabaseHas('governance_issue_transitions', [
+            'to_status' => 'open', 'transitioned_by' => $monitor->id,
+        ]);
+
+        $governance->decide($exception->fresh(), $approver, [
+            'decision' => 'revoked', 'decision_summary' => 'The policy context changed and the exception is revoked.',
+        ]);
+        $this->assertSame('action_required', $exception->fresh()->monitoring_status->value);
+
+        $monitor->givePermissionTo(['Manage Issue Lifecycle', 'Manage Remediation']);
+        $project = app(Remediation::class)->createProject($monitor, ['name' => 'Policy exception corrective action']);
+        Sanctum::actingAs($monitor);
+        $this->postJson("/api/governance-issues/policy_exception/{$review->issue->id}/remediation", [
+            'remediation_project_id' => $project->id,
+            'priority' => 'High',
+            'due_date' => now()->addDays(7)->toDateString(),
+            'rationale' => 'Restore policy compliance or revoke the exception.',
+        ])->assertCreated()->assertJsonPath('data.status', 'in_remediation')
+            ->assertJsonPath('data.issue.status', 'in_remediation');
+        $this->assertSame('action_required', $exception->fresh()->monitoring_status->value);
+
+        $task = $review->issue->fresh()->remediationTask;
+        app(Remediation::class)->updateTaskStatus($monitor, $task, 'Completed');
+        $this->postJson("/api/governance-issues/policy_exception/{$review->issue->id}/request-verification", [
+            'rationale' => 'Corrective action is ready for independent verification.',
+        ])->assertOk()->assertJsonPath('data.status', 'verification');
+
+        $verifier = User::factory()->create();
+        $verifier->givePermissionTo('Verify Issue Closure');
+        $audit = Audit::factory()->create(['manager_id' => $verifier->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $verifier->id, 'assigned_to_id' => $verifier->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $verifier->id, 'requestee_id' => $verifier->id,
+        ]);
+        $path = 'closures/policy-exception-monitoring.txt';
+        Storage::disk('private')->put($path, 'verified policy exception corrective-action bytes');
+        $attachment = FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => 'policy-exception-monitoring.txt', 'file_path' => $path,
+            'file_size' => strlen('verified policy exception corrective-action bytes'),
+            'description' => 'Independent closure evidence', 'uploaded_by' => $verifier->id,
+        ]);
+        Sanctum::actingAs($verifier);
+        $this->postJson("/api/governance-issues/policy_exception/{$review->issue->id}/close", [
+            'verification_summary' => 'The corrective action restored the required policy control.',
+            'evidence_attachment_ids' => [$attachment->id],
+        ])->assertOk()->assertJsonPath('data.status', 'closed')
+            ->assertJsonPath('data.issue.status', 'closed');
+        $this->assertSame('revoked', $exception->fresh()->monitoring_status->value);
+        $migration->down();
+        $this->assertDatabaseHas('policy_exception_monitoring_issues', ['id' => $review->issue->id, 'status' => 'closed']);
+        $this->assertDatabaseHas('governance_issue_lifecycles', [
+            'issue_type' => 'App\\Models\\PolicyExceptionMonitoringIssue', 'issue_id' => $review->issue->id, 'status' => 'closed',
+        ]);
     }
 }

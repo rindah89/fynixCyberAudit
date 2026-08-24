@@ -37,13 +37,25 @@ class PolicyExceptionExporter extends Exporter
                 'evidence_reference' => $review->evidence_reference, 'reviewed_by' => $review->reviewed_by,
                 'reviewed_at' => $review->reviewed_at?->toISOString(), 'next_review_at' => $review->next_review_at?->toISOString(),
                 'fingerprint' => $review->fingerprint, 'exception_snapshot' => $review->exception_snapshot,
+                'governance_issue' => $review->issue ? [
+                    'id' => $review->issue->id, 'status' => $review->issue->status->value,
+                    'severity' => $review->issue->severity, 'remediation_task_id' => $review->issue->remediation_task_id,
+                ] : null,
             ])->all(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
         ];
     }
 
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->with(['policy:id,code', 'requester:id,name', 'decisions.decider:id,name', 'monitoringReviews.reviewer:id,name']);
+        return $query->with([
+            'policy:id,code', 'requester:id,name', 'decisions.decider:id,name',
+            'monitoringReviews.reviewer:id,name', 'monitoringReviews.issue.lifecycle',
+            'openMonitoringIssues' => fn ($issues) => $issues->select([
+                'policy_exception_monitoring_issues.id',
+                'policy_exception_monitoring_issues.policy_exception_monitoring_review_id',
+                'policy_exception_monitoring_issues.status',
+            ]),
+        ]);
     }
 
     public static function getCompletedNotificationBody(Export $export): string

@@ -33,6 +33,7 @@
             <p class="mt-2 whitespace-pre-wrap">{{ $review->review_summary }}</p>
             <p class="mt-2 whitespace-pre-wrap">{{ $review->control_effectiveness }}</p>
             @if ($review->evidence_reference)<div class="mt-2">Operator-supplied reference: {{ $review->evidence_reference }}</div>@endif
+            @if ($review->issue)<div class="mt-2">Governed issue: {{ $review->issue->status->getLabel() }} · {{ $review->issue->severity }}</div>@endif
             <div class="mt-2 break-all font-mono text-xs">{{ $review->fingerprint }}</div>
         </div>
     @endforeach

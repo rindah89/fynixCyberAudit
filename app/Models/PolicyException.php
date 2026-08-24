@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\GovernanceIssueStatus;
 use App\Enums\PolicyExceptionMonitoringOutcome;
 use App\Enums\PolicyExceptionMonitoringState;
 use App\Enums\PolicyExceptionStatus;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -158,19 +160,39 @@ class PolicyException extends Model
         return $this->hasMany(PolicyExceptionMonitoringReview::class);
     }
 
+    public function openMonitoringIssues(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            PolicyExceptionMonitoringIssue::class,
+            PolicyExceptionMonitoringReview::class,
+            'policy_exception_id',
+            'policy_exception_monitoring_review_id',
+        )->where('policy_exception_monitoring_issues.status', '!=', GovernanceIssueStatus::Closed->value);
+    }
+
     public function getMonitoringStatusAttribute(): PolicyExceptionMonitoringState
     {
         if (! $this->governance_fingerprint) {
             return PolicyExceptionMonitoringState::Legacy;
         }
+        $hasOpenIssues = $this->relationLoaded('openMonitoringIssues')
+            ? $this->openMonitoringIssues->isNotEmpty()
+            : $this->openMonitoringIssues()->exists();
+        if ($hasOpenIssues) {
+            return PolicyExceptionMonitoringState::ActionRequired;
+        }
         if ($this->status !== PolicyExceptionStatus::Approved) {
             return PolicyExceptionMonitoringState::from($this->status->value);
         }
+        $hasAnyMonitoringIssue = $this->relationLoaded('monitoringReviews')
+            ? $this->monitoringReviews->contains(fn (PolicyExceptionMonitoringReview $review): bool => $review->issue !== null)
+            : $this->monitoringReviews()->whereHas('issue')->exists();
+        if (in_array($this->latest_monitoring_outcome?->value, ['needs_action', 'revoke_recommended'], true)
+            && ! $hasAnyMonitoringIssue) {
+            return PolicyExceptionMonitoringState::ActionRequired;
+        }
         if ($this->isExpired()) {
             return PolicyExceptionMonitoringState::Expired;
-        }
-        if (in_array($this->latest_monitoring_outcome?->value, ['needs_action', 'revoke_recommended'], true)) {
-            return PolicyExceptionMonitoringState::ActionRequired;
         }
         if (! $this->next_review_at) {
             return PolicyExceptionMonitoringState::ReviewRequired;

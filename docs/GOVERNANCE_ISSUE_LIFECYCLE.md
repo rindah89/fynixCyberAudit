@@ -1,6 +1,6 @@
 # Governance issue and remediation lifecycle
 
-Fynix provides one governed lifecycle for issues opened by risk portfolio reviews, third-party risk reviews, AI monitoring reviews, operational-resilience exercises, and continuous control tests. The lifecycle connects these source records to the existing remediation and accepted audit-evidence workflows without claiming automatic remediation execution, evidence authenticity, or effectiveness telemetry.
+Fynix provides one governed lifecycle for issues opened by risk portfolio reviews, third-party risk reviews, AI monitoring reviews, operational-resilience exercises, continuous control tests, and policy-exception monitoring reviews. The lifecycle connects these source records to the existing remediation and accepted audit-evidence workflows without claiming automatic remediation execution, evidence authenticity, or effectiveness telemetry.
 
 ## Registration and ownership
 
@@ -23,7 +23,7 @@ All other transitions are rejected. Source-domain derived state continues to tre
 
 The **Remediation → Governance Issues** workspace provides owner-scoped discovery, current status, remediation linkage, closure details, actions allowed by permission and state, append-only transition and closure-evidence history, and private-disk export. Evidence metadata is part of the lifecycle record. Downloads bind the exact closure-evidence and attachment identities, recheck lifecycle and file authorization, and stream the snapshotted disk/path rather than resolving a raw path. The source issue remains visible in its existing domain workspace.
 
-REST uses the source aliases `risk`, `vendor`, `ai`, `resilience`, and `control_test`:
+REST uses the source aliases `risk`, `vendor`, `ai`, `resilience`, `control_test`, and `policy_exception`:
 
 - `GET /api/governance-issues/{type}/{issue}`
 - `POST /api/governance-issues/{type}/{issue}/remediation`

@@ -9,6 +9,7 @@ use App\Models\PolicyException;
 use App\Models\PolicyExceptionDecision;
 use App\Models\PolicyExceptionMonitoringReview;
 use App\Models\User;
+use App\Services\GovernanceIssueLifecycleManager;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -22,7 +23,7 @@ class PolicyExceptionMonitoringManager
         $policy = $exception->policy;
         abort_unless($policy?->owner_id === $actor->id || $actor->can('Read Policies') || $actor->can('Update Policies'), 403);
 
-        return $exception->monitoringReviews()->with(['reviewer:id,name'])->latest('version')->getQuery();
+        return $exception->monitoringReviews()->with(['reviewer:id,name', 'issue.lifecycle'])->latest('version')->getQuery();
     }
 
     public function review(PolicyException $exception, User $actor, array $data): PolicyExceptionMonitoringReview
@@ -79,7 +80,20 @@ class PolicyExceptionMonitoringManager
                 'next_review_at' => $nextReviewAt,
             ]);
 
-            return $review->load(['reviewer:id,name', 'exception.policy:id,code,name']);
+            if ($review->outcome !== PolicyExceptionMonitoringOutcome::Effective) {
+                $issue = $review->issue()->create([
+                    'policy_exception_id' => $locked->id,
+                    'owner_id' => $policy->owner_id,
+                    'title' => "Policy exception {$locked->name} requires action",
+                    'description' => $review->review_summary."\n\nCompensating-control assessment: ".$review->control_effectiveness,
+                    'severity' => $review->outcome === PolicyExceptionMonitoringOutcome::RevokeRecommended ? 'high' : 'medium',
+                    'status' => 'open',
+                ]);
+                $lifecycle = app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
+                $lifecycle->update(['due_at' => $locked->expiration_date]);
+            }
+
+            return $review->load(['reviewer:id,name', 'exception.policy:id,code,name', 'issue.lifecycle']);
         }, 3);
     }
 

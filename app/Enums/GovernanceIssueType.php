@@ -4,6 +4,7 @@ namespace App\Enums;
 
 use App\Models\AiGovernanceIssue;
 use App\Models\ControlTestFinding;
+use App\Models\PolicyExceptionMonitoringIssue;
 use App\Models\ResilienceIssue;
 use App\Models\RiskGovernanceIssue;
 use App\Models\VendorRiskIssue;
@@ -17,6 +18,7 @@ enum GovernanceIssueType: string implements HasLabel
     case Ai = 'ai';
     case Resilience = 'resilience';
     case ControlTest = 'control_test';
+    case PolicyException = 'policy_exception';
 
     public function modelClass(): string
     {
@@ -26,6 +28,7 @@ enum GovernanceIssueType: string implements HasLabel
             self::Ai => AiGovernanceIssue::class,
             self::Resilience => ResilienceIssue::class,
             self::ControlTest => ControlTestFinding::class,
+            self::PolicyException => PolicyExceptionMonitoringIssue::class,
         };
     }
 
@@ -42,6 +45,7 @@ enum GovernanceIssueType: string implements HasLabel
             self::Ai => __('AI governance'),
             self::Resilience => __('Operational resilience'),
             self::ControlTest => __('Control test'),
+            self::PolicyException => __('Policy exception monitoring'),
         };
     }
 
