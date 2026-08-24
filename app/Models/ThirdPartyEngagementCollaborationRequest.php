@@ -109,6 +109,16 @@ class ThirdPartyEngagementCollaborationRequest extends Model
         return $this->hasOne(ThirdPartyEngagementCollaborationEscalation::class);
     }
 
+    public function cancellation(): HasOne
+    {
+        return $this->hasOne(ThirdPartyCollaborationRequestCancellation::class, 'third_party_engagement_collaboration_request_id');
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->relationLoaded('cancellation') ? $this->cancellation !== null : $this->cancellation()->exists();
+    }
+
     public function latestStatus(): ?ThirdPartyCollaborationStatus
     {
         $event = $this->getRelationValue('latestEvent');

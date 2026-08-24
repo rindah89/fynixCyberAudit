@@ -70,6 +70,9 @@ class ThirdPartyEngagementCollaborationManager
                 $data = Validator::make($data, self::responseRules())->validate();
                 $this->assertCollaborativeState($engagement);
                 $latest = $this->latestEvent($locked);
+                if ($locked->cancellation()->lockForUpdate()->exists()) {
+                    throw ValidationException::withMessages(['request' => 'A cancelled collaboration request is terminal.']);
+                }
                 if (! in_array($latest->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)) {
                     throw ValidationException::withMessages(['request' => 'This collaboration request is not awaiting a provider response.']);
                 }
@@ -98,6 +101,9 @@ class ThirdPartyEngagementCollaborationManager
             $this->assertCollaborativeState($engagement);
             abort_if($actor->id === $locked->opened_by, 403, 'Response disposition must be independent from the request opener.');
             $latest = $this->latestEvent($locked);
+            if ($locked->cancellation()->lockForUpdate()->exists()) {
+                throw ValidationException::withMessages(['request' => 'A cancelled collaboration request is terminal.']);
+            }
             $decision = ThirdPartyCollaborationStatus::from($data['decision']);
             if ($latest->status !== ThirdPartyCollaborationStatus::Responded || ! in_array($decision, [ThirdPartyCollaborationStatus::Accepted, ThirdPartyCollaborationStatus::FollowUp], true)) {
                 throw ValidationException::withMessages(['decision' => 'A provider response can be accepted or returned for follow-up.']);

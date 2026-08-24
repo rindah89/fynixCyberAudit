@@ -263,6 +263,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/third-party-engagements/{engagement}/collaboration-requests', [ThirdPartyRiskController::class, 'collaborationRequests']);
     Route::post('/third-party-engagement-collaboration-requests/{collaborationRequest}/decisions', [ThirdPartyRiskController::class, 'decideCollaborationRequest']);
     Route::post('/third-party-engagement-collaboration-requests/{collaborationRequest}/reassign', [ThirdPartyRiskController::class, 'reassignCollaborationRecipient']);
+    Route::post('/third-party-engagement-collaboration-requests/{collaborationRequest}/cancel', [ThirdPartyRiskController::class, 'cancelCollaborationRequest']);
     Route::post('/third-party-collaboration-extensions/{extension}/decision', [ThirdPartyRiskController::class, 'decideCollaborationExtension']);
     Route::post('/third-party-engagement-collaboration-escalations/{escalation}/acknowledge', [ThirdPartyRiskController::class, 'acknowledgeCollaborationEscalation']);
     Route::post('/third-party-engagement-collaboration-escalations/{escalation}/resolve', [ThirdPartyRiskController::class, 'resolveCollaborationEscalation']);

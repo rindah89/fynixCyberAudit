@@ -174,6 +174,14 @@
                     <div class="break-all font-mono text-xs">{{ $reassignment->fingerprint }}</div>
                 </div>
             @endforeach
+            @if ($request->cancellation)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div class="font-medium">Cancelled · {{ $request->cancellation->cancelled_at?->toDayDateTimeString() }} · {{ $request->cancellation->actor?->name }}</div>
+                    <div class="whitespace-pre-wrap">{{ $request->cancellation->reason }}</div>
+                    <details class="mt-1"><summary class="font-medium">Retained cancellation evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['request' => $request->cancellation->request_snapshot, 'latest_event' => $request->cancellation->latest_event_snapshot, 'recipient' => $request->cancellation->recipient_context, 'due' => $request->cancellation->due_context, 'actor' => $request->cancellation->actor_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $request->cancellation->fingerprint }}</div>
+                </div>
+            @endif
             <div>Effective due date: {{ $request->effective_due_at }}</div>
             @foreach ($request->extensions->sortBy('version') as $extension)
                 <div class="mt-2 rounded-lg border p-2">

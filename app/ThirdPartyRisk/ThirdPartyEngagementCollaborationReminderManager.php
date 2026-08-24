@@ -64,6 +64,9 @@ class ThirdPartyEngagementCollaborationReminderManager
                 ->where('third_party_engagement_collaboration_request_id', $request->id)
                 ->orderByDesc('version')->lockForUpdate()->first();
             $extensions = $request->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
+            if ($request->cancellation()->lockForUpdate()->exists()) {
+                return false;
+            }
             $dueContext = $request->setRelation('extensions', $extensions)->effectiveDueContext();
             $effectiveDue = Carbon::parse($dueContext['due_at']);
             if (! $event || ! in_array($event->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)

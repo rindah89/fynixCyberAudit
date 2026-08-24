@@ -56,7 +56,8 @@ class ThirdPartyEngagementCollaborationEscalationManager
             $engagement = $vendor ? ThirdPartyEngagement::query()->where('vendor_id', $vendor->id)->lockForUpdate()->find($engagementId) : null;
             $request = $engagement ? ThirdPartyEngagementCollaborationRequest::query()->where('third_party_engagement_id', $engagement->id)->lockForUpdate()->find($requestId) : null;
             if (! $request || ! in_array($engagement->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
-                || $request->escalation()->lockForUpdate()->exists()) {
+                || $request->escalation()->lockForUpdate()->exists()
+                || $request->cancellation()->lockForUpdate()->exists()) {
                 return false;
             }
             $reassignments = $request->reassignments()->orderBy('version')->lockForUpdate()->get();

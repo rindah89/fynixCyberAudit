@@ -139,7 +139,8 @@ class ThirdPartyEngagementCollaborationExtensionManager
         if (! in_array($engagement->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
             || ! in_array($latestEvent->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
             || $request->reminders()->where('type', ThirdPartyCollaborationReminderType::Overdue)->lockForUpdate()->exists()
-            || $request->escalation()->lockForUpdate()->exists()) {
+            || $request->escalation()->lockForUpdate()->exists()
+            || $request->cancellation()->lockForUpdate()->exists()) {
             throw ValidationException::withMessages(['request' => 'Due-date extension is available only for an awaiting, non-escalated collaboration request.']);
         }
     }

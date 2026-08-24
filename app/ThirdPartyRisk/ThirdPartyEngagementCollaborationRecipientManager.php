@@ -42,7 +42,8 @@ class ThirdPartyEngagementCollaborationRecipientManager
             }
             if (! in_array($engagement->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
                 || ! in_array($latestEvent->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
-                || $locked->escalation()->lockForUpdate()->exists()) {
+                || $locked->escalation()->lockForUpdate()->exists()
+                || $locked->cancellation()->lockForUpdate()->exists()) {
                 throw ValidationException::withMessages(['request' => 'Only an awaiting, non-escalated collaboration request can be reassigned.']);
             }
             if ($history->count() >= 20) {

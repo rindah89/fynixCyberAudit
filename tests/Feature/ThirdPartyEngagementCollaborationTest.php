@@ -11,6 +11,7 @@ use App\Models\ThirdPartyCollaborationEscalationIssue;
 use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyCollaborationExtensionDecision;
 use App\Models\ThirdPartyCollaborationRecipientReassignment;
+use App\Models\ThirdPartyCollaborationRequestCancellation;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
@@ -20,6 +21,7 @@ use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
@@ -849,5 +851,90 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         } catch (ValidationException $exception) {
             $this->assertArrayHasKey('request', $exception->errors());
         }
+    }
+
+    public function test_manager_cancels_an_awaiting_request_with_retained_terminal_evidence(): void
+    {
+        Carbon::setTestNow('2026-08-25 09:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $recipient = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($manager, $engagement, [
+            'category' => 'assurance', 'subject' => 'Obsolete evidence request', 'request_text' => 'Provide evidence that is no longer required.',
+            'recipient_vendor_user_id' => $recipient->id, 'due_at' => '2026-08-27',
+        ]);
+        try {
+            app(ThirdPartyEngagementCollaborationCancellationManager::class)->cancel(User::factory()->create(), $request, ['reason' => []]);
+            $this->fail('Direct cancellation must authorize before disclosing validation state.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $engagement->update(['term_end_at' => '2026-10-01']);
+        $extensionManager = app(ThirdPartyEngagementCollaborationExtensionManager::class);
+        $pendingExtension = $extensionManager->request($recipient, $request, ['proposed_due_at' => '2026-09-03', 'reason' => 'More time is requested.']);
+        try {
+            app(ThirdPartyEngagementCollaborationCancellationManager::class)->cancel($manager, $request, ['reason' => 'Premature cancellation.']);
+            $this->fail('A pending due-date decision must be terminal before cancellation.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        $extensionManager->decide($reviewer, $pendingExtension, ['decision' => 'rejected', 'summary' => 'The current deadline remains.']);
+        Carbon::setTestNow('2026-08-25 10:00:00');
+        $this->assertSame(1, app(ThirdPartyEngagementCollaborationReminderManager::class)->reconcile(now()));
+        $reminder = ThirdPartyEngagementCollaborationReminder::query()->firstOrFail();
+        $this->assertTrue(DB::table('notifications')->where('id', $reminder->notification_id)->exists());
+
+        $this->actingAs($manager, 'web');
+        Livewire::test(EngagementsRelationManager::class, ['ownerRecord' => $engagement->vendor, 'pageClass' => ViewThirdPartyRisk::class])
+            ->assertTableActionVisible('cancel_collaboration', $engagement);
+
+        Sanctum::actingAs($manager);
+        $cancellation = $this->postJson("/api/third-party-engagement-collaboration-requests/{$request->id}/cancel", [
+            'reason' => 'The assurance scope changed and this request is no longer required.',
+        ])->assertCreated()->assertJsonPath('data.third_party_engagement_collaboration_request_id', $request->id)->json('data');
+        $this->assertFalse(DB::table('notifications')->where('id', $reminder->notification_id)->exists());
+        $this->assertDatabaseHas('third_party_engagement_collaboration_reminders', ['id' => $reminder->id]);
+        $this->assertSame(0, app(ThirdPartyEngagementCollaborationReminderManager::class)->reconcile(now()->addDays(10)));
+
+        try {
+            app(ThirdPartyEngagementCollaborationManager::class)->respond($recipient, $request, ['response_text' => 'Late response.']);
+            $this->fail('A cancelled request must be terminal.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        try {
+            app(ThirdPartyEngagementCollaborationCancellationManager::class)->cancel($manager, $request, ['reason' => 'Duplicate cancellation.']);
+            $this->fail('A collaboration request can be cancelled only once.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($recipient, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee('Cancelled')
+            ->assertSee('The assurance scope changed and this request is no longer required.');
+        $record = ThirdPartyCollaborationRequestCancellation::query()->firstOrFail();
+        $payload = $record->only(['third_party_engagement_collaboration_request_id', 'latest_event_id', 'request_snapshot', 'latest_event_snapshot', 'recipient_context', 'due_context', 'reason', 'cancelled_by', 'actor_snapshot']);
+        $payload['cancelled_at'] = $record->cancelled_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $record->fingerprint);
+        $this->assertThrows(fn () => $record->update(['reason' => 'Rewritten']), \LogicException::class);
+        $this->assertSame($cancellation['fingerprint'], $record->fingerprint);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonPath('data.0.cancellation.reason', 'The assurance scope changed and this request is no longer required.')
+            ->assertJsonPath('data.0.cancellation.latest_event_snapshot.evidence_manifest', []);
+        $rendered = view('filament.third-party-engagement', ['engagement' => $engagement->fresh()->load(['collaborationRequests.cancellation.actor', 'collaborationRequests.recipient', 'collaborationRequests.opener', 'collaborationRequests.reassignments', 'collaborationRequests.extensions.decision', 'collaborationRequests.events.evidence', 'collaborationRequests.reminders', 'collaborationRequests.escalation'])])->render();
+        $this->assertStringContainsString('Retained cancellation evidence', $rendered);
+        $this->assertStringContainsString('evidence_manifest', $rendered);
+        $factory = ThirdPartyCollaborationRequestCancellation::factory()->create();
+        $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'latest_event_id', 'request_snapshot', 'latest_event_snapshot', 'recipient_context', 'due_context', 'reason', 'cancelled_by', 'actor_snapshot']);
+        $factoryPayload['cancelled_at'] = $factory->cancelled_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
+        $migration = require database_path('migrations/2026_08_24_890000_create_third_party_collaboration_request_cancellations.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_request_cancellations', ['id' => $record->id]);
+        $this->assertDatabaseHas('third_party_collaboration_request_cancellations', ['id' => $factory->id]);
+        Carbon::setTestNow();
     }
 }

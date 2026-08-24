@@ -57,6 +57,7 @@ class CollaborationRequestResource extends Resource
                         ->whereNull('deleted_at'))
                     ->with('document'),
                 'latestEvent',
+                'cancellation:id,third_party_engagement_collaboration_request_id,reason,cancelled_at,fingerprint',
                 'reassignments' => fn ($query) => $query->select(['id', 'third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'reason', 'reassigned_at', 'fingerprint']),
                 'extensions.decision' => fn ($query) => $query->select(['id', 'third_party_collaboration_extension_id', 'decision', 'summary', 'decided_at', 'fingerprint']),
                 'reminders',
@@ -77,13 +78,14 @@ class CollaborationRequestResource extends Resource
             TextColumn::make('engagement.code')->label('Engagement')->searchable(),
             TextColumn::make('subject')->searchable()->wrap(),
             TextColumn::make('category')->badge(),
-            TextColumn::make('latest_status')->label('Status')->state(fn (ThirdPartyEngagementCollaborationRequest $record) => $record->latestStatus())->badge(),
+            TextColumn::make('latest_status')->label('Status')->state(fn (ThirdPartyEngagementCollaborationRequest $record) => $record->isCancelled() ? __('Cancelled') : $record->latestStatus()?->getLabel())->badge(),
             TextColumn::make('reminder_state')->label('Reminder')->state(fn (ThirdPartyEngagementCollaborationRequest $record) => $record->reminders->last()?->type)->badge(),
             TextColumn::make('due_at')->date()->sortable(),
         ])->recordActions([
             ViewAction::make(),
             Action::make('respond')->label('Respond')->icon('heroicon-o-paper-airplane')
                 ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
+                    && ! $record->isCancelled()
                     && in_array($record->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true))
                 ->schema([
                     Textarea::make('response_text')->required()->maxLength(30000)->columnSpanFull(),
@@ -95,6 +97,7 @@ class CollaborationRequestResource extends Resource
                 ->action(fn (ThirdPartyEngagementCollaborationRequest $record, array $data) => app(ThirdPartyEngagementCollaborationManager::class)->respond(self::vendorActor(), $record, $data)),
             Action::make('request_extension')->label('Request due-date extension')->icon('heroicon-o-calendar-days')
                 ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
+                    && ! $record->isCancelled()
                     && in_array($record->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
                     && $record->escalation === null
                     && ! $record->extensions->contains(fn ($extension): bool => $extension->decision === null))
@@ -132,6 +135,11 @@ class CollaborationRequestResource extends Resource
                     TextEntry::make('reason')->columnSpanFull(), TextEntry::make('reassigned_at')->dateTime(), TextEntry::make('fingerprint')->columnSpanFull(),
                 ])->columns(3),
             ]),
+            Section::make('Cancellation')->schema([
+                TextEntry::make('cancellation.reason')->label('Reason')->columnSpanFull(),
+                TextEntry::make('cancellation.cancelled_at')->label('Cancelled at')->dateTime(),
+                TextEntry::make('cancellation.fingerprint')->label('Fingerprint')->columnSpanFull(),
+            ])->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->isCancelled()),
             Section::make('Due-date extension history')->schema([
                 TextEntry::make('effective_due_at')->label('Current effective due date')->date(),
                 RepeatableEntry::make('extensions')->hiddenLabel()->schema([
