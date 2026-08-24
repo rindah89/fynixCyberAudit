@@ -10,6 +10,8 @@ use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceIssu
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\GovernanceReviewsRelationManager;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\HierarchyChangesRelationManager;
 use App\Filament\Resources\RiskPortfolioResource\RelationManagers\OperationalLossEventsRelationManager;
+use App\Filament\Resources\RiskPortfolioResource\RelationManagers\RiskIndicatorObservationsRelationManager;
+use App\Filament\Resources\RiskPortfolioResource\RelationManagers\RiskIndicatorsRelationManager;
 use App\Models\Risk;
 use App\Models\RiskGovernanceProfile;
 use App\Services\EnterpriseRiskHierarchy;
@@ -127,7 +129,7 @@ class RiskPortfolioResource extends Resource
 
     public static function getRelations(): array
     {
-        return [GovernanceReviewsRelationManager::class, GovernanceIssuesRelationManager::class, OperationalLossEventsRelationManager::class, HierarchyChangesRelationManager::class, EnterpriseScenariosRelationManager::class];
+        return [GovernanceReviewsRelationManager::class, GovernanceIssuesRelationManager::class, RiskIndicatorsRelationManager::class, RiskIndicatorObservationsRelationManager::class, OperationalLossEventsRelationManager::class, HierarchyChangesRelationManager::class, EnterpriseScenariosRelationManager::class];
     }
 
     public static function getPages(): array

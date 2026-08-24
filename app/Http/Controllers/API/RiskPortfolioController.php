@@ -6,6 +6,8 @@ use App\Enums\RiskGovernanceDecision;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListEnterpriseRiskScenariosRequest;
 use App\Http\Requests\ListOperationalLossEventsRequest;
+use App\Http\Requests\ListRiskIndicatorObservationsRequest;
+use App\Http\Requests\ListRiskIndicatorsRequest;
 use App\Http\Requests\ShowEnterpriseRiskRollupRequest;
 use App\Http\Requests\ShowEnterpriseRiskScenarioRequest;
 use App\Http\Requests\StoreEnterpriseRiskParentRequest;
@@ -13,16 +15,46 @@ use App\Http\Requests\StoreEnterpriseRiskScenarioRequest;
 use App\Http\Requests\StoreOperationalLossEventRequest;
 use App\Http\Requests\StoreRiskGovernanceProfileRequest;
 use App\Http\Requests\StoreRiskGovernanceReviewRequest;
+use App\Http\Requests\StoreRiskIndicatorObservationRequest;
+use App\Http\Requests\StoreRiskIndicatorRequest;
+use App\Http\Requests\UpdateRiskIndicatorRequest;
 use App\Models\EnterpriseRiskScenario;
 use App\Models\Risk;
+use App\Models\RiskIndicator;
 use App\Services\EnterpriseRiskHierarchy;
 use App\Services\EnterpriseRiskScenarioAnalyzer;
 use App\Services\OperationalLossEventManager;
+use App\Services\RiskIndicatorManager;
 use App\Services\RiskPortfolioManager;
 use Illuminate\Http\JsonResponse;
 
 class RiskPortfolioController extends Controller
 {
+    public function storeIndicator(StoreRiskIndicatorRequest $request, Risk $risk, RiskIndicatorManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->define($risk, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function indicators(ListRiskIndicatorsRequest $request, Risk $risk): JsonResponse
+    {
+        return response()->json($risk->riskIndicators()->with(['owner:id,name', 'latestObservation.observer:id,name'])->withCount('observations')->latest('id')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function observeIndicator(StoreRiskIndicatorObservationRequest $request, RiskIndicator $indicator, RiskIndicatorManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->observe($indicator, $request->user(), $request->validated()), 'indicator' => $indicator->refresh()], JsonResponse::HTTP_CREATED);
+    }
+
+    public function indicatorObservations(ListRiskIndicatorObservationsRequest $request, RiskIndicator $indicator): JsonResponse
+    {
+        return response()->json($indicator->observations()->with('observer:id,name')->latest('observed_at')->latest('id')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function updateIndicator(UpdateRiskIndicatorRequest $request, RiskIndicator $indicator, RiskIndicatorManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->update($indicator, $request->user(), $request->validated())]);
+    }
+
     public function recordLossEvent(StoreOperationalLossEventRequest $request, Risk $risk, OperationalLossEventManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->record($risk, $request->user(), $request->validated())], JsonResponse::HTTP_CREATED);

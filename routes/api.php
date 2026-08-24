@@ -87,6 +87,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/risks/{risk}/governance-reviews', [RiskPortfolioController::class, 'review']);
     Route::post('/risks/{risk}/operational-loss-events', [RiskPortfolioController::class, 'recordLossEvent']);
     Route::get('/risks/{risk}/operational-loss-events', [RiskPortfolioController::class, 'lossEvents']);
+    Route::post('/risks/{risk}/indicators', [RiskPortfolioController::class, 'storeIndicator']);
+    Route::get('/risks/{risk}/indicators', [RiskPortfolioController::class, 'indicators']);
+    Route::post('/risk-indicators/{indicator}/observations', [RiskPortfolioController::class, 'observeIndicator']);
+    Route::get('/risk-indicators/{indicator}/observations', [RiskPortfolioController::class, 'indicatorObservations']);
+    Route::put('/risk-indicators/{indicator}', [RiskPortfolioController::class, 'updateIndicator']);
     Route::put('/risks/{risk}/parent', [RiskPortfolioController::class, 'parent']);
     Route::get('/risks/{risk}/rollup', [RiskPortfolioController::class, 'rollup']);
     Route::post('/risks/{risk}/scenarios', [RiskPortfolioController::class, 'scenario']);

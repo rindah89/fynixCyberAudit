@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use LogicException;
@@ -104,6 +105,16 @@ class Risk extends Model
     {
         return $this->belongsToMany(Asset::class)
             ->withTimestamps();
+    }
+
+    public function riskIndicators(): HasMany
+    {
+        return $this->hasMany(RiskIndicator::class);
+    }
+
+    public function riskIndicatorObservations(): HasManyThrough
+    {
+        return $this->hasManyThrough(RiskIndicatorObservation::class, RiskIndicator::class);
     }
 
     public function mitigations(): MorphMany

@@ -585,6 +585,11 @@ Portfolio governance writes require `Manage Risk Portfolio`; the read endpoints 
 - `POST /api/risks/{risk}/governance-reviews`
 - `POST /api/risks/{risk}/operational-loss-events`
 - `GET /api/risks/{risk}/operational-loss-events`
+- `POST /api/risks/{risk}/indicators`
+- `GET /api/risks/{risk}/indicators`
+- `PUT /api/risk-indicators/{indicator}`
+- `POST /api/risk-indicators/{indicator}/observations`
+- `GET /api/risk-indicators/{indicator}/observations`
 - `PUT /api/risks/{risk}/parent` with `parent_risk_id` (nullable)
 - `GET /api/risks/{risk}/rollup`
 - `POST /api/risks/{risk}/scenarios`
@@ -600,6 +605,8 @@ Scenario creation requires `name`, `narrative`, `horizon_months` from 1–120, a
 Review decisions are `accepted`, `mitigate`, `transfer`, and `avoid`. The server derives every snapshot field. A residual score above appetite cannot be accepted; treatment decisions open an issue. `evidence_attachment_ids` optionally accepts up to 20 distinct accepted data-request attachments downloadable by the reviewer. The server retains copies bounded to 10 MiB per file and 50 MiB per review and returns append-only provenance, actual size, disk/path, and SHA-256 snapshots under `data.evidence`; hashes prove retained-byte identity rather than truth, sufficiency, authenticity, or review inference. Evidence references remain unverified external text. Third-party and unclassified risks are rejected by these endpoints because they use other workflows. See `docs/RISK_PORTFOLIO_GOVERNANCE.md` for evidence boundaries and limitations.
 
 Operational loss-event creation requires `Manage Risk Portfolio` and a governed operational risk mapped to an active business service. Payloads require `category`, past-or-current `occurred_at` and `detected_at` dates, `summary`, nonnegative decimal-string `gross_loss`, optional nonnegative decimal-string `recoveries`, and an uppercase three-letter `currency`; `source_reference` is optional. Categories are `internal_fraud`, `external_fraud`, `employment_practices`, `clients_products_business_practices`, `physical_asset_damage`, `business_disruption_system_failure`, `execution_delivery_process_management`, and `other`. Amount strings accept up to 14 whole digits and two decimal places. The server rejects recoveries above gross loss and derives `net_loss` without binary floating-point arithmetic. Event history accepts `per_page` up to 100 and is readable by portfolio managers, `Read Risks` users, and the risk's accountable owner. Events are append-only through product interfaces. They are operator-reported historical observations, not authenticated source records, converted/aggregated currency measures, statistical loss models, forecasts, or capital calculations.
+
+Operational KRI creation requires `Manage Risk Portfolio` and a governed operational risk mapped to a business service. A definition requires `owner_id`, unique-per-risk `code`, `name`, `unit`, `direction` (`higher_is_worse` or `lower_is_worse`), decimal-string warning and critical thresholds, `frequency` (`weekly`, `monthly`, `quarterly`, or `yearly`), and `next_due_at`; description and active state are optional. Threshold and observation values accept up to 15 whole digits and six decimal places. The critical threshold must be beyond warning in the adverse direction. Portfolio managers, the indicator owner, and the risk owner can append observations; `Read Risks` users have read access. Observation payloads require `observed_value` and optionally accept a non-future `observed_at`, notes, and an unverified source reference. The server derives normal/warning/critical status with decimal-safe comparisons, snapshots the applicable unit/direction/thresholds, advances the due date, and exposes paginated definition and append-only observation history (`per_page` maximum 100). This workflow records deliberate observations; it does not ingest feeds, validate sources, infer metrics from files, aggregate samples, or provide process/control telemetry.
 
 ### Governance Issue and Remediation Lifecycle
 
