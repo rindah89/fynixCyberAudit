@@ -12,10 +12,12 @@ use App\Models\IncidentPlaybook;
 use App\Models\IncidentTask;
 use App\Models\IncidentTaskEvent;
 use App\Models\User;
+use App\Services\GovernedEvidenceSnapshotter;
 use App\Support\Enterprise;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -82,7 +84,7 @@ class IncidentDesk
                     'status' => 'Open', 'priority' => $template->priority ?? 'Medium',
                     'governed_at' => $occurredAt,
                 ]);
-                $this->appendTaskEvent($incident, $task, $actor, 1, 'seeded', null, $this->taskSnapshot($task, $incident), 'Task seeded from governed playbook.', $occurredAt);
+                $this->appendTaskEvent($incident, $task, $actor, 1, 'seeded', null, $this->taskSnapshot($task, $incident), [], 'Task seeded from governed playbook.', $occurredAt);
             }
 
             $this->appendTransition($incident, $actor, null, IncidentPhase::Identification, 'Incident created from governed playbook.', $occurredAt);
@@ -136,78 +138,93 @@ class IncidentDesk
     }
 
     /**
-     * @param  array{status?: string, assignee_id?: int|null, due_date?: string|null, summary: string}  $data
+     * @param  array{status?: string, assignee_id?: int|null, due_date?: string|null, evidence_attachment_ids?: list<int>, summary: string}  $data
      */
     public function recordTaskEvent(User $actor, IncidentTask $task, array $data): IncidentTaskEvent
     {
         Enterprise::assertEnabled('incidents');
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-        return DB::transaction(function () use ($actor, $task, $data): IncidentTaskEvent {
-            $incidentId = IncidentTask::query()->whereKey($task->id)->value('incident_id');
-            $incident = Incident::query()->lockForUpdate()->findOrFail($incidentId);
-            $locked = IncidentTask::query()->where('incident_id', $incident->id)->lockForUpdate()->findOrFail($task->id);
-            abort_if($incident->governed_at === null || $locked->governed_at === null, 422, 'Legacy incident tasks cannot enter governed task history.');
+        try {
+            return DB::transaction(function () use ($actor, $task, $data, $snapshotter, $snapshotBatch, &$retainedCopies): IncidentTaskEvent {
+                $incidentId = IncidentTask::query()->whereKey($task->id)->value('incident_id');
+                $incident = Incident::query()->lockForUpdate()->findOrFail($incidentId);
+                $locked = IncidentTask::query()->where('incident_id', $incident->id)->lockForUpdate()->findOrFail($task->id);
+                abort_if($incident->governed_at === null || $locked->governed_at === null, 422, 'Legacy incident tasks cannot enter governed task history.');
 
-            $manager = $actor->can('update', $incident) || $actor->can('Manage Incident Tasks');
-            $assignee = $locked->assignee_id === $actor->id;
-            abort_unless($manager || $assignee, 403, 'You cannot update this incident task.');
-            if (! $manager && (array_key_exists('assignee_id', $data) || array_key_exists('due_date', $data))) {
-                abort(403, 'Task assignees cannot change assignment or due date.');
-            }
-
-            $data = Validator::make($data, [
-                'status' => ['sometimes', Rule::enum(IncidentTaskStatus::class)],
-                'assignee_id' => 'sometimes|nullable|integer|exists:users,id',
-                'due_date' => 'sometimes|nullable|date|after_or_equal:today',
-                'summary' => 'required|string|max:10000',
-            ])->after(function ($validator) use ($data): void {
-                if (! array_key_exists('status', $data) && ! array_key_exists('assignee_id', $data) && ! array_key_exists('due_date', $data)) {
-                    $validator->errors()->add('status', 'A status, assignee, or due date change is required.');
+                $manager = $actor->can('update', $incident) || $actor->can('Manage Incident Tasks');
+                $assignee = $locked->assignee_id === $actor->id;
+                abort_unless($manager || $assignee, 403, 'You cannot update this incident task.');
+                if (! $manager && (array_key_exists('assignee_id', $data) || array_key_exists('due_date', $data))) {
+                    abort(403, 'Task assignees cannot change assignment or due date.');
                 }
-            })->validate();
 
-            if (array_key_exists('assignee_id', $data) && $data['assignee_id'] !== null) {
-                $selectedAssignee = User::query()->lockForUpdate()->find($data['assignee_id']);
-                if ($selectedAssignee === null) {
-                    throw ValidationException::withMessages(['assignee_id' => 'The selected assignee must be active.']);
+                $data = Validator::make($data, [
+                    'status' => ['sometimes', Rule::enum(IncidentTaskStatus::class)],
+                    'assignee_id' => 'sometimes|nullable|integer|exists:users,id',
+                    'due_date' => 'sometimes|nullable|date|after_or_equal:today',
+                    'evidence_attachment_ids' => 'sometimes|array|max:20',
+                    'evidence_attachment_ids.*' => 'integer|distinct',
+                    'summary' => 'required|string|max:10000',
+                ])->after(function ($validator) use ($data): void {
+                    if (! array_key_exists('status', $data) && ! array_key_exists('assignee_id', $data) && ! array_key_exists('due_date', $data)) {
+                        $validator->errors()->add('status', 'A status, assignee, or due date change is required.');
+                    }
+                })->validate();
+
+                if (array_key_exists('assignee_id', $data) && $data['assignee_id'] !== null) {
+                    $selectedAssignee = User::query()->lockForUpdate()->find($data['assignee_id']);
+                    if ($selectedAssignee === null) {
+                        throw ValidationException::withMessages(['assignee_id' => 'The selected assignee must be active.']);
+                    }
                 }
-            }
 
-            abort_if($locked->events()->count() >= 100, 422, 'An incident task is limited to 100 governed events.');
-            $before = $this->taskSnapshot($locked, $incident);
-            $updates = [];
-            $current = IncidentTaskStatus::from($locked->status);
-            if ($current->allowedNext() === []) {
-                throw ValidationException::withMessages(['status' => 'Completed or cancelled incident tasks are terminal.']);
-            }
-            if (array_key_exists('status', $data)) {
-                $next = IncidentTaskStatus::from($data['status']);
-                if ($next !== $current && ! in_array($next, $current->allowedNext(), true)) {
-                    throw ValidationException::withMessages(['status' => 'The requested task status transition is not allowed.']);
+                abort_if($locked->events()->count() >= 100, 422, 'An incident task is limited to 100 governed events.');
+                $before = $this->taskSnapshot($locked, $incident);
+                $updates = [];
+                $current = IncidentTaskStatus::from($locked->status);
+                if ($current->allowedNext() === []) {
+                    throw ValidationException::withMessages(['status' => 'Completed or cancelled incident tasks are terminal.']);
                 }
-                if ($next !== IncidentTaskStatus::Open && $locked->phase->rank() > $incident->phase->rank()) {
-                    throw ValidationException::withMessages(['status' => 'The incident has not reached this task phase.']);
+                if (array_key_exists('status', $data)) {
+                    $next = IncidentTaskStatus::from($data['status']);
+                    if ($next !== $current && ! in_array($next, $current->allowedNext(), true)) {
+                        throw ValidationException::withMessages(['status' => 'The requested task status transition is not allowed.']);
+                    }
+                    if ($next !== IncidentTaskStatus::Open && $locked->phase->rank() > $incident->phase->rank()) {
+                        throw ValidationException::withMessages(['status' => 'The incident has not reached this task phase.']);
+                    }
+                    $updates['status'] = $next->value;
                 }
-                $updates['status'] = $next->value;
-            }
-            if (array_key_exists('assignee_id', $data)) {
-                $updates['assignee_id'] = $data['assignee_id'];
-            }
-            if (array_key_exists('due_date', $data)) {
-                $updates['due_date'] = $data['due_date'];
-            }
+                if (array_key_exists('assignee_id', $data)) {
+                    $updates['assignee_id'] = $data['assignee_id'];
+                }
+                if (array_key_exists('due_date', $data)) {
+                    $updates['due_date'] = $data['due_date'];
+                }
+                $evidenceAttachmentIds = $data['evidence_attachment_ids'] ?? [];
+                $evidenceManifest = $evidenceAttachmentIds === [] ? [] : $snapshotter->snapshot(
+                    $evidenceAttachmentIds, $actor, 'incident-task-event', $snapshotBatch, $retainedCopies,
+                );
 
-            $locked->update($updates);
-            $locked->refresh();
-            $after = $this->taskSnapshot($locked, $incident);
-            if ($before === $after) {
-                throw ValidationException::withMessages(['status' => 'The task event must change governed state.']);
-            }
-            $occurredAt = now();
-            $version = ((int) $locked->events()->max('version')) + 1;
+                $locked->update($updates);
+                $locked->refresh();
+                $after = $this->taskSnapshot($locked, $incident);
+                if ($before === $after) {
+                    throw ValidationException::withMessages(['status' => 'The task event must change governed state.']);
+                }
+                $occurredAt = now();
+                $version = ((int) $locked->events()->max('version')) + 1;
 
-            return $this->appendTaskEvent($incident, $locked, $actor, $version, 'updated', $before, $after, $data['summary'], $occurredAt);
-        }, 3);
+                return $this->appendTaskEvent($incident, $locked, $actor, $version, 'updated', $before, $after, $evidenceManifest, $data['summary'], $occurredAt);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+
+            throw $exception;
+        }
     }
 
     private function assertCanManage(User $actor): void
@@ -270,16 +287,21 @@ class IncidentDesk
         ];
     }
 
-    /** @param array<string, mixed>|null $before @param array<string, mixed> $after */
-    private function appendTaskEvent(Incident $incident, IncidentTask $task, User $actor, int $version, string $eventType, ?array $before, array $after, string $summary, mixed $occurredAt): IncidentTaskEvent
+    /** @param array<string, mixed>|null $before @param array<string, mixed> $after @param list<array<string, mixed>> $evidenceManifest */
+    private function appendTaskEvent(Incident $incident, IncidentTask $task, User $actor, int $version, string $eventType, ?array $before, array $after, array $evidenceManifest, string $summary, mixed $occurredAt): IncidentTaskEvent
     {
         $payload = [
             'incident_id' => $incident->id, 'incident_task_id' => $task->id, 'version' => $version,
             'event_type' => $eventType, 'from_status' => $before['status'] ?? null, 'to_status' => $after['status'],
-            'before_snapshot' => $before, 'after_snapshot' => $after, 'summary' => $summary,
+            'before_snapshot' => $before, 'after_snapshot' => $after, 'evidence_manifest' => $evidenceManifest, 'summary' => $summary,
             'recorded_by' => $actor->id, 'recorded_at' => $occurredAt->toIso8601String(),
         ];
 
-        return $task->events()->create($payload + ['fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))]);
+        $event = $task->events()->create($payload + ['fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))]);
+        foreach ($evidenceManifest as $manifest) {
+            $event->evidence()->create($manifest + ['linked_by' => $actor->id, 'linked_at' => $occurredAt]);
+        }
+
+        return $event;
     }
 }

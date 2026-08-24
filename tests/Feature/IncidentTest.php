@@ -8,6 +8,10 @@ use App\Filament\Resources\IncidentResource\Pages\ViewIncident;
 use App\Filament\Resources\IncidentResource\RelationManagers\PhaseTransitionsRelationManager;
 use App\Filament\Resources\IncidentResource\RelationManagers\TasksRelationManager;
 use App\Incidents\IncidentDesk;
+use App\Models\Audit;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\Incident;
 use App\Models\IncidentPhaseTransition;
 use App\Models\IncidentPlaybook;
@@ -18,6 +22,7 @@ use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use RuntimeException;
@@ -319,6 +324,7 @@ class IncidentTest extends TestCase
             'version' => $event->version, 'event_type' => $event->event_type,
             'from_status' => $event->from_status?->value, 'to_status' => $event->to_status->value,
             'before_snapshot' => $event->before_snapshot, 'after_snapshot' => $event->after_snapshot,
+            'evidence_manifest' => $event->evidence_manifest,
             'summary' => $event->summary, 'recorded_by' => $event->recorded_by,
             'recorded_at' => $event->recorded_at->toIso8601String(),
         ];
@@ -443,5 +449,92 @@ class IncidentTest extends TestCase
             $this->assertSame(422, $exception->getStatusCode());
         }
         $this->assertSame(100, $task->events()->count());
+    }
+
+    public function test_task_event_can_bind_retained_acl_scoped_accepted_evidence_atomically(): void
+    {
+        Storage::fake('private');
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $outsider = User::factory()->create();
+        $outsider->assignRole('Regular User');
+        $playbook = IncidentPlaybook::factory()->create();
+        IncidentPlaybookTask::factory()->create([
+            'incident_playbook_id' => $playbook->id, 'phase' => IncidentPhase::Identification,
+        ]);
+        $incident = app(IncidentDesk::class)->createFromPlaybook($manager, $playbook, ['title' => 'Evidence-backed response']);
+        $task = $incident->tasks()->firstOrFail();
+        $authorized = $this->acceptedEvidence($manager, 'incidents/authorized.txt', 'original response bytes');
+        $foreign = $this->acceptedEvidence($outsider, 'incidents/foreign.txt', 'foreign response bytes');
+
+        $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::InProgress->value,
+            'evidence_attachment_ids' => [$authorized->id, $foreign->id],
+            'summary' => 'Mixed evidence must fail atomically.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertSame(IncidentTaskStatus::Open->value, $task->fresh()->status);
+        $this->assertDatabaseCount('incident_task_event_evidence', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles('governed-evidence/incident-task-event'));
+
+        $response = $this->actingAs($manager)->postJson('/api/incident-tasks/'.$task->id.'/events', [
+            'status' => IncidentTaskStatus::InProgress->value,
+            'evidence_attachment_ids' => [$authorized->id],
+            'summary' => 'Responder validated containment evidence.',
+        ])->assertCreated()->assertJsonCount(1, 'data.evidence');
+        $event = IncidentTaskEvent::query()->findOrFail($response->json('data.id'));
+        $evidence = $event->evidence()->firstOrFail();
+        $this->assertSame(hash('sha256', 'original response bytes'), $evidence->sha256);
+        Storage::disk('private')->assertExists($evidence->file_path_snapshot);
+        $fingerprintPayload = [
+            'incident_id' => $event->incident_id,
+            'incident_task_id' => $event->incident_task_id,
+            'version' => $event->version,
+            'event_type' => $event->event_type,
+            'from_status' => $event->from_status,
+            'to_status' => $event->to_status,
+            'before_snapshot' => $event->before_snapshot,
+            'after_snapshot' => $event->after_snapshot,
+            'evidence_manifest' => $event->evidence_manifest,
+            'summary' => $event->summary,
+            'recorded_by' => $event->recorded_by,
+            'recorded_at' => $event->recorded_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', json_encode($fingerprintPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $event->fingerprint);
+
+        Storage::disk('private')->put($authorized->file_path, 'replacement source bytes');
+        $download = $this->actingAs($manager)->get(route('incident-task-event-evidence.download', $evidence))->assertOk();
+        $this->assertSame('original response bytes', $download->streamedContent());
+        $this->actingAs($outsider)->getJson('/api/incident-tasks/'.$task->id.'/events')
+            ->assertOk()->assertJsonCount(0, 'data.1.evidence');
+        $this->actingAs($outsider)->get(route('incident-task-event-evidence.download', $evidence))->assertForbidden();
+
+        try {
+            $authorized->delete();
+            $this->fail('Expected governed source attachment deletion to be blocked.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('governed evidence', $exception->getMessage());
+        }
+
+        $migration = require database_path('migrations/2026_08_24_580000_create_incident_task_event_evidence.php');
+        $migration->down();
+        $this->assertDatabaseHas('incident_task_event_evidence', ['id' => $evidence->id, 'sha256' => $evidence->sha256]);
+    }
+
+    private function acceptedEvidence(User $actor, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $actor->id]);
+        $request = DataRequest::factory()->create([
+            'audit_id' => $audit->id, 'created_by_id' => $actor->id, 'assigned_to_id' => $actor->id,
+        ]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $actor->id, 'requestee_id' => $actor->id,
+        ]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed incident task evidence', 'uploaded_by' => $actor->id,
+        ]);
     }
 }

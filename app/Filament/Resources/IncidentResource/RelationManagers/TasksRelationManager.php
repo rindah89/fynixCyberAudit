@@ -2,8 +2,10 @@
 
 namespace App\Filament\Resources\IncidentResource\RelationManagers;
 
+use App\Access\FileAccess;
 use App\Enums\IncidentTaskStatus;
 use App\Incidents\IncidentDesk;
+use App\Models\FileAttachment;
 use App\Models\IncidentTask;
 use App\Models\User;
 use Filament\Actions\Action;
@@ -41,6 +43,10 @@ class TasksRelationManager extends RelationManager
                         Select::make('assignee_id')->label('Assignee')->options(User::activeOptions())->searchable()
                             ->visible(fn (): bool => $this->canManageIncident()),
                         DatePicker::make('due_date')->visible(fn (): bool => $this->canManageIncident()),
+                        Select::make('evidence_attachment_ids')->label('Governed task evidence')->multiple()->maxItems(20)->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => $this->evidenceOptions($search))
+                            ->getOptionLabelsUsing(fn (array $values): array => $this->evidenceLabels($values))
+                            ->helperText('Optional accepted audit files you can access. Fynix retains bounded copies and SHA-256 snapshots.'),
                         Textarea::make('summary')->required()->maxLength(10000)->columnSpanFull(),
                     ])->action(fn (IncidentTask $record, array $data) => app(IncidentDesk::class)->recordTaskEvent(auth()->user(), $record, $data)),
                 Action::make('inspect_history')->label('History')->icon('heroicon-o-clock')
@@ -48,7 +54,15 @@ class TasksRelationManager extends RelationManager
                     ->modalHeading(fn (IncidentTask $record): string => 'Governed history — '.$record->title)
                     ->modalSubmitAction(false)->modalCancelActionLabel('Close')
                     ->modalContent(function (IncidentTask $record) {
-                        $record->load('events.actor:id,name');
+                        $record->load([
+                            'events.actor:id,name', 'events.evidence.linkedBy:id,name',
+                            'events.evidence.attachment.audit.members',
+                            'events.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+                        ]);
+                        foreach ($record->events as $event) {
+                            $event->setRelation('evidence', $event->evidence->filter(fn ($evidence): bool => $evidence->attachment !== null
+                                && app(FileAccess::class)->canDownloadFileAttachment(auth()->user(), $evidence->attachment))->values());
+                        }
 
                         return view('filament.incident-task-history', ['task' => $record]);
                     }),
@@ -67,5 +81,18 @@ class TasksRelationManager extends RelationManager
         $actor = auth()->user();
 
         return $actor instanceof User && ($this->canManageIncident() || $task->assignee_id === $actor->id);
+    }
+
+    private function evidenceOptions(string $search): array
+    {
+        return FileAttachment::query()->eligibleGovernedEvidenceFor(auth()->user())
+            ->where('file_name', 'like', '%'.addcslashes($search, '%_').'%')
+            ->orderByDesc('id')->limit(50)->pluck('file_name', 'id')->all();
+    }
+
+    private function evidenceLabels(array $values): array
+    {
+        return FileAttachment::query()->eligibleGovernedEvidenceFor(auth()->user())
+            ->whereKey($values)->pluck('file_name', 'id')->all();
     }
 }

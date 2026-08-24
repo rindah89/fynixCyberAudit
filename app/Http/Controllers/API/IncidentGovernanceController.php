@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API;
 
+use App\Access\FileAccess;
 use App\Enums\IncidentPhase;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListIncidentsRequest;
@@ -14,6 +15,8 @@ use App\Incidents\IncidentDesk;
 use App\Models\Incident;
 use App\Models\IncidentPlaybook;
 use App\Models\IncidentTask;
+use App\Models\IncidentTaskEvent;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
 class IncidentGovernanceController extends Controller
@@ -66,11 +69,30 @@ class IncidentGovernanceController extends Controller
     {
         $event = $desk->recordTaskEvent($request->user(), $task, $request->validated());
 
-        return response()->json(['data' => $event->load('actor:id,name'), 'task' => $task->refresh()->load('assignee:id,name')], JsonResponse::HTTP_CREATED);
+        return response()->json(['data' => $this->visibleEvent($event, $request->user()), 'task' => $task->refresh()->load('assignee:id,name')], JsonResponse::HTTP_CREATED);
     }
 
     public function taskEvents(ListIncidentTaskEventsRequest $request, IncidentTask $task): JsonResponse
     {
-        return response()->json($task->events()->with('actor:id,name')->paginate($request->integer('per_page', 50)));
+        $events = $task->events()->with([
+            'actor:id,name', 'evidence.linkedBy:id,name', 'evidence.attachment.audit.members',
+            'evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ])->paginate($request->integer('per_page', 50));
+        $events->getCollection()->transform(fn (IncidentTaskEvent $event) => $this->visibleEvent($event, $request->user()));
+
+        return response()->json($events);
+    }
+
+    private function visibleEvent(IncidentTaskEvent $event, User $actor): IncidentTaskEvent
+    {
+        $event->loadMissing([
+            'actor:id,name', 'evidence.linkedBy:id,name', 'evidence.attachment.audit.members',
+            'evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ]);
+        $visible = clone $event;
+        $visible->setRelation('evidence', $event->evidence->filter(fn ($evidence): bool => $evidence->attachment !== null
+            && app(FileAccess::class)->canDownloadFileAttachment($actor, $evidence->attachment))->values());
+
+        return $visible;
     }
 }

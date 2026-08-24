@@ -11,6 +11,7 @@ use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\IncidentEvidence;
+use App\Models\IncidentTaskEventEvidence;
 use App\Models\PolicyAttestationEvidence;
 use App\Models\PolicyExceptionMonitoringReviewEvidence;
 use App\Models\RecoveryExerciseEvidence;
@@ -277,6 +278,19 @@ class FileAccess
         return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
     }
 
+    public function streamIncidentTaskEventEvidence(User $actor, IncidentTaskEventEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['event.task.incident', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $task = $evidence->event?->task;
+        $incident = $task?->incident;
+        $canViewTask = $incident && ($actor->can('view', $incident) || $actor->can('Manage Incident Tasks') || $task->assignee_id === $actor->id);
+        if (! $canViewTask || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed incident task evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
@@ -289,7 +303,8 @@ class FileAccess
                 ->orWhereHas('policyAttestationEvidence')
                 ->orWhereHas('riskGovernanceReviewEvidence')
                 ->orWhereHas('auditFindingFollowUpEvidence')
-                ->orWhereHas('auditProcedureExecutionEvidence'))
+                ->orWhereHas('auditProcedureExecutionEvidence')
+                ->orWhereHas('incidentTaskEventEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

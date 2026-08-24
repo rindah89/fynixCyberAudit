@@ -5,18 +5,21 @@ namespace App\Models;
 use App\Enums\IncidentTaskStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use RuntimeException;
 
 class IncidentTaskEvent extends Model
 {
+    protected $hidden = ['evidence_manifest'];
+
     protected $fillable = [
         'incident_id', 'incident_task_id', 'version', 'event_type', 'from_status', 'to_status',
-        'before_snapshot', 'after_snapshot', 'summary', 'recorded_by', 'recorded_at', 'fingerprint',
+        'before_snapshot', 'after_snapshot', 'evidence_manifest', 'summary', 'recorded_by', 'recorded_at', 'fingerprint',
     ];
 
     protected $casts = [
         'from_status' => IncidentTaskStatus::class, 'to_status' => IncidentTaskStatus::class,
-        'before_snapshot' => 'array', 'after_snapshot' => 'array', 'recorded_at' => 'datetime',
+        'before_snapshot' => 'array', 'after_snapshot' => 'array', 'evidence_manifest' => 'array', 'recorded_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -38,5 +41,10 @@ class IncidentTaskEvent extends Model
     public function actor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by')->withTrashed();
+    }
+
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(IncidentTaskEventEvidence::class);
     }
 }

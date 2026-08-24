@@ -11,6 +11,7 @@ Fynix Cyber Audit provides a deliberately operated cyber-incident register with 
 5. Authorized readers inspect bounded paginated incident history through REST or **Incidents → Incidents**. The operator detail exposes the captured playbook and complete governed phase history.
 6. Up to 100 tasks are seeded from the captured playbook. An incident manager may assign/reassign a task, set a current/future due date, and move it through `Open`, `In Progress`, `Blocked`, `Completed`, or `Cancelled`; the current assignee may change only its status. Work cannot start before the incident reaches the task's configured response phase, and completed/cancelled tasks are terminal.
 7. Every governed task starts with a seed event. Each later mutation retains a server version, before/after task and incident-phase snapshots, summary, actor/time, and SHA-256 fingerprint. A task retains at most 100 events.
+8. A later task event may bind up to 20 accepted data-request attachments currently accessible to its actor. The server locks their accepted provenance, streams and retains dedicated copies within 10 MiB/file and 50 MiB/request limits, and binds immutable source identities, actual size, retained location, and SHA-256 manifests into the event fingerprint. A failed selection or copy rolls back the task mutation, event, and evidence rows; successfully written uncommitted copies are tracked and cleaned through compensating storage deletion.
 
 The current incident record remains operational state. The append-only transition snapshot is the evidence of what the register contained at each phase decision. A later change does not rewrite earlier transition evidence.
 
@@ -29,6 +30,9 @@ Incidents created before this governed lifecycle are visibly labeled `legacy`. T
 - Current assignees may inspect their assigned task's governed history without receiving the broader incident workspace; incident readers and task managers may also inspect it.
 - Task mutations lock the incident and task before current reauthorization; any selected active assignee is then locked and validated before mutation.
 - Caller-supplied event versions, snapshots, attribution, timestamps, and fingerprints are rejected.
+- Caller-supplied evidence manifests are rejected. Evidence selection accepts only distinct attachment IDs from accepted responses that the actor can currently download.
+- Exact retained-copy downloads independently require current task-workspace access and current access to the linked source attachment. REST and operator history omit unauthorized evidence existence and metadata.
+- Source attachment identity and deletion are protected while governed task-event evidence references it; retained copies remain independent of later source-byte replacement.
 - Playbook identity/content and seeded task definitions are captured under locks with creation.
 - Database administrators and storage administrators remain outside product-interface immutability guarantees.
 
@@ -41,8 +45,8 @@ Incidents created before this governed lifecycle are visibly labeled `legacy`. T
 - `POST /api/incident-tasks/{task}/events`
 - `GET /api/incident-tasks/{task}/events?page=1&per_page=50`
 
-List pages accept one to 100 records. Creation accepts deliberate operator facts; phase transition accepts the next phase and a summary.
+List pages accept one to 100 records. Creation accepts deliberate operator facts; phase transition accepts the next phase and a summary. Task-event mutation accepts a required summary, at least one governed state change, and optional `evidence_attachment_ids` containing up to 20 distinct accepted attachment IDs. Its response and history include only evidence authorized under the exact attachment ACL. Retained content is downloaded through the authenticated evidence link exposed in that history.
 
 ## Explicit limitations
 
-Severity, type, detection time, data/PII/breach flags, playbooks, assignments, due dates, task states, and summaries are deliberate human inputs. Fynix does not discover incidents, validate breach or legal-notification status, ingest SIEM/EDR telemetry, calculate regulatory deadlines, send crisis communications, authenticate incident evidence, select response actions, execute containment/recovery, integrate automatically with ITSM major incidents, or prove task/response effectiveness. This foundation does not yet claim governed notification, lessons, report, or incident-file evidence workflows.
+Severity, type, detection time, data/PII/breach flags, playbooks, assignments, due dates, task states, evidence selection, and summaries are deliberate human inputs. Hashes identify retained bytes; they do not prove evidence truth, sufficiency, authenticity, relevance, task completion, response effectiveness, or that the state decision was derived from the file. Fynix does not discover incidents, validate breach or legal-notification status, ingest SIEM/EDR telemetry, calculate regulatory deadlines, send crisis communications, select response actions, execute containment/recovery, or integrate automatically with ITSM major incidents. Storage-adapter or administrator failures, including a failed compensating deletion, remain outside the product transaction guarantee. This foundation does not yet claim phase-decision evidence, governed notification, lessons, or final incident-report workflows.

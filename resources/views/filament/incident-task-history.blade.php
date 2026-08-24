@@ -12,6 +12,16 @@
                 <div><dt class="font-medium">Due date</dt><dd>{{ data_get($event->after_snapshot, 'due_date', __('None')) }}</dd></div>
                 <div><dt class="font-medium">Fingerprint</dt><dd class="break-all font-mono text-xs">{{ $event->fingerprint }}</dd></div>
             </dl>
+            @if ($event->evidence->isNotEmpty())
+                <div class="mt-3 border-t border-gray-200 pt-3">
+                    <strong>{{ __('Governed evidence') }}</strong>
+                    <ul class="mt-2 space-y-1">
+                        @foreach ($event->evidence as $evidence)
+                            <li><a class="underline" href="{{ route('incident-task-event-evidence.download', $evidence) }}">{{ $evidence->file_name_snapshot }}</a> · {{ $evidence->file_size_snapshot }} bytes · <span class="font-mono text-xs">{{ $evidence->sha256 }}</span></li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
         </section>
     @endforeach
 </div>
