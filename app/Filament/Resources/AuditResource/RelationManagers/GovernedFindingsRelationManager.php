@@ -9,6 +9,7 @@ use App\Enums\WorkflowStatus;
 use App\Filament\Exports\AuditFindingExporter;
 use App\Models\AuditCloseoutSubmission;
 use App\Models\AuditFinding;
+use App\Models\FileAttachment;
 use App\Models\RemediationProject;
 use App\Models\User;
 use App\Services\AuditFindingManager;
@@ -33,7 +34,11 @@ class GovernedFindingsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['auditItem.auditable', 'accountableOwner:id,name', 'raiser:id,name', 'responses.respondent:id,name', 'latestResponse', 'remediation.task', 'remediation.followUps.reviewer:id,name', 'remediation.handoffActor:id,name']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with([
+            'auditItem.auditable', 'accountableOwner:id,name', 'raiser:id,name', 'responses.respondent:id,name', 'latestResponse',
+            'remediation.task', 'remediation.followUps.reviewer:id,name', 'remediation.handoffActor:id,name',
+            'remediation.followUps.evidence.attachment.audit.members', 'remediation.followUps.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ]))
             ->defaultSort('id', 'desc')->columns([
                 TextColumn::make('code')->searchable(), TextColumn::make('title')->searchable(), TextColumn::make('severity')->badge(),
                 TextColumn::make('accountableOwner.name')->label('Management owner'), TextColumn::make('latestResponse.position')->label('Position')->badge()->placeholder('Pending'),
@@ -77,6 +82,11 @@ class GovernedFindingsRelationManager extends RelationManager
                         Select::make('outcome')->options(AuditFindingFollowUpOutcome::class)->required(),
                         Textarea::make('summary')->maxLength(30000)->required(),
                         TextInput::make('evidence_reference')->maxLength(2000),
+                        Select::make('evidence_attachment_ids')->label('Governed follow-up evidence')
+                            ->multiple()->maxItems(20)->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => $this->evidenceOptions($search))
+                            ->getOptionLabelsUsing(fn (array $values): array => $this->evidenceLabels($values))
+                            ->helperText('Effective follow-up requires accepted audit evidence you can access. Fynix retains content and SHA-256 snapshots.'),
                     ])->action(fn (AuditFinding $record, array $data) => app(AuditFindingRemediationManager::class)->followUp($record->remediation, auth()->user(), $data)),
                 Action::make('inspect')->icon('heroicon-o-eye')->modalSubmitAction(false)->modalCancelActionLabel('Close')
                     ->modalContent(fn (AuditFinding $record) => view('filament.audit-finding', ['finding' => $record])),
@@ -102,5 +112,18 @@ class GovernedFindingsRelationManager extends RelationManager
 
         return ! in_array($actor->id, array_filter($excluded), true)
             && ! $finding->responses->contains('responded_by', $actor->id);
+    }
+
+    private function evidenceOptions(string $search): array
+    {
+        return FileAttachment::query()->eligibleGovernedEvidenceFor(auth()->user())
+            ->where('file_name', 'like', '%'.addcslashes($search, '%_').'%')
+            ->orderByDesc('id')->limit(50)->pluck('file_name', 'id')->all();
+    }
+
+    private function evidenceLabels(array $values): array
+    {
+        return FileAttachment::query()->eligibleGovernedEvidenceFor(auth()->user())
+            ->whereKey($values)->pluck('file_name', 'id')->all();
     }
 }

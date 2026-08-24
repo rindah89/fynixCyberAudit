@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API;
 
+use App\Access\FileAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListAuditFindingsRequest;
 use App\Http\Requests\ShowAuditFindingRequest;
@@ -30,9 +31,22 @@ class AuditFindingController extends Controller
         return response()->json(['data' => $manager->raise($audit, $request->user(), $request->validated())], 201);
     }
 
-    public function show(ShowAuditFindingRequest $request, AuditFinding $finding): JsonResponse
+    public function show(ShowAuditFindingRequest $request, AuditFinding $finding, FileAccess $files): JsonResponse
     {
-        return response()->json(['data' => $finding->load(['accountableOwner:id,name', 'raiser:id,name', 'responses.respondent:id,name', 'remediation.task', 'remediation.handoffActor:id,name', 'remediation.followUps.reviewer:id,name'])]);
+        $finding->load([
+            'accountableOwner:id,name', 'raiser:id,name', 'responses.respondent:id,name', 'remediation.task', 'remediation.handoffActor:id,name',
+            'remediation.followUps.reviewer:id,name', 'remediation.followUps.evidence.attachment.audit.members',
+            'remediation.followUps.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ]);
+        foreach ($finding->remediation?->followUps ?? [] as $followUp) {
+            $authorizedEvidence = $followUp->evidence->filter(fn ($evidence): bool => $evidence->attachment && $files->canDownloadFileAttachment($request->user(), $evidence->attachment))->values();
+            $authorizedIds = $authorizedEvidence->pluck('file_attachment_id');
+            $authorizedEvidence->each(fn ($evidence) => $evidence->unsetRelation('attachment'));
+            $followUp->setRelation('evidence', $authorizedEvidence);
+            $followUp->setAttribute('evidence_manifest', collect($followUp->evidence_manifest)->whereIn('file_attachment_id', $authorizedIds)->values()->all());
+        }
+
+        return response()->json(['data' => $finding]);
     }
 
     public function respond(StoreAuditManagementResponseRequest $request, AuditFinding $finding, AuditFindingManager $manager): JsonResponse

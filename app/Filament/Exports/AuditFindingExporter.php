@@ -21,7 +21,15 @@ class AuditFindingExporter extends Exporter
             ExportColumn::make('source_snapshot')->state(fn (AuditFinding $record): string => json_encode($record->source_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('raiser.name'), ExportColumn::make('raised_at'), ExportColumn::make('fingerprint'),
             ExportColumn::make('responses')->state(fn (AuditFinding $record): string => json_encode($record->responses->map->only(['version', 'position', 'response', 'action_plan', 'target_date', 'finding_snapshot', 'responded_by', 'responded_at', 'fingerprint'])->all(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
-            ExportColumn::make('remediation')->state(fn (AuditFinding $record): ?string => $record->remediation ? json_encode($record->remediation->toArray(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) : null),
+            ExportColumn::make('remediation')->state(function (AuditFinding $record): ?string {
+                if (! $record->remediation) {
+                    return null;
+                }
+                $handoff = $record->remediation->only(['id', 'audit_finding_id', 'audit_management_response_id', 'remediation_task_id', 'finding_snapshot', 'response_snapshot', 'task_snapshot', 'handed_off_by', 'handed_off_at', 'fingerprint']);
+                $handoff['follow_ups'] = $record->remediation->followUps->map->only(['version', 'outcome', 'summary', 'evidence_reference', 'handoff_snapshot', 'task_snapshot', 'reviewed_by', 'reviewed_at', 'fingerprint'])->all();
+
+                return json_encode($handoff, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            }),
         ];
     }
 

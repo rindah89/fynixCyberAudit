@@ -11,6 +11,9 @@ use App\Models\Audit;
 use App\Models\AuditFinding;
 use App\Models\AuditFindingFollowUp;
 use App\Models\AuditItem;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\RemediationTask;
 use App\Models\User;
 use App\Remediation\Remediation;
@@ -19,6 +22,7 @@ use App\Services\AuditFindingRemediationManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use LogicException;
@@ -34,6 +38,7 @@ class AuditFindingRemediationTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         Config::set('enterprise.modules.remediation', true);
+        Storage::fake('private');
     }
 
     public function test_authorized_manager_hands_agreed_finding_to_remediation_with_immutable_evidence(): void
@@ -79,11 +84,14 @@ class AuditFindingRemediationTest extends TestCase
         app(Remediation::class)->updateTaskStatus($manager, $handoff->task, 'Completed');
         $reviewer = User::factory()->create();
         $reviewer->givePermissionTo('Update Audits');
+        $reviewer->givePermissionTo('Read Audits');
+        $attachment = $this->acceptedEvidence($reviewer, 'finding-follow-up/reperformance.txt', 'reperformance evidence bytes');
 
         $followUp = app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, [
             'outcome' => 'effective',
             'summary' => 'Reperformance confirmed that quarterly access reviews are complete and operating.',
             'evidence_reference' => 'DR-2026-104 accepted response',
+            'evidence_attachment_ids' => [$attachment->id],
         ]);
 
         $this->assertSame(1, $followUp->version);
@@ -92,6 +100,22 @@ class AuditFindingRemediationTest extends TestCase
         $this->assertSame('Completed', $followUp->task_snapshot['status']);
         $this->assertSame($handoff->fingerprint, $followUp->handoff_snapshot['fingerprint']);
         $this->assertSame(hash('sha256', json_encode($followUp->fingerprintPayload(), JSON_THROW_ON_ERROR)), $followUp->fingerprint);
+        $this->assertSame($attachment->id, $followUp->evidence->first()->file_attachment_id);
+        $this->assertSame(hash('sha256', 'reperformance evidence bytes'), $followUp->evidence->first()->sha256);
+        Storage::disk('private')->put($attachment->file_path, 'later source replacement');
+        $this->actingAs($reviewer, 'web')->get(route('audit-finding-follow-up-evidence.download', $followUp->evidence->first()))
+            ->assertSuccessful()->assertStreamedContent('reperformance evidence bytes');
+        $reviewer->revokePermissionTo('Read Audits');
+        $this->actingAs($reviewer, 'web')->get(route('audit-finding-follow-up-evidence.download', $followUp->evidence->first()))
+            ->assertForbidden();
+        $this->actingAs(User::factory()->create(), 'web')->get(route('audit-finding-follow-up-evidence.download', $followUp->evidence->first()))
+            ->assertForbidden();
+        try {
+            $attachment->delete();
+            $this->fail('A governed follow-up source attachment was deleted.');
+        } catch (LogicException) {
+            $this->assertDatabaseHas('file_attachments', ['id' => $attachment->id]);
+        }
         try {
             app(Remediation::class)->updateTaskStatus($manager, $handoff->task->fresh(), 'In Progress');
             $this->fail('A task with final effective follow-up was reopened.');
@@ -163,6 +187,13 @@ class AuditFindingRemediationTest extends TestCase
             $this->assertSame(403, $exception->getStatusCode());
         }
 
+        try {
+            app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, ['outcome' => 'effective', 'summary' => 'Unsupported effective conclusion.']);
+            $this->fail('An effective conclusion was recorded without governed evidence.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('evidence_attachment_ids', $exception->errors());
+        }
+
         $first = app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, ['outcome' => 'ineffective', 'summary' => 'Two samples still failed.']);
         $this->assertSame(1, $first->version);
         try {
@@ -175,7 +206,8 @@ class AuditFindingRemediationTest extends TestCase
         app(Remediation::class)->updateTaskStatus($manager, $handoff->task->fresh(), 'In Progress');
         $this->travel(1)->seconds();
         app(Remediation::class)->updateTaskStatus($manager, $handoff->task->fresh(), 'Completed');
-        $second = app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, ['outcome' => 'effective', 'summary' => 'Reperformance now passes.']);
+        $evidence = $this->acceptedEvidence($reviewer, 'finding-follow-up/rework.txt', 'rework evidence');
+        $second = app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, ['outcome' => 'effective', 'summary' => 'Reperformance now passes.', 'evidence_attachment_ids' => [$evidence->id]]);
         $this->assertSame(2, $second->version);
 
         $this->expectException(ValidationException::class);
@@ -200,6 +232,7 @@ class AuditFindingRemediationTest extends TestCase
         app(Remediation::class)->updateTaskStatus($manager, $task, 'Completed');
         $reviewer = User::factory()->create();
         $reviewer->givePermissionTo('Update Audits');
+        $attachment = $this->acceptedEvidence($reviewer, 'finding-follow-up/rest.txt', 'REST evidence');
 
         $this->actingAs($reviewer)->postJson("/api/audit-finding-remediations/{$handoff['id']}/follow-ups", [
             'outcome' => 'effective',
@@ -209,12 +242,43 @@ class AuditFindingRemediationTest extends TestCase
         $this->actingAs($reviewer)->postJson("/api/audit-finding-remediations/{$handoff['id']}/follow-ups", [
             'outcome' => 'effective',
             'summary' => 'Independent reperformance confirms the corrective action operates.',
-        ])->assertCreated()->assertJsonPath('data.version', 1);
+            'evidence_attachment_ids' => [$attachment->id],
+        ])->assertCreated()->assertJsonPath('data.version', 1)
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id)
+            ->assertJsonPath('data.evidence.0.sha256', hash('sha256', 'REST evidence'));
 
         $this->actingAs($manager)->getJson("/api/audit-findings/{$finding->id}")
             ->assertOk()
             ->assertJsonPath('data.remediation.id', $handoff['id'])
-            ->assertJsonPath('data.remediation.follow_ups.0.outcome', 'effective');
+            ->assertJsonPath('data.remediation.follow_ups.0.outcome', 'effective')
+            ->assertJsonPath('data.remediation.follow_ups.0.evidence_manifest', [])
+            ->assertJsonCount(0, 'data.remediation.follow_ups.0.evidence');
+    }
+
+    public function test_mixed_unauthorized_evidence_selection_rolls_back_follow_up_and_retained_copies(): void
+    {
+        [$finding, $manager] = $this->respondedFinding();
+        $project = app(Remediation::class)->createProject($manager, ['name' => 'Finding corrective action']);
+        $handoff = app(AuditFindingRemediationManager::class)->handoff($finding, $manager, $project, []);
+        app(Remediation::class)->updateTaskStatus($manager, $handoff->task, 'Completed');
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo('Update Audits');
+        $authorized = $this->acceptedEvidence($reviewer, 'finding-follow-up/authorized.txt', 'authorized bytes');
+        $foreign = $this->acceptedEvidence(User::factory()->create(), 'finding-follow-up/foreign.txt', 'foreign bytes');
+
+        try {
+            app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, [
+                'outcome' => 'effective', 'summary' => 'Mixed evidence must reject.',
+                'evidence_attachment_ids' => [$authorized->id, $foreign->id],
+            ]);
+            $this->fail('Unauthorized evidence was retained for a follow-up.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('evidence_attachment_ids.1', $exception->errors());
+        }
+
+        $this->assertDatabaseCount('audit_finding_follow_ups', 0);
+        $this->assertDatabaseCount('audit_finding_follow_up_evidence', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles('governed-evidence/audit-finding-follow-up'));
     }
 
     public function test_operator_export_factories_and_migration_expose_remediation_follow_up_evidence(): void
@@ -226,7 +290,8 @@ class AuditFindingRemediationTest extends TestCase
         app(Remediation::class)->updateTaskStatus($manager, $handoff->task, 'Completed');
         $reviewer = User::factory()->create();
         $reviewer->givePermissionTo('Update Audits');
-        $followUp = app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, ['outcome' => 'effective', 'summary' => 'Independent reperformance passes.']);
+        $attachment = $this->acceptedEvidence($reviewer, 'finding-follow-up/operator.txt', 'operator evidence');
+        $followUp = app(AuditFindingRemediationManager::class)->followUp($handoff, $reviewer, ['outcome' => 'effective', 'summary' => 'Independent reperformance passes.', 'evidence_attachment_ids' => [$attachment->id]]);
 
         $this->actingAs($manager, 'web');
         Livewire::test(GovernedFindingsRelationManager::class, ['ownerRecord' => $finding->audit, 'pageClass' => ViewAudit::class])
@@ -243,6 +308,11 @@ class AuditFindingRemediationTest extends TestCase
         $migration->up();
         $migration->down();
         $this->assertDatabaseHas('audit_finding_follow_ups', ['id' => $factoryFollowUp->id]);
+        $evidenceMigration = require database_path('migrations/2026_08_24_440000_create_audit_finding_follow_up_evidence.php');
+        $evidenceMigration->up();
+        $evidenceMigration->down();
+        $this->assertDatabaseHas('audit_finding_follow_up_evidence', ['id' => $followUp->evidence->first()->id]);
+        $this->assertNotEmpty($followUp->fresh()->evidence_manifest);
     }
 
     /** @return array{AuditFinding, User, User} */
@@ -271,5 +341,19 @@ class AuditFindingRemediationTest extends TestCase
         ]);
 
         return [$finding->fresh(['latestResponse']), $manager, $owner];
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create(['audit_id' => $audit->id, 'created_by_id' => $auditManager->id, 'assigned_to_id' => $auditManager->id]);
+        $response = DataRequestResponse::factory()->accepted()->create(['data_request_id' => $request->id, 'requester_id' => $auditManager->id, 'requestee_id' => $auditManager->id]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed audit-finding follow-up evidence', 'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

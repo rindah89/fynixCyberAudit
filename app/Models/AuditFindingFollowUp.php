@@ -6,15 +6,16 @@ use App\Enums\AuditFindingFollowUpOutcome;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 
 class AuditFindingFollowUp extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['audit_finding_remediation_id', 'version', 'outcome', 'summary', 'evidence_reference', 'handoff_snapshot', 'task_snapshot', 'reviewed_by', 'reviewed_at', 'fingerprint'];
+    protected $fillable = ['audit_finding_remediation_id', 'version', 'outcome', 'summary', 'evidence_reference', 'evidence_manifest', 'handoff_snapshot', 'task_snapshot', 'reviewed_by', 'reviewed_at', 'fingerprint'];
 
-    protected $casts = ['outcome' => AuditFindingFollowUpOutcome::class, 'handoff_snapshot' => 'array', 'task_snapshot' => 'array', 'reviewed_at' => 'datetime'];
+    protected $casts = ['outcome' => AuditFindingFollowUpOutcome::class, 'evidence_manifest' => 'array', 'handoff_snapshot' => 'array', 'task_snapshot' => 'array', 'reviewed_at' => 'datetime'];
 
     protected static function booted(): void
     {
@@ -32,6 +33,11 @@ class AuditFindingFollowUp extends Model
         return $this->belongsTo(User::class, 'reviewed_by')->withTrashed();
     }
 
+    public function evidence(): HasMany
+    {
+        return $this->hasMany(AuditFindingFollowUpEvidence::class);
+    }
+
     public function fingerprintPayload(): array
     {
         return [
@@ -40,6 +46,7 @@ class AuditFindingFollowUp extends Model
             'outcome' => $this->outcome->value,
             'summary' => $this->summary,
             'evidence_reference' => $this->evidence_reference,
+            'evidence_manifest' => $this->evidence_manifest,
             'handoff_snapshot' => $this->handoff_snapshot,
             'task_snapshot' => $this->task_snapshot,
             'reviewed_by' => $this->reviewed_by,

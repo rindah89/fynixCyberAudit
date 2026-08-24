@@ -19,9 +19,10 @@ class AuditFindingFollowUpFactory extends Factory
         return [
             'audit_finding_remediation_id' => AuditFindingRemediation::factory(),
             'version' => 1,
-            'outcome' => AuditFindingFollowUpOutcome::Effective,
+            'outcome' => AuditFindingFollowUpOutcome::Ineffective,
             'summary' => 'Independent reperformance confirms the corrective action operates as intended.',
             'evidence_reference' => 'Accepted audit response reference',
+            'evidence_manifest' => [],
             'handoff_snapshot' => fn (array $a): array => AuditFindingRemediation::query()->findOrFail($a['audit_finding_remediation_id'])->toArray(),
             'task_snapshot' => function (array $a): array {
                 $task = AuditFindingRemediation::query()->findOrFail($a['audit_finding_remediation_id'])->task;
@@ -40,6 +41,7 @@ class AuditFindingFollowUpFactory extends Factory
                 'audit_finding_remediation_id' => $a['audit_finding_remediation_id'], 'version' => $a['version'],
                 'outcome' => $a['outcome'] instanceof AuditFindingFollowUpOutcome ? $a['outcome']->value : $a['outcome'],
                 'summary' => $a['summary'], 'evidence_reference' => $a['evidence_reference'],
+                'evidence_manifest' => $a['evidence_manifest'],
                 'handoff_snapshot' => $a['handoff_snapshot'], 'task_snapshot' => $a['task_snapshot'],
                 'reviewed_by' => $a['reviewed_by'], 'reviewed_at' => $a['reviewed_at']->toIso8601String(),
             ], JSON_THROW_ON_ERROR)),

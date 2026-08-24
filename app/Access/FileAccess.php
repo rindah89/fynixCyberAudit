@@ -4,6 +4,7 @@ namespace App\Access;
 
 use App\Models\AiJob;
 use App\Models\AiMonitoringReviewEvidence;
+use App\Models\AuditFindingFollowUpEvidence;
 use App\Models\ControlTestExecutionEvidence;
 use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
@@ -226,6 +227,20 @@ class FileAccess
         );
     }
 
+    public function streamAuditFindingFollowUpEvidence(User $actor, AuditFindingFollowUpEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['followUp.remediation.finding.audit', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $followUp = $evidence->followUp;
+        $finding = $followUp?->remediation?->finding;
+        $canViewFinding = $finding && ((int) $finding->accountable_owner_id === (int) $actor->id
+            || $actor->can('view', $finding->audit));
+        if (! $canViewFinding || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed audit-finding follow-up evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
     public function deleteUnreferencedFileAttachmentPath(string $disk, string $path): void
     {
         $path = $this->normalizePath($path);
@@ -236,7 +251,8 @@ class FileAccess
                 ->orWhereHas('vendorRiskReviewEvidence')
                 ->orWhereHas('recoveryExerciseEvidence')
                 ->orWhereHas('policyAttestationEvidence')
-                ->orWhereHas('riskGovernanceReviewEvidence'))
+                ->orWhereHas('riskGovernanceReviewEvidence')
+                ->orWhereHas('auditFindingFollowUpEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

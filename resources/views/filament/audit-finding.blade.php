@@ -27,6 +27,14 @@
             <div><strong>Follow-up v{{ $followUp->version }} · {{ $followUp->outcome->getLabel() }}</strong> · {{ $followUp->reviewer?->name }} · {{ $followUp->reviewed_at }}<br>
                 <span class="whitespace-pre-wrap">{{ $followUp->summary }}</span><br>
                 <strong>Evidence reference:</strong> {{ $followUp->evidence_reference ?: 'None' }}<br>
+                @php($authorizedEvidence = $followUp->evidence->filter(fn ($evidence) => $evidence->attachment && app(\App\Access\FileAccess::class)->canDownloadFileAttachment(auth()->user(), $evidence->attachment)))
+                @if ($authorizedEvidence->isNotEmpty())
+                    <strong>Governed evidence:</strong>
+                    @foreach ($authorizedEvidence as $evidence)
+                        <a class="underline" href="{{ route('audit-finding-follow-up-evidence.download', $evidence) }}">{{ $evidence->file_name_snapshot }}</a>
+                        <span class="break-all">({{ $evidence->sha256 }})</span>@if (! $loop->last), @endif
+                    @endforeach<br>
+                @endif
                 <span class="break-all"><strong>Fingerprint:</strong> {{ $followUp->fingerprint }}</span></div>
         @empty
             <div>Awaiting independent effectiveness follow-up after task completion.</div>

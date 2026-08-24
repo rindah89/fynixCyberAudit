@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Remediation\Remediation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -74,49 +75,70 @@ class AuditFindingRemediationManager
 
     public function followUp(AuditFindingRemediation $remediation, User $actor, array $data): AuditFindingFollowUp
     {
-        return DB::transaction(function () use ($remediation, $actor, $data): AuditFindingFollowUp {
-            $findingId = AuditFindingRemediation::query()->findOrFail($remediation->id)->audit_finding_id;
-            $auditId = AuditFinding::query()->findOrFail($findingId)->audit_id;
-            $audit = Audit::query()->lockForUpdate()->findOrFail($auditId);
-            $finding = AuditFinding::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($findingId);
-            $handoff = AuditFindingRemediation::query()->where('audit_finding_id', $finding->id)->lockForUpdate()->findOrFail($remediation->id);
-            $task = RemediationTask::query()->lockForUpdate()->findOrFail($handoff->remediation_task_id);
-            abort_unless($actor->can('Update Audits'), 403);
-            $responseActorIds = AuditManagementResponse::query()->where('audit_finding_id', $finding->id)->pluck('responded_by');
-            abort_if(in_array($actor->id, array_filter([$audit->manager_id, $finding->accountable_owner_id, $task->owner_id, $task->assignee_id, $handoff->handed_off_by]), true) || $responseActorIds->contains($actor->id), 403, 'The follow-up reviewer must be independent of audit management and remediation ownership.');
-            if (! in_array($task->status, self::COMPLETE_TASK_STATUSES, true)) {
-                throw ValidationException::withMessages(['task' => 'The linked remediation task must be completed before effectiveness follow-up.']);
-            }
-            $validated = Validator::make($data, self::followUpRules())->validate();
-            $prior = $handoff->followUps()->orderBy('version')->lockForUpdate()->get();
-            if ($prior->contains(fn (AuditFindingFollowUp $followUp): bool => $followUp->outcome === AuditFindingFollowUpOutcome::Effective)) {
-                throw ValidationException::withMessages(['finding' => 'An effective finding follow-up is final.']);
-            }
-            if ($prior->count() >= 20) {
-                throw ValidationException::withMessages(['finding' => 'Finding follow-up history is bounded to 20 versions.']);
-            }
-            if ($prior->isNotEmpty() && $prior->last()->task_snapshot === $task->toArray()) {
-                throw ValidationException::withMessages(['task' => 'A later follow-up requires a changed remediation-task snapshot.']);
-            }
-            $reviewedAt = now();
-            $payload = [
-                'audit_finding_remediation_id' => $handoff->id,
-                'version' => ((int) $prior->max('version')) + 1,
-                'outcome' => $validated['outcome'],
-                'summary' => $validated['summary'],
-                'evidence_reference' => $validated['evidence_reference'] ?? null,
-                'handoff_snapshot' => $handoff->toArray(),
-                'task_snapshot' => $task->toArray(),
-                'reviewed_by' => $actor->id,
-                'reviewed_at' => $reviewedAt->toIso8601String(),
-            ];
-            $followUp = AuditFindingFollowUp::query()->create($payload + [
-                'reviewed_at' => $reviewedAt,
-                'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
-            ]);
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-            return $followUp->load(['reviewer:id,name', 'remediation.task']);
-        }, 3);
+        try {
+            return DB::transaction(function () use ($remediation, $actor, $data, $snapshotter, $snapshotBatch, &$retainedCopies): AuditFindingFollowUp {
+                $findingId = AuditFindingRemediation::query()->findOrFail($remediation->id)->audit_finding_id;
+                $auditId = AuditFinding::query()->findOrFail($findingId)->audit_id;
+                $audit = Audit::query()->lockForUpdate()->findOrFail($auditId);
+                $finding = AuditFinding::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($findingId);
+                $handoff = AuditFindingRemediation::query()->where('audit_finding_id', $finding->id)->lockForUpdate()->findOrFail($remediation->id);
+                $task = RemediationTask::query()->lockForUpdate()->findOrFail($handoff->remediation_task_id);
+                abort_unless($actor->can('Update Audits'), 403);
+                $responseActorIds = AuditManagementResponse::query()->where('audit_finding_id', $finding->id)->pluck('responded_by');
+                abort_if(in_array($actor->id, array_filter([$audit->manager_id, $finding->accountable_owner_id, $task->owner_id, $task->assignee_id, $handoff->handed_off_by]), true) || $responseActorIds->contains($actor->id), 403, 'The follow-up reviewer must be independent of audit management and remediation ownership.');
+                if (! in_array($task->status, self::COMPLETE_TASK_STATUSES, true)) {
+                    throw ValidationException::withMessages(['task' => 'The linked remediation task must be completed before effectiveness follow-up.']);
+                }
+                $validated = Validator::make($data, self::followUpRules())->validate();
+                $evidenceAttachmentIds = $validated['evidence_attachment_ids'] ?? [];
+                $prior = $handoff->followUps()->orderBy('version')->lockForUpdate()->get();
+                if ($prior->contains(fn (AuditFindingFollowUp $followUp): bool => $followUp->outcome === AuditFindingFollowUpOutcome::Effective)) {
+                    throw ValidationException::withMessages(['finding' => 'An effective finding follow-up is final.']);
+                }
+                if ($prior->count() >= 20) {
+                    throw ValidationException::withMessages(['finding' => 'Finding follow-up history is bounded to 20 versions.']);
+                }
+                if ($prior->isNotEmpty() && $prior->last()->task_snapshot === $task->toArray()) {
+                    throw ValidationException::withMessages(['task' => 'A later follow-up requires a changed remediation-task snapshot.']);
+                }
+                if ($validated['outcome'] === AuditFindingFollowUpOutcome::Effective->value && $evidenceAttachmentIds === []) {
+                    throw ValidationException::withMessages(['evidence_attachment_ids' => 'An effective follow-up requires at least one governed evidence attachment.']);
+                }
+                $reviewedAt = now();
+                $evidenceManifest = $evidenceAttachmentIds === [] ? [] : $snapshotter->snapshot(
+                    $evidenceAttachmentIds, $actor, 'audit-finding-follow-up', $snapshotBatch, $retainedCopies,
+                );
+                $payload = [
+                    'audit_finding_remediation_id' => $handoff->id,
+                    'version' => ((int) $prior->max('version')) + 1,
+                    'outcome' => $validated['outcome'],
+                    'summary' => $validated['summary'],
+                    'evidence_reference' => $validated['evidence_reference'] ?? null,
+                    'evidence_manifest' => $evidenceManifest,
+                    'handoff_snapshot' => $handoff->toArray(),
+                    'task_snapshot' => $task->toArray(),
+                    'reviewed_by' => $actor->id,
+                    'reviewed_at' => $reviewedAt->toIso8601String(),
+                ];
+                $followUp = AuditFindingFollowUp::query()->create($payload + [
+                    'reviewed_at' => $reviewedAt,
+                    'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
+                ]);
+                foreach ($evidenceManifest as $snapshot) {
+                    $followUp->evidence()->create($snapshot + ['linked_by' => $actor->id, 'linked_at' => $reviewedAt]);
+                }
+
+                return $followUp->load(['reviewer:id,name', 'remediation.task', 'evidence.linkedBy:id,name']);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+
+            throw $exception;
+        }
     }
 
     public static function handoffRules(): array
@@ -134,8 +156,10 @@ class AuditFindingRemediationManager
             'outcome' => ['required', Rule::enum(AuditFindingFollowUpOutcome::class)],
             'summary' => ['required', 'string', 'max:30000'],
             'evidence_reference' => ['nullable', 'string', 'max:2000'],
+            'evidence_attachment_ids' => ['sometimes', 'array', 'max:20'],
+            'evidence_attachment_ids.*' => ['integer', 'distinct'],
             'version' => ['prohibited'], 'handoff_snapshot' => ['prohibited'], 'task_snapshot' => ['prohibited'],
-            'reviewed_by' => ['prohibited'], 'reviewed_at' => ['prohibited'], 'fingerprint' => ['prohibited'],
+            'evidence_manifest' => ['prohibited'], 'reviewed_by' => ['prohibited'], 'reviewed_at' => ['prohibited'], 'fingerprint' => ['prohibited'],
         ];
     }
 }
