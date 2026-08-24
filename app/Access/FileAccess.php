@@ -18,8 +18,13 @@ use App\Models\PolicyExceptionMonitoringReviewEvidence;
 use App\Models\RecoveryExerciseEvidence;
 use App\Models\RiskGovernanceReviewEvidence;
 use App\Models\SurveyAttachment;
+use App\Models\ThirdPartyEngagement;
+use App\Models\ThirdPartyEngagementCollaborationEvent;
+use App\Models\ThirdPartyEngagementCollaborationEvidence;
+use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\TrustCenterDocument;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Models\VendorDocument;
 use App\Models\VendorRiskReviewEvidence;
 use App\Models\VendorUser;
@@ -298,6 +303,35 @@ class FileAccess
         $incident = $evidence->transition?->incident;
         if (! $incident || ! $actor->can('view', $incident) || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
             abort(403, 'You do not have access to this governed incident phase evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
+    public function streamThirdPartyCollaborationEvidence(User $actor, ThirdPartyEngagementCollaborationEvidence $evidence): StreamedResponse
+    {
+        $event = ThirdPartyEngagementCollaborationEvent::query()->find($evidence->third_party_engagement_collaboration_event_id);
+        $collaboration = $event ? ThirdPartyEngagementCollaborationRequest::query()->find($event->third_party_engagement_collaboration_request_id) : null;
+        $engagement = $collaboration ? ThirdPartyEngagement::query()->find($collaboration->third_party_engagement_id) : null;
+        $vendor = $engagement ? Vendor::withTrashed()->find($engagement->vendor_id) : null;
+        $document = VendorDocument::withTrashed()->find($evidence->vendor_document_id);
+        $workspace = $engagement && $vendor && ($actor->can('Manage Third Party Risk') || $actor->can('Read Vendors') || (int) $vendor->vendor_manager_id === (int) $actor->id);
+        if (! $workspace || ! $document || $document->trashed() || ! $this->canDownloadVendorDocument($actor, $document)) {
+            abort(403, 'You do not have access to this governed collaboration evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
+    public function streamVendorThirdPartyCollaborationEvidence(VendorUser $actor, ThirdPartyEngagementCollaborationEvidence $evidence): StreamedResponse
+    {
+        $event = ThirdPartyEngagementCollaborationEvent::query()->find($evidence->third_party_engagement_collaboration_event_id);
+        $collaboration = $event ? ThirdPartyEngagementCollaborationRequest::query()->find($event->third_party_engagement_collaboration_request_id) : null;
+        $engagement = $collaboration ? ThirdPartyEngagement::query()->find($collaboration->third_party_engagement_id) : null;
+        $document = VendorDocument::withTrashed()->find($evidence->vendor_document_id);
+        if (! $collaboration || ! $engagement || (int) $collaboration->recipient_vendor_user_id !== (int) $actor->id
+            || (int) $engagement->vendor_id !== (int) $actor->vendor_id || ! $document || $document->trashed() || ! $this->canDownloadVendorDocument($actor, $document)) {
+            abort(403, 'You do not have access to this governed collaboration evidence.');
         }
 
         return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);

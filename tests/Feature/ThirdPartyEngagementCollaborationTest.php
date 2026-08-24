@@ -4,17 +4,20 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\ThirdPartyRiskResource\Pages\ViewThirdPartyRisk;
 use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRelationManager;
+use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
+use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use Database\Seeders\RolePermissionSeeder;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Livewire\Livewire;
@@ -123,7 +126,7 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $requestPayload['opened_at'] = $request->opened_at->toIso8601String();
         $this->assertSame($request->fingerprint, hash('sha256', json_encode($requestPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
         $eventPayload = collect($event->getAttributes())->except(['id', 'created_at', 'updated_at', 'fingerprint'])->all();
-        foreach (['actor_snapshot', 'request_snapshot'] as $field) {
+        foreach (['actor_snapshot', 'request_snapshot', 'evidence_manifest'] as $field) {
             $eventPayload[$field] = $event->{$field};
         }
         $eventPayload['status'] = $event->status->value;
@@ -199,5 +202,55 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         } catch (ValidationException) {
             $this->assertDatabaseCount('third_party_engagement_collaboration_requests', 100);
         }
+    }
+
+    public function test_provider_response_retains_bounded_document_bytes_with_dual_acl_and_atomic_rejection(): void
+    {
+        Storage::fake('private');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $foreign = VendorUser::factory()->create();
+        $document = VendorDocument::factory()->create(['vendor_id' => $engagement->vendor_id, 'uploaded_by' => $contact->id, 'document_type' => 'other',
+            'name' => 'Provider evidence', 'file_path' => 'vendor-documents/provider.txt', 'file_name' => 'provider.txt', 'file_size' => 17,
+            'mime_type' => 'text/plain', 'status' => 'pending']);
+        $foreignDocument = VendorDocument::factory()->create(['vendor_id' => $foreign->vendor_id, 'uploaded_by' => $foreign->id, 'document_type' => 'other',
+            'name' => 'Foreign evidence', 'file_path' => 'vendor-documents/foreign.txt', 'file_name' => 'foreign.txt', 'file_size' => 7,
+            'mime_type' => 'text/plain', 'status' => 'pending']);
+        Storage::disk('private')->put($document->file_path, 'retained evidence');
+        Storage::disk('private')->put($foreignDocument->file_path, 'foreign');
+        $manager = app(ThirdPartyEngagementCollaborationManager::class);
+        $request = $manager->open($opener, $engagement, ['category' => 'evidence', 'subject' => 'Evidence request', 'request_text' => 'Provide evidence.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => today()->addWeek()->toDateString()]);
+
+        try {
+            $manager->respond($contact, $request, ['response_text' => 'Mixed response.', 'vendor_document_ids' => [$document->id, $foreignDocument->id]]);
+            $this->fail('Mixed-vendor evidence must fail atomically.');
+        } catch (ValidationException) {
+            $this->assertDatabaseCount('third_party_engagement_collaboration_evidence', 0);
+            $this->assertSame(1, $request->events()->count());
+        }
+
+        $response = $manager->respond($contact, $request, ['response_text' => 'Evidence supplied.', 'vendor_document_ids' => [$document->id]]);
+        $evidence = $response->evidence()->firstOrFail();
+        $this->assertSame(hash('sha256', 'retained evidence'), $evidence->sha256);
+        Storage::disk('private')->put($document->file_path, 'replacement');
+        $this->actingAs($opener, 'web')->get(route('third-party-collaboration-evidence.download', $evidence))->assertOk()->assertStreamedContent('retained evidence');
+        $this->actingAs($contact, 'vendor')->get(route('vendor.third-party-collaboration-evidence.download', $evidence))->assertOk()->assertStreamedContent('retained evidence');
+        $this->actingAs($foreign, 'vendor')->get(route('vendor.third-party-collaboration-evidence.download', $evidence))->assertForbidden();
+        $document->delete();
+        $this->actingAs($contact, 'vendor');
+        $portalRequest = CollaborationRequestResource::getEloquentQuery()->findOrFail($request->id);
+        $this->assertCount(0, $portalRequest->events->last()->evidence);
+        $this->get(route('vendor.third-party-collaboration-evidence.download', $evidence))->assertForbidden();
+        $restrictedStaff = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        Sanctum::actingAs($restrictedStaff);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonCount(0, 'data.0.events.1.evidence')->assertJsonMissing(['file_name_snapshot' => 'provider.txt']);
+        $this->actingAs($restrictedStaff, 'web')->get(route('third-party-collaboration-evidence.download', $evidence))->assertForbidden();
+
+        $migration = require database_path('migrations/2026_08_24_820000_create_third_party_collaboration_evidence.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_engagement_collaboration_evidence', ['id' => $evidence->id]);
     }
 }

@@ -18,7 +18,9 @@ use App\Http\Controllers\PolicyExceptionMonitoringReviewEvidenceController;
 use App\Http\Controllers\RecoveryExerciseEvidenceController;
 use App\Http\Controllers\RiskGovernanceReviewEvidenceController;
 use App\Http\Controllers\SurveyAttachmentController;
+use App\Http\Controllers\ThirdPartyCollaborationEvidenceController;
 use App\Http\Controllers\TrustCenterController;
+use App\Http\Controllers\Vendor\ThirdPartyCollaborationEvidenceController as VendorThirdPartyCollaborationEvidenceController;
 use App\Http\Controllers\Vendor\VendorAuthController;
 use App\Http\Controllers\Vendor\VendorDocumentController;
 use App\Http\Controllers\VendorRiskReviewEvidenceController;
@@ -77,6 +79,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('incident-task-event-evidence.download');
     Route::get('/app/incident-phase-transition-evidence/{evidence}/download', [IncidentPhaseTransitionEvidenceController::class, 'download'])
         ->name('incident-phase-transition-evidence.download');
+    Route::get('/app/third-party-collaboration-evidence/{evidence}/download', [ThirdPartyCollaborationEvidenceController::class, 'download'])
+        ->name('third-party-collaboration-evidence.download');
     Route::get('/app/incident-final-reports/{report}/download', [IncidentFinalReportController::class, 'download'])
         ->name('incident-final-reports.download');
 
@@ -132,6 +136,8 @@ Route::get('/portal/survey-access', SurveyAccess::class)
 Route::middleware(['auth:vendor'])->group(function () {
     Route::get('/portal/document/{vendorDocument}/download', [VendorDocumentController::class, 'download'])
         ->name('vendor.document.download');
+    Route::get('/portal/collaboration-evidence/{evidence}/download', [VendorThirdPartyCollaborationEvidenceController::class, 'download'])
+        ->name('vendor.third-party-collaboration-evidence.download');
 });
 
 // Trust Center Routes (public)

@@ -49,7 +49,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events', 'collaborationRequests.latestEvent'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -87,6 +87,7 @@ class EngagementsRelationManager extends RelationManager
                         $manager = app(ThirdPartyEngagementDueDiligenceManager::class);
                         $visible = clone $record;
                         $visible->setRelation('dueDiligenceReviews', $manager->visibleReviews($record->dueDiligenceReviews, auth()->user()));
+                        $visible->setRelation('collaborationRequests', app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($record->collaborationRequests, auth()->user()));
 
                         return view('filament.third-party-engagement', ['engagement' => $visible]);
                     }),

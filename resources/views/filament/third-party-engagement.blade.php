@@ -171,6 +171,9 @@
                     @if ($event->response_text)<div class="whitespace-pre-wrap">{{ $event->response_text }}</div>@endif
                     @if ($event->summary)<div class="whitespace-pre-wrap">{{ $event->summary }}</div>@endif
                     <div>Source reference: {{ $event->source_reference ?: 'None recorded' }}</div>
+                    @foreach ($event->evidence as $evidence)
+                        <div><a class="underline" href="{{ route('third-party-collaboration-evidence.download', $evidence) }}" target="_blank">{{ $evidence->file_name_snapshot }}</a> · {{ $evidence->file_size_snapshot }} bytes · <span class="break-all font-mono text-xs">{{ $evidence->sha256 }}</span></div>
+                    @endforeach
                     <div class="break-all font-mono text-xs">{{ $event->fingerprint }}</div>
                 </div>
             @endforeach

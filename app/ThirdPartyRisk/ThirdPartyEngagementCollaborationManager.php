@@ -2,19 +2,24 @@
 
 namespace App\ThirdPartyRisk;
 
+use App\Access\FileAccess;
 use App\Enums\ThirdPartyCollaborationCategory;
 use App\Enums\ThirdPartyCollaborationStatus;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
+use App\Models\ThirdPartyEngagementCollaborationEvidence;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorUser;
+use App\Services\GovernedVendorDocumentSnapshotter;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -52,19 +57,32 @@ class ThirdPartyEngagementCollaborationManager
 
     public function respond(VendorUser $actor, ThirdPartyEngagementCollaborationRequest $request, array $data): ThirdPartyEngagementCollaborationEvent
     {
-        return DB::transaction(function () use ($actor, $request, $data): ThirdPartyEngagementCollaborationEvent {
-            [$locked, $engagement] = $this->lockRequest($request);
-            $lockedActor = VendorUser::query()->whereNull('deleted_at')->lockForUpdate()->find($actor->id);
-            abort_unless($lockedActor?->hasPassword() && $lockedActor->id === $locked->recipient_vendor_user_id && $lockedActor->vendor_id === $engagement->vendor_id, 403);
-            $data = Validator::make($data, self::responseRules())->validate();
-            $this->assertCollaborativeState($engagement);
-            $latest = $this->latestEvent($locked);
-            if (! in_array($latest->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)) {
-                throw ValidationException::withMessages(['request' => 'This collaboration request is not awaiting a provider response.']);
-            }
+        $batch = Str::uuid()->toString();
+        $retainedCopies = [];
+        $snapshotter = app(GovernedVendorDocumentSnapshotter::class);
+        try {
+            return DB::transaction(function () use ($actor, $request, $data, $batch, &$retainedCopies, $snapshotter): ThirdPartyEngagementCollaborationEvent {
+                [$locked, $engagement] = $this->lockRequest($request);
+                $lockedActor = VendorUser::query()->whereNull('deleted_at')->lockForUpdate()->find($actor->id);
+                abort_unless($lockedActor?->hasPassword() && $lockedActor->id === $locked->recipient_vendor_user_id && $lockedActor->vendor_id === $engagement->vendor_id, 403);
+                $data = Validator::make($data, self::responseRules())->validate();
+                $this->assertCollaborativeState($engagement);
+                $latest = $this->latestEvent($locked);
+                if (! in_array($latest->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)) {
+                    throw ValidationException::withMessages(['request' => 'This collaboration request is not awaiting a provider response.']);
+                }
+                $manifest = ($data['vendor_document_ids'] ?? []) === [] ? [] : $snapshotter->snapshot($data['vendor_document_ids'], $lockedActor, $engagement->vendor_id, $batch, $retainedCopies);
+                $event = $this->appendEvent($locked, ThirdPartyCollaborationStatus::Responded, $lockedActor, $data['response_text'], $data['source_reference'] ?? null, null, now()->startOfSecond(), $manifest);
+                foreach ($manifest as $snapshot) {
+                    ThirdPartyEngagementCollaborationEvidence::query()->create($snapshot + ['third_party_engagement_collaboration_event_id' => $event->id, 'linked_at' => $event->recorded_at]);
+                }
 
-            return $this->appendEvent($locked, ThirdPartyCollaborationStatus::Responded, $lockedActor, $data['response_text'], $data['source_reference'] ?? null, null, now()->startOfSecond());
-        }, 3);
+                return $event->load('evidence.document');
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+            throw $exception;
+        }
     }
 
     public function decide(User $actor, ThirdPartyEngagementCollaborationRequest $request, array $data): ThirdPartyEngagementCollaborationEvent
@@ -92,6 +110,26 @@ class ThirdPartyEngagementCollaborationManager
         return ThirdPartyEngagementCollaborationRequest::query()->findOrFail($id);
     }
 
+    /** @param Collection<int, ThirdPartyEngagementCollaborationRequest> $requests @return Collection<int, ThirdPartyEngagementCollaborationRequest> */
+    public function visibleRequests(Collection $requests, User $actor): Collection
+    {
+        return $requests->map(function (ThirdPartyEngagementCollaborationRequest $request) use ($actor): ThirdPartyEngagementCollaborationRequest {
+            $visible = clone $request;
+            $visible->setRelation('events', $request->events->map(function (ThirdPartyEngagementCollaborationEvent $event) use ($actor): ThirdPartyEngagementCollaborationEvent {
+                $copy = clone $event;
+                $copy->setRelation('evidence', $event->evidence->filter(function (ThirdPartyEngagementCollaborationEvidence $evidence) use ($actor): bool {
+                    $document = $evidence->currentDocument();
+
+                    return $document !== null && ! $document->trashed() && app(FileAccess::class)->canDownloadVendorDocument($actor, $document);
+                })->values());
+
+                return $copy;
+            }));
+
+            return $visible;
+        });
+    }
+
     public static function openRules(): array
     {
         return ['category' => ['required', Rule::enum(ThirdPartyCollaborationCategory::class)], 'subject' => 'required|string|max:255', 'request_text' => 'required|string|max:30000',
@@ -100,7 +138,7 @@ class ThirdPartyEngagementCollaborationManager
 
     public static function responseRules(): array
     {
-        return ['response_text' => 'required|string|max:30000', 'source_reference' => 'nullable|string|max:255', 'status' => 'prohibited', 'actor_id' => 'prohibited', 'fingerprint' => 'prohibited'];
+        return ['response_text' => 'required|string|max:30000', 'source_reference' => 'nullable|string|max:255', 'vendor_document_ids' => 'array|max:20', 'vendor_document_ids.*' => 'integer|distinct', 'status' => 'prohibited', 'actor_id' => 'prohibited', 'fingerprint' => 'prohibited'];
     }
 
     public static function decisionRules(): array
@@ -131,7 +169,7 @@ class ThirdPartyEngagementCollaborationManager
         return ThirdPartyEngagementCollaborationEvent::query()->where('third_party_engagement_collaboration_request_id', $request->id)->orderByDesc('version')->lockForUpdate()->firstOrFail();
     }
 
-    private function appendEvent(ThirdPartyEngagementCollaborationRequest $request, ThirdPartyCollaborationStatus $status, User|VendorUser $actor, ?string $response, ?string $source, ?string $summary, Carbon $at): ThirdPartyEngagementCollaborationEvent
+    private function appendEvent(ThirdPartyEngagementCollaborationRequest $request, ThirdPartyCollaborationStatus $status, User|VendorUser $actor, ?string $response, ?string $source, ?string $summary, Carbon $at, array $manifest = []): ThirdPartyEngagementCollaborationEvent
     {
         if ($request->events()->count() >= 20) {
             throw ValidationException::withMessages(['request' => 'A collaboration request is limited to 20 retained events.']);
@@ -140,7 +178,7 @@ class ThirdPartyEngagementCollaborationManager
         $actorSnapshot = $actor instanceof VendorUser ? $this->vendorActorSnapshot($actor) : Arr::only($actor->toArray(), ['id', 'name', 'email']);
         $payload = ['third_party_engagement_collaboration_request_id' => $request->id, 'version' => ((int) $request->events()->max('version')) + 1,
             'status' => $status->value, 'response_text' => $response, 'source_reference' => $source, 'summary' => $summary, 'actor_type' => $actorType,
-            'actor_id' => $actor->id, 'actor_snapshot' => $actorSnapshot, 'request_snapshot' => $this->requestSnapshot($request), 'recorded_at' => $at->toIso8601String()];
+            'actor_id' => $actor->id, 'actor_snapshot' => $actorSnapshot, 'request_snapshot' => $this->requestSnapshot($request), 'evidence_manifest' => $manifest, 'recorded_at' => $at->toIso8601String()];
 
         return ThirdPartyEngagementCollaborationEvent::query()->create($payload + ['fingerprint' => $this->fingerprint($payload)]);
     }

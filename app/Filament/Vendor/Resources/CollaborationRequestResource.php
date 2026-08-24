@@ -6,11 +6,14 @@ use App\Enums\ThirdPartyCollaborationStatus;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
+use App\Models\ThirdPartyEngagementCollaborationEvidence;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
+use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -35,9 +38,20 @@ class CollaborationRequestResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
+        $actor = self::vendorActor();
+
         return parent::getEloquentQuery()
-            ->where('recipient_vendor_user_id', Auth::guard('vendor')->id())
-            ->with(['engagement:id,code,name,status', 'opener:id,name,email', 'events', 'latestEvent']);
+            ->where('recipient_vendor_user_id', $actor->id)
+            ->with([
+                'engagement:id,code,name,status',
+                'opener:id,name,email',
+                'events.evidence' => fn ($query) => $query
+                    ->whereHas('document', fn ($documentQuery) => $documentQuery
+                        ->where('vendor_id', $actor->vendor_id)
+                        ->whereNull('deleted_at'))
+                    ->with('document'),
+                'latestEvent',
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -53,7 +67,13 @@ class CollaborationRequestResource extends Resource
             Action::make('respond')->label('Respond')->icon('heroicon-o-paper-airplane')
                 ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
                     && in_array($record->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true))
-                ->schema([Textarea::make('response_text')->required()->maxLength(30000)->columnSpanFull(), TextInput::make('source_reference')->maxLength(255)])
+                ->schema([
+                    Textarea::make('response_text')->required()->maxLength(30000)->columnSpanFull(),
+                    TextInput::make('source_reference')->maxLength(255),
+                    Select::make('vendor_document_ids')->label('Supporting documents')->multiple()->searchable()
+                        ->getSearchResultsUsing(fn (string $search): array => self::documentOptions($search))
+                        ->getOptionLabelsUsing(fn (array $values): array => self::documentOptions('', array_map('intval', $values))),
+                ])
                 ->action(fn (ThirdPartyEngagementCollaborationRequest $record, array $data) => app(ThirdPartyEngagementCollaborationManager::class)->respond(self::vendorActor(), $record, $data)),
         ])->defaultSort('opened_at', 'desc');
     }
@@ -71,6 +91,10 @@ class CollaborationRequestResource extends Resource
                     TextEntry::make('version'), TextEntry::make('status')->badge(), TextEntry::make('actor_snapshot.name')->label('Actor'),
                     TextEntry::make('recorded_at')->dateTime(), TextEntry::make('response_text')->columnSpanFull(),
                     TextEntry::make('source_reference'), TextEntry::make('summary')->columnSpanFull(), TextEntry::make('fingerprint')->columnSpanFull(),
+                    RepeatableEntry::make('evidence')->schema([
+                        TextEntry::make('file_name_snapshot')->label('Retained file')->url(fn (ThirdPartyEngagementCollaborationEvidence $record): string => route('vendor.third-party-collaboration-evidence.download', $record))->openUrlInNewTab(),
+                        TextEntry::make('file_size_snapshot')->numeric(), TextEntry::make('sha256'),
+                    ])->columns(2)->columnSpanFull(),
                 ])->columns(2),
             ]),
         ]);
@@ -92,5 +116,16 @@ class CollaborationRequestResource extends Resource
         $actor = Auth::guard('vendor')->user();
 
         return $actor;
+    }
+
+    /** @param list<int> $ids */
+    private static function documentOptions(string $search, array $ids = []): array
+    {
+        $actor = self::vendorActor();
+
+        return VendorDocument::query()->where('vendor_id', $actor->vendor_id)->whereNull('deleted_at')
+            ->when($ids !== [], fn ($query) => $query->whereIn('id', $ids))
+            ->when($ids === [] && $search !== '', fn ($query) => $query->where('name', 'like', "%{$search}%"))
+            ->orderBy('name')->limit(50)->pluck('name', 'id')->all();
     }
 }
