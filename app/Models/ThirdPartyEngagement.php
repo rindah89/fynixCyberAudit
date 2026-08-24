@@ -13,9 +13,9 @@ class ThirdPartyEngagement extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['vendor_id', 'code', 'name', 'service_description', 'business_owner_id', 'criticality', 'data_access', 'status', 'proposed_by', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_by', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'onboarding_readiness_snapshot', 'governed_at'];
+    protected $fillable = ['vendor_id', 'code', 'name', 'service_description', 'business_owner_id', 'criticality', 'data_access', 'status', 'proposed_by', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_by', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'onboarding_readiness_snapshot', 'offboarding_readiness_snapshot', 'governed_at'];
 
-    protected $casts = ['status' => ThirdPartyEngagementStatus::class, 'data_access' => 'boolean', 'term_start_at' => 'date', 'term_end_at' => 'date', 'next_review_at' => 'date', 'approved_at' => 'datetime', 'activated_at' => 'datetime', 'exited_at' => 'datetime', 'vendor_snapshot' => 'array', 'approval_snapshot' => 'array', 'due_diligence_review_snapshot' => 'array', 'onboarding_readiness_snapshot' => 'array', 'governed_at' => 'datetime'];
+    protected $casts = ['status' => ThirdPartyEngagementStatus::class, 'data_access' => 'boolean', 'term_start_at' => 'date', 'term_end_at' => 'date', 'next_review_at' => 'date', 'approved_at' => 'datetime', 'activated_at' => 'datetime', 'exited_at' => 'datetime', 'vendor_snapshot' => 'array', 'approval_snapshot' => 'array', 'due_diligence_review_snapshot' => 'array', 'onboarding_readiness_snapshot' => 'array', 'offboarding_readiness_snapshot' => 'array', 'governed_at' => 'datetime'];
 
     protected static function booted(): void
     {
@@ -70,5 +70,15 @@ class ThirdPartyEngagement extends Model
     public function onboardingReadinessReviews(): HasMany
     {
         return $this->hasMany(ThirdPartyEngagementOnboardingReadinessReview::class);
+    }
+
+    public function offboardingRequirements(): HasMany
+    {
+        return $this->hasMany(ThirdPartyEngagementOffboardingRequirement::class);
+    }
+
+    public function offboardingReadinessReviews(): HasMany
+    {
+        return $this->hasMany(ThirdPartyEngagementOffboardingReadinessReview::class);
     }
 }

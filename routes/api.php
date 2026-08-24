@@ -254,6 +254,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/third-party-engagement-onboarding-requirements/{requirement}/complete', [ThirdPartyRiskController::class, 'completeOnboardingRequirement']);
     Route::post('/third-party-engagements/{engagement}/onboarding-readiness-reviews', [ThirdPartyRiskController::class, 'reviewOnboardingReadiness']);
     Route::get('/third-party-engagements/{engagement}/onboarding-readiness-reviews', [ThirdPartyRiskController::class, 'onboardingReadinessReviews']);
+    Route::post('/third-party-engagements/{engagement}/offboarding-requirements', [ThirdPartyRiskController::class, 'defineOffboardingRequirement']);
+    Route::get('/third-party-engagements/{engagement}/offboarding-requirements', [ThirdPartyRiskController::class, 'offboardingRequirements']);
+    Route::post('/third-party-engagement-offboarding-requirements/{requirement}/complete', [ThirdPartyRiskController::class, 'completeOffboardingRequirement']);
+    Route::post('/third-party-engagements/{engagement}/offboarding-readiness-reviews', [ThirdPartyRiskController::class, 'reviewOffboardingReadiness']);
+    Route::get('/third-party-engagements/{engagement}/offboarding-readiness-reviews', [ThirdPartyRiskController::class, 'offboardingReadinessReviews']);
     Route::get('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'monitoringIndicators']);
     Route::post('/third-party-engagements/{engagement}/monitoring-indicators', [ThirdPartyRiskController::class, 'defineMonitoringIndicator']);
     Route::get('/third-party-engagement-monitoring-indicators/{indicator}/observations', [ThirdPartyRiskController::class, 'monitoringObservations']);

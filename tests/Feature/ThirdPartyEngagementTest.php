@@ -20,6 +20,7 @@ use App\Models\Vendor;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementOffboardingManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementOnboardingManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Database\Seeders\RolePermissionSeeder;
@@ -90,6 +91,12 @@ class ThirdPartyEngagementTest extends TestCase
             'status' => 'active', 'summary' => 'Independent renewal approved against current risk evidence.',
             'renewed_term_end_at' => today()->addYears(2)->toDateString(), 'renewed_next_review_at' => today()->addYear()->toDateString(),
         ])->assertOk()->assertJsonPath('data.version', 6);
+        $exitOwner = User::factory()->create();
+        $exitReviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $offboarding = app(ThirdPartyEngagementOffboardingManager::class);
+        $exitRequirement = $offboarding->define($approver, $engagement->refresh(), ['category' => 'access', 'title' => 'Close provider access', 'acceptance_criteria' => 'Provider access is closed.', 'owner_id' => $exitOwner->id, 'due_at' => today()->addMonth()->toDateString(), 'required' => true]);
+        $offboarding->complete($exitOwner, $exitRequirement, ['completion_summary' => 'Provider access closure was reported.', 'source_reference' => 'EXIT-ACCESS']);
+        $offboarding->review($exitReviewer, $engagement->refresh(), ['decision' => 'ready', 'summary' => 'Exit controls are ready.']);
         $this->postJson("/api/third-party-engagements/{$id}/events", [
             'status' => 'exited', 'summary' => 'Engagement exit decision recorded.', 'exit_summary' => 'Service was transitioned to a replacement provider.',
             'data_disposition_statement' => 'Provider attested that organizational data was returned or deleted; execution is not independently verified.',

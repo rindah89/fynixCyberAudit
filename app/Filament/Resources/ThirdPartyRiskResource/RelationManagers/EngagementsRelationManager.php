@@ -7,11 +7,14 @@ use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyDueDiligenceDecision;
 use App\Enums\ThirdPartyEngagementStatus;
 use App\Enums\ThirdPartyMonitoringCategory;
+use App\Enums\ThirdPartyOffboardingCategory;
+use App\Enums\ThirdPartyOffboardingDecision;
 use App\Enums\ThirdPartyOnboardingCategory;
 use App\Enums\ThirdPartyOnboardingDecision;
 use App\Models\Survey;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
+use App\Models\ThirdPartyEngagementOffboardingRequirement;
 use App\Models\ThirdPartyEngagementOnboardingRequirement;
 use App\Models\User;
 use App\Models\VendorDocument;
@@ -19,6 +22,7 @@ use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementOffboardingManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementOnboardingManager;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
@@ -40,7 +44,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -54,6 +58,8 @@ class EngagementsRelationManager extends RelationManager
                 TextColumn::make('due_diligence_reviews_count')->label('Due-diligence reviews'),
                 TextColumn::make('onboarding_requirements_count')->label('Onboarding controls'),
                 TextColumn::make('onboarding_readiness_reviews_count')->label('Readiness reviews'),
+                TextColumn::make('offboarding_requirements_count')->label('Exit controls'),
+                TextColumn::make('offboarding_readiness_reviews_count')->label('Exit reviews'),
             ])->headerActions([
                 Action::make('propose')->label('Propose engagement')->icon('heroicon-o-plus')
                     ->visible(fn (): bool => auth()->user()?->can('Manage Third Party Risk') ?? false)
@@ -140,6 +146,22 @@ class EngagementsRelationManager extends RelationManager
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $record->status === ThirdPartyEngagementStatus::Approved && $record->onboardingRequirements->isNotEmpty())
                     ->schema([Select::make('decision')->options(ThirdPartyOnboardingDecision::class)->required(), Textarea::make('conditions')->maxLength(30000)->columnSpanFull(), Textarea::make('summary')->required()->maxLength(30000)->columnSpanFull(), DatePicker::make('next_review_at')->required()])
                     ->action(fn (ThirdPartyEngagement $record, array $data) => app(ThirdPartyEngagementOnboardingManager::class)->review(auth()->user(), $record, $data)),
+                Action::make('define_offboarding_requirement')->label('Define exit control')->icon('heroicon-o-list-bullet')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && in_array($record->status, [ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true))
+                    ->schema([Select::make('category')->options(ThirdPartyOffboardingCategory::class)->required(), TextInput::make('title')->required()->maxLength(255), Textarea::make('acceptance_criteria')->required()->maxLength(30000)->columnSpanFull(), Select::make('owner_id')->options(fn () => User::query()->whereNull('deleted_at')->orderBy('name')->pluck('name', 'id'))->searchable()->required(), DatePicker::make('due_at')->required(), Checkbox::make('required')->default(true)])
+                    ->action(fn (ThirdPartyEngagement $record, array $data) => app(ThirdPartyEngagementOffboardingManager::class)->define(auth()->user(), $record, $data)),
+                Action::make('complete_offboarding_requirement')->label('Complete exit control')->icon('heroicon-o-check-badge')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => in_array($record->status, [ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true) && $record->offboardingRequirements->contains(fn (ThirdPartyEngagementOffboardingRequirement $requirement) => (auth()->user()?->can('Manage Third Party Risk') ?? false) || $requirement->owner_id === auth()->id()))
+                    ->schema(fn (ThirdPartyEngagement $record): array => [Select::make('requirement_id')->options($record->offboardingRequirements->filter(fn (ThirdPartyEngagementOffboardingRequirement $requirement) => (auth()->user()?->can('Manage Third Party Risk') ?? false) || $requirement->owner_id === auth()->id())->mapWithKeys(fn (ThirdPartyEngagementOffboardingRequirement $requirement) => [$requirement->id => "v{$requirement->version} — {$requirement->title}"]))->required(), Textarea::make('completion_summary')->required()->maxLength(30000)->columnSpanFull(), TextInput::make('source_reference')->maxLength(255)])
+                    ->action(function (array $data): void {
+                        $requirement = ThirdPartyEngagementOffboardingRequirement::query()->findOrFail($data['requirement_id']);
+                        unset($data['requirement_id']);
+                        app(ThirdPartyEngagementOffboardingManager::class)->complete(auth()->user(), $requirement, $data);
+                    }),
+                Action::make('review_offboarding_readiness')->label('Review exit readiness')->icon('heroicon-o-shield-check')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && in_array($record->status, [ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true) && $record->offboardingRequirements->isNotEmpty())
+                    ->schema([Select::make('decision')->options(ThirdPartyOffboardingDecision::class)->required(), Textarea::make('conditions')->maxLength(30000)->columnSpanFull(), Textarea::make('summary')->required()->maxLength(30000)->columnSpanFull()])
+                    ->action(fn (ThirdPartyEngagement $record, array $data) => app(ThirdPartyEngagementOffboardingManager::class)->review(auth()->user(), $record, $data)),
                 Action::make('define_monitoring_indicator')->label('Define monitoring indicator')->icon('heroicon-o-chart-bar')
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $record->status === ThirdPartyEngagementStatus::Active)
                     ->schema([

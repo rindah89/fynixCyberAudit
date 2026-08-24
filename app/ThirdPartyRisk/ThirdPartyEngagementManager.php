@@ -101,7 +101,9 @@ class ThirdPartyEngagementManager
                 $changes += ['activated_at' => now()->startOfSecond(), 'onboarding_readiness_snapshot' => Arr::only($readiness->toArray(), ['id', 'version', 'decision', 'conditions', 'next_review_at', 'reviewed_by', 'reviewed_at', 'fingerprint'])];
             }
             if ($next === ThirdPartyEngagementStatus::Exited) {
-                $changes += ['exit_summary' => $data['exit_summary'], 'data_disposition_statement' => $data['data_disposition_statement'], 'exited_at' => now()->startOfSecond()];
+                $readiness = app(ThirdPartyEngagementOffboardingManager::class)->currentAcceptedReview($locked, $actor);
+                $changes += ['exit_summary' => $data['exit_summary'], 'data_disposition_statement' => $data['data_disposition_statement'], 'exited_at' => now()->startOfSecond(),
+                    'offboarding_readiness_snapshot' => Arr::only($readiness->toArray(), ['id', 'version', 'decision', 'conditions', 'reviewed_by', 'reviewed_at', 'fingerprint'])];
             }
             $from = $locked->status;
             $locked->update($changes);
@@ -181,7 +183,7 @@ class ThirdPartyEngagementManager
     private function appendEvent(ThirdPartyEngagement $engagement, User $actor, ?ThirdPartyEngagementStatus $from, ThirdPartyEngagementStatus $to, string $summary, Carbon $at): ThirdPartyEngagementEvent
     {
         $engagement->load(['businessOwner:id,name,email', 'proposer:id,name,email', 'approver:id,name,email']);
-        $snapshot = Arr::only($engagement->toArray(), ['id', 'vendor_id', 'code', 'name', 'service_description', 'criticality', 'data_access', 'status', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'onboarding_readiness_snapshot', 'governed_at'])
+        $snapshot = Arr::only($engagement->toArray(), ['id', 'vendor_id', 'code', 'name', 'service_description', 'criticality', 'data_access', 'status', 'term_start_at', 'term_end_at', 'next_review_at', 'approved_at', 'activated_at', 'exited_at', 'exit_summary', 'data_disposition_statement', 'vendor_snapshot', 'approval_snapshot', 'due_diligence_review_snapshot', 'onboarding_readiness_snapshot', 'offboarding_readiness_snapshot', 'governed_at'])
             + ['business_owner' => $engagement->businessOwner?->only(['id', 'name', 'email']), 'proposer' => $engagement->proposer?->only(['id', 'name', 'email']), 'approver' => $engagement->approver?->only(['id', 'name', 'email'])];
         $payload = ['third_party_engagement_id' => $engagement->id, 'version' => ((int) $engagement->events()->max('version')) + 1, 'from_status' => $from?->value, 'to_status' => $to->value,
             'summary' => $summary, 'engagement_snapshot' => $snapshot, 'recorded_by' => $actor->id, 'recorded_at' => $at->toIso8601String()];

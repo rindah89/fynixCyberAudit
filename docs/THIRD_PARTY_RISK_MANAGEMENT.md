@@ -26,6 +26,8 @@ While an engagement is active, a third-party risk manager can define immutable, 
 
 Current concentration is derived from the latest declaration for each primary-vendor/dependency pair. `limited`, `moderate`, and `high` bands use the number of distinct primary vendors plus the number of high/critical dependencies. Assigned vendor managers can inspect only their vendor's complete history and see an aggregate count/band without other vendor identities. Users with `Manage Third Party Risk` or `Read Vendors` can inspect cross-vendor concentration, including the contributing primary vendors. The operator relation history is paginated and exportable to authorized readers.
 
+Before exit, managers define up to 100 immutable offboarding controls with category, acceptance criteria, active owner, due date, required flag, material active-engagement snapshot, actor/time, and fingerprint. Owners or managers append up to ten attributable completion versions with deliberate summary and unverified source reference. A reviewer separated from engagement, contract, control-owner, and completion actors records one of up to 100 readiness decisions against every current control/latest completion and the exact active engagement event. Every required control needs completion evidence; conditional readiness requires conditions; exit requires a current ready or ready-with-conditions decision and a different exit approver. Scoped paginated REST and read-only operator history expose the retained evidence.
+
 ## Derived status
 
 The vendor workspace derives assessment-required, risk-link-required, decision-required, reapproval-required, approved, conditionally-approved, rejected, terminated, approval-expired, review-overdue, action-required, and termination-required states.

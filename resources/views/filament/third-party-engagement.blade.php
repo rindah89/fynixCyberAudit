@@ -110,6 +110,26 @@
         @empty <div>No onboarding-readiness review has been recorded.</div> @endforelse
     </div>
     <div class="space-y-2">
+        <div class="font-medium">Governed offboarding controls and completion history</div>
+        @forelse ($engagement->offboardingRequirements->sortBy('version') as $requirement)
+            <div class="rounded-lg border p-3">
+                <div>Control v{{ $requirement->version }} · {{ $requirement->category->getLabel() }} · {{ $requirement->title }} · {{ $requirement->required ? 'Required' : 'Optional' }}</div>
+                <div>Owner: {{ $requirement->owner?->name }} · due {{ $requirement->due_at?->toDateString() }} · defined by {{ $requirement->definer?->name }}</div>
+                <div class="mt-1 whitespace-pre-wrap"><span class="font-medium">Acceptance criteria:</span> {{ $requirement->acceptance_criteria }}</div>
+                @forelse ($requirement->completions->sortBy('version') as $completion)
+                    <div class="mt-2 rounded-lg border p-2"><div>Completion v{{ $completion->version }} · {{ $completion->completer?->name }} · {{ $completion->completed_at?->toDayDateTimeString() }}</div><div class="whitespace-pre-wrap">{{ $completion->completion_summary }}</div><div>Source reference: {{ $completion->source_reference ?: 'None recorded' }}</div><div class="break-all font-mono text-xs">{{ $completion->fingerprint }}</div></div>
+                @empty <div class="mt-2">No completion evidence recorded.</div> @endforelse
+                <div class="mt-1 break-all font-mono text-xs">{{ $requirement->fingerprint }}</div>
+            </div>
+        @empty <div>No offboarding controls have been defined.</div> @endforelse
+    </div>
+    <div class="space-y-2">
+        <div class="font-medium">Independent offboarding-readiness history</div>
+        @forelse ($engagement->offboardingReadinessReviews->sortBy('version') as $review)
+            <div class="rounded-lg border p-3"><div>v{{ $review->version }} · {{ $review->decision->getLabel() }} · {{ $review->reviewer?->name }} · {{ $review->reviewed_at?->toDayDateTimeString() }}</div><div class="mt-1 whitespace-pre-wrap">{{ $review->summary }}</div><div>Conditions: {{ $review->conditions ?: 'None recorded' }}</div><details class="mt-2"><summary class="font-medium">Retained offboarding evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['engagement' => $review->engagement_snapshot, 'requirements' => $review->requirements_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details><div class="mt-1 break-all">Engagement event: <span class="font-mono text-xs">{{ $review->engagement_event_fingerprint }}</span></div><div class="break-all font-mono text-xs">{{ $review->fingerprint }}</div></div>
+        @empty <div>No offboarding-readiness review has been recorded.</div> @endforelse
+    </div>
+    <div class="space-y-2">
         <div class="font-medium">Engagement monitoring evidence</div>
         @forelse ($engagement->monitoringIndicators->sortBy([['code', 'asc'], ['version', 'asc']]) as $indicator)
             <div class="rounded-lg border p-3">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\CompleteThirdPartyOffboardingRequirementRequest;
 use App\Http\Requests\CompleteThirdPartyOnboardingRequirementRequest;
 use App\Http\Requests\ListFourthPartyConcentrationsRequest;
 use App\Http\Requests\ListThirdPartyEngagementMonitoringRequest;
@@ -18,6 +19,8 @@ use App\Http\Requests\StoreThirdPartyEngagementDueDiligenceReviewRequest;
 use App\Http\Requests\StoreThirdPartyEngagementMonitoringIndicatorRequest;
 use App\Http\Requests\StoreThirdPartyEngagementMonitoringObservationRequest;
 use App\Http\Requests\StoreThirdPartyEngagementRequest;
+use App\Http\Requests\StoreThirdPartyOffboardingReadinessReviewRequest;
+use App\Http\Requests\StoreThirdPartyOffboardingRequirementRequest;
 use App\Http\Requests\StoreThirdPartyOnboardingReadinessReviewRequest;
 use App\Http\Requests\StoreThirdPartyOnboardingRequirementRequest;
 use App\Http\Requests\StoreVendorRiskAssessmentRequest;
@@ -27,6 +30,7 @@ use App\Http\Requests\TransitionThirdPartyEngagementRequest;
 use App\Models\Risk;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
+use App\Models\ThirdPartyEngagementOffboardingRequirement;
 use App\Models\ThirdPartyEngagementOnboardingRequirement;
 use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
@@ -34,6 +38,7 @@ use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementOffboardingManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementOnboardingManager;
 use App\ThirdPartyRisk\ThirdPartyRiskManager;
 use Illuminate\Http\JsonResponse;
@@ -52,7 +57,7 @@ class ThirdPartyRiskController extends Controller
 
     public function showEngagement(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name'])]);
+        return response()->json(['data' => $engagement->load(['businessOwner:id,name,email', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name'])]);
     }
 
     public function engagementEvents(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
@@ -138,6 +143,31 @@ class ThirdPartyRiskController extends Controller
     public function onboardingReadinessReviews(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
         return response()->json($engagement->onboardingReadinessReviews()->with('reviewer:id,name')->latest('version')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function defineOffboardingRequirement(StoreThirdPartyOffboardingRequirementRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementOffboardingManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->define($request->user(), $engagement, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function completeOffboardingRequirement(CompleteThirdPartyOffboardingRequirementRequest $request, ThirdPartyEngagementOffboardingRequirement $requirement, ThirdPartyEngagementOffboardingManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->complete($request->user(), $requirement, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function reviewOffboardingReadiness(StoreThirdPartyOffboardingReadinessReviewRequest $request, ThirdPartyEngagement $engagement, ThirdPartyEngagementOffboardingManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $engagement, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function offboardingRequirements(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    {
+        return response()->json($engagement->offboardingRequirements()->with(['owner:id,name', 'definer:id,name', 'completions.completer:id,name'])->latest('version')->paginate($request->integer('per_page', 50)));
+    }
+
+    public function offboardingReadinessReviews(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
+    {
+        return response()->json($engagement->offboardingReadinessReviews()->with('reviewer:id,name')->latest('version')->paginate($request->integer('per_page', 50)));
     }
 
     public function fourthPartyDependencies(ListVendorFourthPartyDependenciesRequest $request, Vendor $vendor, FourthPartyDependencyManager $manager): JsonResponse
