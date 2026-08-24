@@ -204,6 +204,16 @@ GET /api/controls/1?with=standard,implementations
 **Special Parameters:**
 - `with_details=true` - Load all related audit items with full details
 
+#### Audit universe and risk-based planning
+
+`Update Programs` users maintain the universe through `POST /api/auditable-entities` and `PUT /api/auditable-entities/{entity}`. Required entity fields are `code`, `name`, `entity_type`, `owner_id`, `criticality`, `status`, `assessment_frequency`, `next_assessment_at`, and one to 100 distinct `risk_ids`; `description` and up to 250 distinct `control_ids` are optional.
+
+The assigned owner or an `Update Programs` user assesses an active entity through `POST /api/auditable-entities/{entity}/assessments`. Payloads require inherent/residual likelihood and impact from 1–5, rationale, and a future `next_assessment_at` in `Y-m-d` format. The server derives both 1–25 scores, priority band, version, material entity/risk/control snapshots, actor/time, and fingerprint. Clients may not supply those fields. `GET /api/auditable-entities` and `GET /api/auditable-entities/{entity}/assessments` provide scoped paginated current state and complete history.
+
+Create a draft plan with `POST /api/audit-plans` using `plan_year`, `name`, `objective`, and `manager_id`. The plan manager or an `Update Programs` user adds current assessed entities through `POST /api/audit-plans/{plan}/items`; required fields are entity/assessment IDs, item `status` (`planned`, `scheduled`, or `deferred`), planned start/end dates within the plan year, and rationale. `scheduled` requires an existing `audit_id`; the other states may optionally link one. The server derives priority rank and the item snapshot. Draft status/dates/rationale/audit link can be corrected with `PUT /api/audit-plans/{plan}/items/{item}` and a draft item removed with `DELETE` on the same route. `POST /api/audit-plans/{plan}/approve` revalidates all current assessment/governance references, approves a nonempty draft, owns approval actor/time/snapshot/fingerprint, and freezes the items. `GET /api/audit-plans` and `GET /api/audit-plans/{plan}/items` are scoped and paginated. All list page sizes are capped at 100.
+
+See `docs/AUDIT_UNIVERSE_PLANNING.md` for the priority algorithm, authorization boundaries, operator workspace, and limitations. This is deliberate ordinal planning, not organizational discovery, quantitative loss/calibrated probability, staffing optimization, or automated audit scheduling/execution.
+
 ### Audit Items
 
 **Base URL:** `/api/audit-items`
