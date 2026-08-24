@@ -12,9 +12,11 @@ use App\Models\ThirdPartyEngagementCollaborationReminder;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -53,8 +55,9 @@ class CollaborationRequestResource extends Resource
                         ->whereNull('deleted_at'))
                     ->with('document'),
                 'latestEvent',
+                'extensions.decision' => fn ($query) => $query->select(['id', 'third_party_collaboration_extension_id', 'decision', 'summary', 'decided_at', 'fingerprint']),
                 'reminders',
-                'escalation:id,third_party_engagement_collaboration_request_id,channel,delivered_at,fingerprint',
+                'escalation:id,third_party_engagement_collaboration_request_id,effective_due_at,channel,delivered_at,fingerprint',
                 'escalation.latestAction' => fn ($query) => $query->select([
                     'third_party_engagement_collaboration_escalation_actions.id',
                     'third_party_engagement_collaboration_escalation_actions.third_party_engagement_collaboration_escalation_id',
@@ -87,6 +90,16 @@ class CollaborationRequestResource extends Resource
                         ->getOptionLabelsUsing(fn (array $values): array => self::documentOptions('', array_map('intval', $values))),
                 ])
                 ->action(fn (ThirdPartyEngagementCollaborationRequest $record, array $data) => app(ThirdPartyEngagementCollaborationManager::class)->respond(self::vendorActor(), $record, $data)),
+            Action::make('request_extension')->label('Request due-date extension')->icon('heroicon-o-calendar-days')
+                ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
+                    && in_array($record->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
+                    && $record->escalation === null
+                    && ! $record->extensions->contains(fn ($extension): bool => $extension->decision === null))
+                ->schema([
+                    DatePicker::make('proposed_due_at')->required()->native(false),
+                    Textarea::make('reason')->required()->maxLength(30000)->columnSpanFull(),
+                ])
+                ->action(fn (ThirdPartyEngagementCollaborationRequest $record, array $data) => app(ThirdPartyEngagementCollaborationExtensionManager::class)->request(self::vendorActor(), $record, $data)),
         ])->defaultSort('opened_at', 'desc');
     }
 
@@ -109,19 +122,31 @@ class CollaborationRequestResource extends Resource
                     ])->columns(2)->columnSpanFull(),
                 ])->columns(2),
             ]),
+            Section::make('Due-date extension history')->schema([
+                TextEntry::make('effective_due_at')->label('Current effective due date')->date(),
+                RepeatableEntry::make('extensions')->hiddenLabel()->schema([
+                    TextEntry::make('version'), TextEntry::make('proposed_due_at')->date(), TextEntry::make('requested_at')->dateTime(),
+                    TextEntry::make('reason')->columnSpanFull(), TextEntry::make('fingerprint')->columnSpanFull(),
+                    TextEntry::make('decision.decision')->badge(), TextEntry::make('decision.decided_at')->dateTime(),
+                    TextEntry::make('decision.summary')->columnSpanFull(), TextEntry::make('decision.fingerprint')->columnSpanFull(),
+                ])->columns(3),
+            ]),
             Section::make('In-app reminder delivery evidence')->schema([
                 RepeatableEntry::make('reminders')->hiddenLabel()->schema([
                     TextEntry::make('type')->badge(), TextEntry::make('channel'), TextEntry::make('delivered_at')->dateTime(),
+                    TextEntry::make('effective_due_at')->date(),
                     TextEntry::make('attempted_at')->dateTime(), TextEntry::make('notification_id')->columnSpanFull(),
                     TextEntry::make('recipient_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->recipient_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
                     TextEntry::make('request_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->request_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
                     TextEntry::make('event_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->event_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
+                    TextEntry::make('due_context_snapshot')->state(fn (ThirdPartyEngagementCollaborationReminder $record): string => json_encode($record->due_context_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->columnSpanFull(),
                     TextEntry::make('fingerprint')->columnSpanFull(),
                 ])->columns(3),
             ]),
             Section::make(fn (ThirdPartyEngagementCollaborationRequest $record): string => $record->escalation?->latestAction?->status === ThirdPartyCollaborationEscalationStatus::Resolved ? 'Resolved internally' : 'Escalated internally')->schema([
                 TextEntry::make('escalation.channel')->label('Channel'),
                 TextEntry::make('escalation.delivered_at')->label('Delivered')->dateTime(),
+                TextEntry::make('escalation.effective_due_at')->label('Effective due date')->date(),
                 TextEntry::make('escalation.latestAction.status')->label('Internal status')->badge(),
                 TextEntry::make('escalation.latestAction.recorded_at')->label('Internal status recorded')->dateTime(),
                 TextEntry::make('escalation.latestAction.fingerprint')->label('Internal status fingerprint')->columnSpanFull(),

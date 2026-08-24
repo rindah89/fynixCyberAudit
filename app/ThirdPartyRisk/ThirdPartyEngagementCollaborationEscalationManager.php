@@ -56,7 +56,6 @@ class ThirdPartyEngagementCollaborationEscalationManager
             $engagement = $vendor ? ThirdPartyEngagement::query()->where('vendor_id', $vendor->id)->lockForUpdate()->find($engagementId) : null;
             $request = $engagement ? ThirdPartyEngagementCollaborationRequest::query()->where('third_party_engagement_id', $engagement->id)->lockForUpdate()->find($requestId) : null;
             if (! $request || ! in_array($engagement->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
-                || ! $request->due_at->copy()->endOfDay()->addDays(self::OVERDUE_GRACE_DAYS)->lessThan($asOf)
                 || $request->escalation()->lockForUpdate()->exists()) {
                 return false;
             }
@@ -70,8 +69,15 @@ class ThirdPartyEngagementCollaborationEscalationManager
             if (! $event || ! in_array($event->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)) {
                 return false;
             }
+            $extensions = $request->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
+            $dueContext = $request->setRelation('extensions', $extensions)->effectiveDueContext();
+            $effectiveDue = Carbon::parse($dueContext['due_at']);
+            if (! $effectiveDue->copy()->endOfDay()->addDays(self::OVERDUE_GRACE_DAYS)->lessThan($asOf)) {
+                return false;
+            }
             $overdueReminder = ThirdPartyEngagementCollaborationReminder::query()
                 ->where('third_party_engagement_collaboration_request_id', $request->id)
+                ->where('due_context_fingerprint', $dueContext['fingerprint'])
                 ->where('type', ThirdPartyCollaborationReminderType::Overdue)->lockForUpdate()->first();
             if (! $overdueReminder) {
                 return false;
@@ -98,7 +104,7 @@ class ThirdPartyEngagementCollaborationEscalationManager
                     $engagement->code,
                     $request->subject,
                     $vendorRecipient->name,
-                    $request->due_at->toDateString(),
+                    $effectiveDue->toDateString(),
                     $request->id,
                 ));
                 if (! DB::table('notifications')->where('id', $notificationId)
@@ -113,6 +119,8 @@ class ThirdPartyEngagementCollaborationEscalationManager
                 'third_party_engagement_collaboration_request_id' => $request->id,
                 'third_party_engagement_id' => $engagement->id,
                 'vendor_user_id' => $vendorRecipient->id,
+                'effective_due_at' => $effectiveDue->toDateString(),
+                'due_context_snapshot' => $dueContext,
                 'channel' => 'database',
                 'notification_ids' => $notificationIds,
                 'recipient_snapshots' => $recipientSnapshots,

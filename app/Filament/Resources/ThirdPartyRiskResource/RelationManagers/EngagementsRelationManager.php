@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ThirdPartyRiskResource\RelationManagers;
 use App\Enums\RiskIndicatorDirection;
 use App\Enums\ThirdPartyCollaborationCategory;
 use App\Enums\ThirdPartyCollaborationEscalationStatus;
+use App\Enums\ThirdPartyCollaborationExtensionDecision;
 use App\Enums\ThirdPartyCollaborationStatus;
 use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyDueDiligenceDecision;
@@ -15,6 +16,7 @@ use App\Enums\ThirdPartyOffboardingDecision;
 use App\Enums\ThirdPartyOnboardingCategory;
 use App\Enums\ThirdPartyOnboardingDecision;
 use App\Models\Survey;
+use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
@@ -25,6 +27,7 @@ use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationIssueManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
@@ -52,7 +55,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor:id,name,email', 'collaborationRequests.escalation.issue.owner:id,name', 'collaborationRequests.escalation.issue.lifecycle'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent', 'collaborationRequests.extensions.decision.decider:id,name,email', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor:id,name,email', 'collaborationRequests.escalation.issue.owner:id,name', 'collaborationRequests.escalation.issue.lifecycle'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -119,6 +122,18 @@ class EngagementsRelationManager extends RelationManager
                         $request = ThirdPartyEngagementCollaborationRequest::query()->findOrFail($data['collaboration_request_id']);
                         unset($data['collaboration_request_id']);
                         app(ThirdPartyEngagementCollaborationManager::class)->decide(auth()->user(), $request, $data);
+                    }),
+                Action::make('decide_collaboration_extension')->label('Review due-date extension')->icon('heroicon-o-calendar-days')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false)
+                        && $this->pendingExtensionOptions($record) !== [])
+                    ->schema(fn (ThirdPartyEngagement $record): array => [
+                        Select::make('extension_id')->label('Pending extension')->options($this->pendingExtensionOptions($record))->required(),
+                        Select::make('decision')->options(ThirdPartyCollaborationExtensionDecision::class)->required(),
+                        Textarea::make('summary')->required()->maxLength(30000)->columnSpanFull(),
+                    ])->action(function (array $data): void {
+                        $extension = ThirdPartyCollaborationExtension::query()->findOrFail($data['extension_id']);
+                        unset($data['extension_id']);
+                        app(ThirdPartyEngagementCollaborationExtensionManager::class)->decide(auth()->user(), $extension, $data);
                     }),
                 Action::make('open_collaboration_issue')->label('Open missed-target issue')->icon('heroicon-o-exclamation-triangle')
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $this->missedEscalationOptions($record) !== [])
@@ -263,6 +278,19 @@ class EngagementsRelationManager extends RelationManager
             })->mapWithKeys(fn (ThirdPartyEngagementCollaborationRequest $request): array => [
                 $request->escalation->id => "v{$request->version} — {$request->subject}",
             ])->all();
+    }
+
+    private function pendingExtensionOptions(ThirdPartyEngagement $engagement): array
+    {
+        return $engagement->collaborationRequests
+            ->filter(fn (ThirdPartyEngagementCollaborationRequest $request): bool => $request->opened_by !== auth()->id()
+                && $request->escalation === null
+                && in_array($request->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true))
+            ->flatMap(fn (ThirdPartyEngagementCollaborationRequest $request) => $request->extensions
+                ->filter(fn (ThirdPartyCollaborationExtension $extension): bool => $extension->decision === null)
+                ->mapWithKeys(fn (ThirdPartyCollaborationExtension $extension): array => [
+                    $extension->id => "Request v{$request->version} — {$request->subject} — {$extension->proposed_due_at->toDateString()}",
+                ]))->all();
     }
 
     /** @param  array<int, int>  $ids */

@@ -8,6 +8,8 @@ use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
 use App\Models\ThirdPartyCollaborationEscalationIssue;
+use App\Models\ThirdPartyCollaborationExtension;
+use App\Models\ThirdPartyCollaborationExtensionDecision;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
@@ -18,6 +20,7 @@ use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationReminderManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationResolutionManager;
@@ -307,8 +310,9 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $this->assertSame(['due_soon', 'overdue'], $request->reminders->pluck('type')->map->value->all());
         $this->assertDatabaseCount('notifications', 2);
         foreach ($request->reminders as $reminder) {
-            $payload = $reminder->only(['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'type', 'channel', 'notification_id', 'recipient_snapshot', 'request_snapshot', 'event_snapshot']);
+            $payload = $reminder->only(['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'type', 'due_context_fingerprint', 'effective_due_at', 'due_context_snapshot', 'channel', 'notification_id', 'recipient_snapshot', 'request_snapshot', 'event_snapshot']);
             $payload['type'] = $reminder->type->value;
+            $payload['effective_due_at'] = $reminder->effective_due_at->toDateString();
             $payload['attempted_at'] = $reminder->attempted_at->toIso8601String();
             $payload['delivered_at'] = $reminder->delivered_at->toIso8601String();
             $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $reminder->fingerprint);
@@ -379,7 +383,8 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $this->assertArrayHasKey('evidence_manifest', $escalation->event_snapshot);
         $eventFingerprintPayload = collect($escalation->event_snapshot)->except(['id', 'fingerprint'])->all();
         $this->assertSame($escalation->event_snapshot['fingerprint'], hash('sha256', json_encode($eventFingerprintPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
-        $payload = $escalation->only(['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'channel', 'notification_ids', 'recipient_snapshots', 'request_snapshot', 'event_snapshot', 'overdue_reminder_snapshot']);
+        $payload = $escalation->only(['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'effective_due_at', 'due_context_snapshot', 'channel', 'notification_ids', 'recipient_snapshots', 'request_snapshot', 'event_snapshot', 'overdue_reminder_snapshot']);
+        $payload['effective_due_at'] = $escalation->effective_due_at->toDateString();
         $payload['attempted_at'] = $escalation->attempted_at->toIso8601String();
         $payload['delivered_at'] = $escalation->delivered_at->toIso8601String();
         $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $escalation->fingerprint);
@@ -579,6 +584,134 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $migration = require database_path('migrations/2026_08_24_860000_create_third_party_collaboration_escalation_issues.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_collaboration_escalation_issues', ['id' => $first['id']]);
+        Carbon::setTestNow();
+    }
+
+    public function test_provider_requests_and_independent_staff_decides_due_extensions_that_drive_reminder_and_escalation_timing(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        DB::table('third_party_engagements')->where('id', $engagement->id)->update(['term_end_at' => '2026-10-01']);
+        $engagement->refresh();
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $otherContact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($opener, $engagement, [
+            'category' => 'assurance', 'subject' => 'Extension-governed request', 'request_text' => 'Provide the assurance response.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-27',
+        ]);
+        $extensions = app(ThirdPartyEngagementCollaborationExtensionManager::class);
+
+        try {
+            $extensions->request($otherContact, $request, ['proposed_due_at' => '2026-09-03', 'reason' => 'Unauthorized contact.']);
+            $this->fail('Only the exact recipient may request an extension.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $proposal = $extensions->request($contact, $request, ['proposed_due_at' => '2026-09-03', 'reason' => 'Additional preparation is required.']);
+        Sanctum::actingAs($opener);
+        $this->postJson("/api/third-party-collaboration-extensions/{$proposal->id}/decision", [
+            'decision' => 'approved', 'summary' => 'Self approval.',
+        ])->assertForbidden();
+        Sanctum::actingAs($reviewer);
+        $decision = $this->postJson("/api/third-party-collaboration-extensions/{$proposal->id}/decision", [
+            'decision' => 'approved', 'summary' => 'The requested extension is approved.',
+        ])->assertCreated()->assertJsonPath('data.decision', 'approved')->json('data');
+        $this->assertSame('2026-08-27', $request->fresh()->due_at->toDateString());
+        $this->assertSame('2026-09-03', $request->fresh()->effectiveDueContext()['due_at']);
+
+        $laterProposal = $extensions->request($contact, $request, ['proposed_due_at' => '2026-09-10', 'reason' => 'A further extension is requested.']);
+        $extensions->decide($reviewer, $laterProposal, ['decision' => 'rejected', 'summary' => 'No further extension is approved.']);
+        $this->assertSame('2026-09-03', $request->fresh()->effectiveDueContext()['due_at']);
+        $this->assertThrows(fn () => $proposal->update(['reason' => 'Rewritten']), \LogicException::class);
+        $this->assertThrows(fn () => $proposal->decision->update(['summary' => 'Rewritten']), \LogicException::class);
+        $proposal->refresh()->load('decision');
+
+        $proposalPayload = $proposal->only(['third_party_engagement_collaboration_request_id', 'version', 'proposed_due_at', 'reason', 'recipient_vendor_user_id', 'recipient_snapshot', 'request_snapshot', 'current_due_context', 'requested_at']);
+        $proposalPayload['proposed_due_at'] = $proposal->proposed_due_at->toDateString();
+        $proposalPayload['requested_at'] = $proposal->requested_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($proposalPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $proposal->fingerprint);
+        $decisionModel = $proposal->decision;
+        $decisionPayload = $decisionModel->only(['third_party_collaboration_extension_id', 'decision', 'summary', 'decided_by', 'decider_snapshot', 'extension_snapshot']);
+        $decisionPayload['decision'] = $decisionModel->decision->value;
+        $decisionPayload['decided_at'] = $decisionModel->decided_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($decisionPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $decision['fingerprint']);
+
+        $reminders = app(ThirdPartyEngagementCollaborationReminderManager::class);
+        Carbon::setTestNow('2026-08-28 08:00:00');
+        $this->assertSame(0, $reminders->reconcile(now()));
+        Carbon::setTestNow('2026-08-31 08:00:00');
+        $this->assertSame(1, $reminders->reconcile(now()));
+        Carbon::setTestNow('2026-09-04 00:00:00');
+        $this->assertSame(1, $reminders->reconcile(now()));
+        $this->assertSame('2026-09-03', ThirdPartyEngagementCollaborationReminder::query()->latest('id')->firstOrFail()->effective_due_at->toDateString());
+        Carbon::setTestNow('2026-09-08 00:00:00');
+        $this->assertSame(1, app(ThirdPartyEngagementCollaborationEscalationManager::class)->reconcile(now()));
+        $this->assertSame('2026-09-03', ThirdPartyEngagementCollaborationEscalation::query()->firstOrFail()->effective_due_at->toDateString());
+
+        Sanctum::actingAs($reviewer);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonCount(2, 'data.0.extensions')->assertJsonPath('data.0.effective_due_at', '2026-09-03');
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($contact, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee('Additional preparation is required.')
+            ->assertSee('The requested extension is approved.')
+            ->assertSee('No further extension is approved.');
+        $overdueReminder = ThirdPartyEngagementCollaborationReminder::query()->where('type', 'overdue')->firstOrFail();
+        $escalation = ThirdPartyEngagementCollaborationEscalation::query()->firstOrFail();
+        DB::table('third_party_engagement_collaboration_reminders')->where('id', $overdueReminder->id)->update(['due_context_snapshot' => null]);
+        DB::table('third_party_engagement_collaboration_escalations')->where('id', $escalation->id)->update(['due_context_snapshot' => null]);
+        $migration = require database_path('migrations/2026_08_24_870000_create_third_party_collaboration_extensions.php');
+        $migration->up();
+        $this->assertSame($proposal->id, ThirdPartyEngagementCollaborationReminder::query()->findOrFail($overdueReminder->id)->due_context_snapshot['extension_id']);
+        $this->assertSame($proposal->id, ThirdPartyEngagementCollaborationEscalation::query()->findOrFail($escalation->id)->due_context_snapshot['extension_id']);
+        DB::table('third_party_engagement_collaboration_reminders')->where('id', $overdueReminder->id)->update(['due_context_fingerprint' => null]);
+        $migration->up();
+        $repairedReminder = ThirdPartyEngagementCollaborationReminder::query()->findOrFail($overdueReminder->id);
+        $this->assertSame($proposal->decision->fingerprint, $repairedReminder->due_context_fingerprint);
+        $this->assertSame($proposal->id, $repairedReminder->due_context_snapshot['extension_id']);
+        DB::table('third_party_engagement_collaboration_reminders')->where('id', $overdueReminder->id)->update(['effective_due_at' => null]);
+        $migration->up();
+        $this->assertSame('2026-09-03', ThirdPartyEngagementCollaborationReminder::query()->findOrFail($overdueReminder->id)->effective_due_at->toDateString());
+        Carbon::setTestNow();
+    }
+
+    public function test_extension_bounds_factories_and_retained_migration_are_exact(): void
+    {
+        Carbon::setTestNow('2026-08-24 10:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        DB::table('third_party_engagements')->where('id', $engagement->id)->update(['term_end_at' => '2027-12-31']);
+        $engagement->refresh();
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($opener, $engagement, [
+            'category' => 'assurance', 'subject' => 'Bounded extension request', 'request_text' => 'Provide the requested response.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-09-01',
+        ]);
+        $manager = app(ThirdPartyEngagementCollaborationExtensionManager::class);
+        for ($version = 1; $version <= 20; $version++) {
+            $extension = $manager->request($contact, $request, ['proposed_due_at' => '2026-09-08', 'reason' => "Extension proposal {$version}."]);
+            $manager->decide($reviewer, $extension, ['decision' => 'rejected', 'summary' => "Extension {$version} is rejected."]);
+        }
+        $this->assertDatabaseCount('third_party_collaboration_extensions', 20);
+        try {
+            $manager->request($contact, $request, ['proposed_due_at' => '2026-09-08', 'reason' => 'Overflow extension.']);
+            $this->fail('The 21st extension proposal must fail.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+
+        $factoryExtension = ThirdPartyCollaborationExtension::factory()->create();
+        $factoryDecision = ThirdPartyCollaborationExtensionDecision::factory()->create();
+        $this->assertSame(64, strlen($factoryExtension->fingerprint));
+        $this->assertSame(64, strlen($factoryDecision->fingerprint));
+        $migration = require database_path('migrations/2026_08_24_870000_create_third_party_collaboration_extensions.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_extensions', ['id' => $factoryExtension->id]);
+        $this->assertDatabaseHas('third_party_collaboration_extension_decisions', ['id' => $factoryDecision->id]);
         Carbon::setTestNow();
     }
 }

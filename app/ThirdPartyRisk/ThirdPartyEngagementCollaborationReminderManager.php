@@ -61,11 +61,14 @@ class ThirdPartyEngagementCollaborationReminderManager
             $event = ThirdPartyEngagementCollaborationEvent::query()
                 ->where('third_party_engagement_collaboration_request_id', $request->id)
                 ->orderByDesc('version')->lockForUpdate()->first();
+            $extensions = $request->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
+            $dueContext = $request->setRelation('extensions', $extensions)->effectiveDueContext();
+            $effectiveDue = Carbon::parse($dueContext['due_at']);
             if (! $event || ! in_array($event->status, [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
-                || $request->due_at->greaterThan($asOf->copy()->addDays(self::DUE_SOON_DAYS)->endOfDay())) {
+                || $effectiveDue->greaterThan($asOf->copy()->addDays(self::DUE_SOON_DAYS)->endOfDay())) {
                 return false;
             }
-            $type = $request->due_at->copy()->endOfDay()->lessThan($asOf)
+            $type = $effectiveDue->copy()->endOfDay()->lessThan($asOf)
                 ? ThirdPartyCollaborationReminderType::Overdue
                 : ThirdPartyCollaborationReminderType::DueSoon;
             if ($request->reminders()->where('type', $type)->lockForUpdate()->exists()) {
@@ -78,7 +81,7 @@ class ThirdPartyEngagementCollaborationReminderManager
                 $type,
                 $engagement->code,
                 $request->subject,
-                $request->due_at->toDateString(),
+                $effectiveDue->toDateString(),
                 $request->id,
             ));
             if (! DB::table('notifications')->where('id', $notificationId)
@@ -91,6 +94,9 @@ class ThirdPartyEngagementCollaborationReminderManager
                 'third_party_engagement_id' => $engagement->id,
                 'vendor_user_id' => $recipient->id,
                 'type' => $type->value,
+                'due_context_fingerprint' => $dueContext['fingerprint'],
+                'effective_due_at' => $effectiveDue->toDateString(),
+                'due_context_snapshot' => $dueContext,
                 'channel' => 'database',
                 'notification_id' => $notificationId,
                 'recipient_snapshot' => $recipient->only(['id', 'vendor_id', 'name', 'email', 'is_primary']),

@@ -33,7 +33,9 @@ class ThirdPartyEngagementCollaborationIssueManager
             $request = ThirdPartyEngagementCollaborationRequest::query()->where('third_party_engagement_id', $engagement->id)->lockForUpdate()->findOrFail($requestId);
             VendorUser::withTrashed()->lockForUpdate()->findOrFail($request->recipient_vendor_user_id);
             $latestEvent = ThirdPartyEngagementCollaborationEvent::query()->where('third_party_engagement_collaboration_request_id', $request->id)->orderByDesc('version')->lockForUpdate()->firstOrFail();
-            ThirdPartyEngagementCollaborationReminder::query()->where('third_party_engagement_collaboration_request_id', $request->id)->where('type', ThirdPartyCollaborationReminderType::Overdue)->lockForUpdate()->firstOrFail();
+            $extensions = $request->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
+            $dueContext = $request->setRelation('extensions', $extensions)->effectiveDueContext();
+            ThirdPartyEngagementCollaborationReminder::query()->where('third_party_engagement_collaboration_request_id', $request->id)->where('due_context_fingerprint', $dueContext['fingerprint'])->where('type', ThirdPartyCollaborationReminderType::Overdue)->lockForUpdate()->firstOrFail();
             $locked = ThirdPartyEngagementCollaborationEscalation::query()->where('third_party_engagement_collaboration_request_id', $request->id)->lockForUpdate()->findOrFail($escalation->id);
             $acknowledgement = $locked->actions()->orderByDesc('version')->lockForUpdate()->firstOrFail();
             $lockedActor = User::query()->lockForUpdate()->find($actor->id);

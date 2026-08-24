@@ -165,6 +165,21 @@
             <div>Recipient: {{ $request->recipient?->name }} · due {{ $request->due_at?->toDateString() }} · opened by {{ $request->opener?->name }}</div>
             <div class="mt-1 whitespace-pre-wrap">{{ $request->request_text }}</div>
             <details class="mt-2"><summary class="font-medium">Retained request context</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['engagement' => $request->engagement_snapshot, 'recipient' => $request->recipient_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+            <div>Effective due date: {{ $request->effective_due_at }}</div>
+            @foreach ($request->extensions->sortBy('version') as $extension)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div>Extension v{{ $extension->version }} · proposed {{ $extension->proposed_due_at?->toDateString() }} · requested {{ $extension->requested_at?->toDayDateTimeString() }}</div>
+                    <div class="whitespace-pre-wrap">{{ $extension->reason }}</div>
+                    <details class="mt-1"><summary class="font-medium">Retained proposal evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipient' => $extension->recipient_snapshot, 'request' => $extension->request_snapshot, 'current_due_context' => $extension->current_due_context], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $extension->fingerprint }}</div>
+                    @if ($extension->decision)
+                        <div>{{ $extension->decision->decision->getLabel() }} by {{ $extension->decision->decider?->name }} · {{ $extension->decision->decided_at?->toDayDateTimeString() }}</div>
+                        <div class="whitespace-pre-wrap">{{ $extension->decision->summary }}</div>
+                        <details class="mt-1"><summary class="font-medium">Retained decision evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['decider' => $extension->decision->decider_snapshot, 'extension' => $extension->decision->extension_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                        <div class="break-all font-mono text-xs">{{ $extension->decision->fingerprint }}</div>
+                    @endif
+                </div>
+            @endforeach
             @foreach ($request->events->sortBy('version') as $event)
                 <div class="mt-2 rounded-lg border p-2">
                     <div>Event v{{ $event->version }} · {{ $event->status->getLabel() }} · {{ data_get($event->actor_snapshot, 'name') }} · {{ $event->recorded_at?->toDayDateTimeString() }}</div>
@@ -181,7 +196,7 @@
                 <div class="mt-2 rounded-lg border p-2">
                     <div>{{ $reminder->type->getLabel() }} reminder · {{ $reminder->channel }} · attempted {{ $reminder->attempted_at?->toDayDateTimeString() }} · delivered {{ $reminder->delivered_at?->toDayDateTimeString() }}</div>
                     <div class="break-all">Notification: <span class="font-mono text-xs">{{ $reminder->notification_id }}</span></div>
-                    <details class="mt-1"><summary class="font-medium">Retained recipient, request, and latest-event snapshots</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipient' => $reminder->recipient_snapshot, 'request' => $reminder->request_snapshot, 'event' => $reminder->event_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <details class="mt-1"><summary class="font-medium">Retained due, recipient, request, and latest-event snapshots</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['due_context' => $reminder->due_context_snapshot, 'recipient' => $reminder->recipient_snapshot, 'request' => $reminder->request_snapshot, 'event' => $reminder->event_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
                     <div class="break-all font-mono text-xs">{{ $reminder->fingerprint }}</div>
                 </div>
             @endforeach
@@ -189,7 +204,7 @@
                 <div class="mt-2 rounded-lg border p-2">
                     <div class="font-medium">Persistently overdue escalation · {{ $request->escalation->channel }} · attempted {{ $request->escalation->attempted_at?->toDayDateTimeString() }} · delivered {{ $request->escalation->delivered_at?->toDayDateTimeString() }}</div>
                     <div>Notifications: {{ implode(', ', $request->escalation->notification_ids) }}</div>
-                    <details class="mt-1"><summary class="font-medium">Retained recipients, request, event, and overdue reminder</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipients' => $request->escalation->recipient_snapshots, 'request' => $request->escalation->request_snapshot, 'event' => $request->escalation->event_snapshot, 'overdue_reminder' => $request->escalation->overdue_reminder_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <details class="mt-1"><summary class="font-medium">Retained due context, recipients, request, event, and overdue reminder</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['due_context' => $request->escalation->due_context_snapshot, 'recipients' => $request->escalation->recipient_snapshots, 'request' => $request->escalation->request_snapshot, 'event' => $request->escalation->event_snapshot, 'overdue_reminder' => $request->escalation->overdue_reminder_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
                     <div class="break-all font-mono text-xs">{{ $request->escalation->fingerprint }}</div>
                     @foreach ($request->escalation->actions->sortBy('version') as $action)
                         <div class="mt-2 rounded-lg border p-2">

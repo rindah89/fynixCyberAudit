@@ -9,9 +9,9 @@ use LogicException;
 
 class ThirdPartyEngagementCollaborationReminder extends Model
 {
-    protected $fillable = ['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'type', 'channel', 'notification_id', 'recipient_snapshot', 'request_snapshot', 'event_snapshot', 'attempted_at', 'delivered_at', 'fingerprint'];
+    protected $fillable = ['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'type', 'due_context_fingerprint', 'effective_due_at', 'due_context_snapshot', 'channel', 'notification_id', 'recipient_snapshot', 'request_snapshot', 'event_snapshot', 'attempted_at', 'delivered_at', 'fingerprint'];
 
-    protected $casts = ['type' => ThirdPartyCollaborationReminderType::class, 'recipient_snapshot' => 'array', 'request_snapshot' => 'array', 'event_snapshot' => 'array', 'attempted_at' => 'datetime', 'delivered_at' => 'datetime'];
+    protected $casts = ['type' => ThirdPartyCollaborationReminderType::class, 'effective_due_at' => 'date', 'due_context_snapshot' => 'array', 'recipient_snapshot' => 'array', 'request_snapshot' => 'array', 'event_snapshot' => 'array', 'attempted_at' => 'datetime', 'delivered_at' => 'datetime'];
 
     protected static function booted(): void
     {

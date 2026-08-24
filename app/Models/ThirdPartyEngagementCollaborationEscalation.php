@@ -10,9 +10,9 @@ use LogicException;
 
 class ThirdPartyEngagementCollaborationEscalation extends Model
 {
-    protected $fillable = ['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'channel', 'notification_ids', 'recipient_snapshots', 'request_snapshot', 'event_snapshot', 'overdue_reminder_snapshot', 'attempted_at', 'delivered_at', 'fingerprint'];
+    protected $fillable = ['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'effective_due_at', 'due_context_snapshot', 'channel', 'notification_ids', 'recipient_snapshots', 'request_snapshot', 'event_snapshot', 'overdue_reminder_snapshot', 'attempted_at', 'delivered_at', 'fingerprint'];
 
-    protected $casts = ['notification_ids' => 'array', 'recipient_snapshots' => 'array', 'request_snapshot' => 'array', 'event_snapshot' => 'array', 'overdue_reminder_snapshot' => 'array', 'attempted_at' => 'datetime', 'delivered_at' => 'datetime'];
+    protected $casts = ['effective_due_at' => 'date', 'due_context_snapshot' => 'array', 'notification_ids' => 'array', 'recipient_snapshots' => 'array', 'request_snapshot' => 'array', 'event_snapshot' => 'array', 'overdue_reminder_snapshot' => 'array', 'attempted_at' => 'datetime', 'delivered_at' => 'datetime'];
 
     protected static function booted(): void
     {

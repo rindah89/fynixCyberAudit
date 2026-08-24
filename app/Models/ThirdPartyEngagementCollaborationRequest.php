@@ -20,6 +20,8 @@ class ThirdPartyEngagementCollaborationRequest extends Model
 
     protected $casts = ['category' => ThirdPartyCollaborationCategory::class, 'due_at' => 'date', 'engagement_snapshot' => 'array', 'recipient_snapshot' => 'array', 'opened_at' => 'datetime'];
 
+    protected $appends = ['effective_due_at'];
+
     protected static function booted(): void
     {
         static::updating(fn () => throw new LogicException('Collaboration requests are immutable.'));
@@ -54,6 +56,28 @@ class ThirdPartyEngagementCollaborationRequest extends Model
     public function reminders(): HasMany
     {
         return $this->hasMany(ThirdPartyEngagementCollaborationReminder::class)->orderBy('delivered_at');
+    }
+
+    public function extensions(): HasMany
+    {
+        return $this->hasMany(ThirdPartyCollaborationExtension::class, 'third_party_engagement_collaboration_request_id')->orderBy('version');
+    }
+
+    public function effectiveDueContext(): array
+    {
+        $extensions = $this->relationLoaded('extensions')
+            ? $this->extensions
+            : $this->extensions()->with('decision')->get();
+        $approved = $extensions->filter(fn (ThirdPartyCollaborationExtension $extension): bool => $extension->decision?->decision?->value === 'approved')->last();
+
+        return $approved
+            ? ['due_at' => $approved->proposed_due_at->toDateString(), 'fingerprint' => $approved->decision->fingerprint, 'extension_id' => $approved->id, 'decision_id' => $approved->decision->id]
+            : ['due_at' => $this->due_at->toDateString(), 'fingerprint' => $this->fingerprint, 'extension_id' => null, 'decision_id' => null];
+    }
+
+    public function getEffectiveDueAtAttribute(): string
+    {
+        return $this->effectiveDueContext()['due_at'];
     }
 
     public function escalation(): HasOne
