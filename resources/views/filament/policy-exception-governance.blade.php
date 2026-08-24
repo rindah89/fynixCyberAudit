@@ -18,6 +18,18 @@
     @if ($exception->governance_snapshot)
         <div><h4 class="font-medium">Immutable request snapshot</h4><pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border p-3 text-xs">{{ json_encode($exception->governance_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre></div>
     @endif
+    @if ($exception->expiration)
+        <div class="rounded-lg border p-3">
+            <div class="font-medium">Server expiry reconciliation</div>
+            <div>Effective {{ $exception->expiration->expired_at }} · reconciled {{ $exception->expiration->reconciled_at }}</div>
+            <div>Run {{ $exception->expiration->reconciliation_id }} · source {{ $exception->expiration->source }}</div>
+            <div class="mt-2 break-all font-mono text-xs">{{ $exception->expiration->fingerprint }}</div>
+            <details class="mt-2">
+                <summary class="cursor-pointer font-medium">Immutable expiration snapshot</summary>
+                <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border p-3 text-xs">{{ json_encode($exception->expiration->exception_snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+            </details>
+        </div>
+    @endif
     @foreach ($exception->decisions as $decision)
         <div class="rounded-lg border p-3">
             <div class="font-medium">Decision v{{ $decision->version }} — {{ $decision->decision->getLabel() }}</div>

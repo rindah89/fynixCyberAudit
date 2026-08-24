@@ -35,6 +35,7 @@ class ExceptionsRelationManager extends RelationManager
         return $table->modifyQueryUsing(fn (Builder $query) => $query->with([
             'requester' => fn ($query) => $query->withTrashed(), 'approver' => fn ($query) => $query->withTrashed(),
             'decisions.decider' => fn ($query) => $query->withTrashed(),
+            'expiration',
             'monitoringReviews.reviewer' => fn ($query) => $query->withTrashed(),
             'monitoringReviews.issue.lifecycle',
             'monitoringReviews.evidence.attachment.audit.members',
@@ -140,6 +141,7 @@ class ExceptionsRelationManager extends RelationManager
     private function visibleException(PolicyException $exception): PolicyException
     {
         $exception->load([
+            'expiration',
             'monitoringReviews.reviewer' => fn ($query) => $query->withTrashed(),
             'monitoringReviews.issue.lifecycle',
             'monitoringReviews.evidence.attachment.audit.members',

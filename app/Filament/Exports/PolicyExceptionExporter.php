@@ -25,6 +25,18 @@ class PolicyExceptionExporter extends Exporter
             ExportColumn::make('requester.name')->label('Requested By'), ExportColumn::make('submitted_at'),
             ExportColumn::make('governance_fingerprint'),
             ExportColumn::make('governance_snapshot')->formatStateUsing(fn ($state): ?string => $state ? json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
+            ExportColumn::make('expiration_evidence')->state(fn (PolicyException $record): ?string => $record->expiration
+                ? json_encode([
+                    'prior_status' => $record->expiration->prior_status->value,
+                    'expiration_date' => $record->expiration->expiration_date->toDateString(),
+                    'expired_at' => $record->expiration->expired_at->toISOString(),
+                    'reconciled_at' => $record->expiration->reconciled_at->toISOString(),
+                    'reconciliation_id' => $record->expiration->reconciliation_id,
+                    'source' => $record->expiration->source,
+                    'exception_snapshot' => $record->expiration->exception_snapshot,
+                    'fingerprint' => $record->expiration->fingerprint,
+                ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)
+                : null),
             ExportColumn::make('decision_history')->state(fn (PolicyException $record): string => json_encode($record->decisions->map(fn ($decision): array => [
                 'version' => $decision->version, 'decision' => $decision->decision->value,
                 'summary' => $decision->decision_summary, 'decided_by' => $decision->decided_by,
@@ -49,6 +61,7 @@ class PolicyExceptionExporter extends Exporter
     {
         return $query->with([
             'policy:id,code', 'requester:id,name', 'decisions.decider:id,name',
+            'expiration',
             'monitoringReviews.reviewer:id,name', 'monitoringReviews.issue.lifecycle',
             'openMonitoringIssues' => fn ($issues) => $issues->select([
                 'policy_exception_monitoring_issues.id',

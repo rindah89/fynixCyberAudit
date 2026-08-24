@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
@@ -93,7 +94,7 @@ class PolicyException extends Model
                 if ($model->isDirty('status')) {
                     $from = PolicyExceptionStatus::from($model->getRawOriginal('status'));
                     $valid = ($from === PolicyExceptionStatus::Pending && in_array($model->status, [PolicyExceptionStatus::Approved, PolicyExceptionStatus::Denied], true))
-                        || ($from === PolicyExceptionStatus::Approved && $model->status === PolicyExceptionStatus::Revoked);
+                        || ($from === PolicyExceptionStatus::Approved && in_array($model->status, [PolicyExceptionStatus::Revoked, PolicyExceptionStatus::Expired], true));
                     if (! $valid) {
                         throw new \LogicException('The governed policy exception transition is invalid.');
                     }
@@ -158,6 +159,11 @@ class PolicyException extends Model
     public function monitoringReviews(): HasMany
     {
         return $this->hasMany(PolicyExceptionMonitoringReview::class);
+    }
+
+    public function expiration(): HasOne
+    {
+        return $this->hasOne(PolicyExceptionExpiration::class);
     }
 
     public function openMonitoringIssues(): HasManyThrough

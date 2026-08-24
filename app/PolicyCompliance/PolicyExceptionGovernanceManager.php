@@ -112,6 +112,7 @@ class PolicyExceptionGovernanceManager
         return PolicyException::query()->where('policy_id', $policy->id)->whereNotNull('governance_fingerprint')
             ->with([
                 'requester:id,name', 'approver:id,name', 'decisions.decider:id,name',
+                'expiration',
                 'monitoringReviews.reviewer:id,name', 'monitoringReviews.issue.lifecycle',
                 'openMonitoringIssues' => fn ($issues) => $issues->select([
                     'policy_exception_monitoring_issues.id',
