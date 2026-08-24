@@ -7,9 +7,11 @@ use App\Models\PolicyAcknowledgement;
 use App\Models\PolicyAcknowledgementAssignment;
 use App\Models\PolicyAcknowledgementCampaign;
 use App\Models\User;
+use App\Notifications\PolicyAcknowledgementAssigned;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class PolicyAcknowledgementManager
@@ -49,7 +51,52 @@ class PolicyAcknowledgementManager
                 'user_id' => $userId, 'assigned_at' => $launchedAt,
             ])->all());
 
-            return $campaign->load(['launcher:id,name', 'assignments.user:id,name,email']);
+            $usersById = $users->keyBy('id');
+            foreach ($campaign->assignments()->orderBy('user_id')->get() as $assignment) {
+                $recipient = $usersById->get($assignment->user_id);
+                $notificationId = Str::uuid()->toString();
+                $attemptedAt = now()->startOfSecond();
+                $recipient->notifyNow(new PolicyAcknowledgementAssigned(
+                    $notificationId,
+                    $campaign->title,
+                    $locked->code,
+                    $campaign->due_at->toISOString(),
+                    $assignment->id,
+                ));
+                if (! DB::table('notifications')->where('id', $notificationId)
+                    ->where('notifiable_type', User::class)->where('notifiable_id', $recipient->id)->exists()) {
+                    throw new \LogicException('The acknowledgement notification was not accepted by the database delivery channel.');
+                }
+                $deliveredAt = now()->startOfSecond();
+                $recipientSnapshot = $recipient->only(['id', 'name', 'email']);
+                $campaignSnapshot = [
+                    'id' => $campaign->id,
+                    'policy_id' => $campaign->policy_id,
+                    'version' => $campaign->version,
+                    'title' => $campaign->title,
+                    'instructions' => $campaign->instructions,
+                    'due_at' => $campaign->due_at->toISOString(),
+                    'launched_by' => $campaign->launched_by,
+                    'launched_at' => $campaign->launched_at->toISOString(),
+                    'policy_fingerprint' => $campaign->policy_fingerprint,
+                ];
+                $deliveryPayload = [
+                    'policy_acknowledgement_assignment_id' => $assignment->id,
+                    'policy_acknowledgement_campaign_id' => $campaign->id,
+                    'user_id' => $recipient->id,
+                    'channel' => 'database',
+                    'notification_id' => $notificationId,
+                    'recipient_snapshot' => $recipientSnapshot,
+                    'campaign_snapshot' => $campaignSnapshot,
+                    'attempted_at' => $attemptedAt->toISOString(),
+                    'delivered_at' => $deliveredAt->toISOString(),
+                ];
+                $assignment->delivery()->create($deliveryPayload + [
+                    'fingerprint' => hash('sha256', json_encode($deliveryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)),
+                ]);
+            }
+
+            return $campaign->load(['launcher:id,name', 'assignments.user:id,name,email', 'assignments.delivery']);
         }, 3);
     }
 
@@ -106,7 +153,7 @@ class PolicyAcknowledgementManager
     public function assignments(User $actor): Builder
     {
         return PolicyAcknowledgementAssignment::query()->where('user_id', $actor->id)
-            ->with(['campaign.policy:id,code,name', 'acknowledgement:id,policy_acknowledgement_assignment_id,acknowledged_at'])
+            ->with(['campaign.policy:id,code,name', 'delivery', 'acknowledgement:id,policy_acknowledgement_assignment_id,acknowledged_at'])
             ->latest('assigned_at');
     }
 
@@ -115,7 +162,7 @@ class PolicyAcknowledgementManager
         $policy = $campaign->relationLoaded('policy') ? $campaign->policy : $campaign->policy()->firstOrFail();
         $this->authorizeManage($policy, $actor);
 
-        return $campaign->assignments()->getQuery()->with(['campaign', 'user:id,name,email', 'acknowledgement.acknowledger:id,name,email'])->latest('assigned_at');
+        return $campaign->assignments()->getQuery()->with(['campaign', 'user:id,name,email', 'delivery', 'acknowledgement.acknowledger:id,name,email'])->latest('assigned_at');
     }
 
     public static function launchRules(): array

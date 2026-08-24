@@ -37,6 +37,11 @@ class PolicyAcknowledgementAssignment extends Model
         return $this->hasOne(PolicyAcknowledgement::class);
     }
 
+    public function delivery(): HasOne
+    {
+        return $this->hasOne(PolicyAcknowledgementDelivery::class);
+    }
+
     public function getAcknowledgementStatusAttribute(): string
     {
         $acknowledgement = $this->relationLoaded('acknowledgement') ? $this->acknowledgement : $this->acknowledgement()->first();

@@ -47,6 +47,11 @@ class PolicyAcknowledgementCampaign extends Model
         return $this->hasMany(PolicyAcknowledgementAssignment::class);
     }
 
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(PolicyAcknowledgementDelivery::class);
+    }
+
     public function getCampaignStatusAttribute(): string
     {
         if ($this->closed_at) {

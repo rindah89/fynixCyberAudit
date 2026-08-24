@@ -23,6 +23,15 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
             ExportColumn::make('user.email')->label('Assigned Email'),
             ExportColumn::make('acknowledgement_status')->label('Status'),
             ExportColumn::make('assigned_at'),
+            ExportColumn::make('delivery.channel')->label('Notification Channel'),
+            ExportColumn::make('delivery.notification_id')->label('Notification ID'),
+            ExportColumn::make('delivery.attempted_at')->label('Notification Attempted At'),
+            ExportColumn::make('delivery.delivered_at')->label('Notification Delivered At'),
+            ExportColumn::make('delivery.fingerprint')->label('Delivery Fingerprint'),
+            ExportColumn::make('delivery.recipient_snapshot')->label('Delivery Recipient Snapshot JSON')
+                ->formatStateUsing(fn ($state): ?string => $state ? json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
+            ExportColumn::make('delivery.campaign_snapshot')->label('Delivery Campaign Snapshot JSON')
+                ->formatStateUsing(fn ($state): ?string => $state ? json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) : null),
             ExportColumn::make('campaign.due_at')->label('Due At'),
             ExportColumn::make('acknowledgement.acknowledged_at')->label('Acknowledged At'),
             ExportColumn::make('acknowledgement.statement')->label('Statement'),
@@ -36,7 +45,7 @@ class PolicyAcknowledgementAssignmentExporter extends Exporter
 
     public static function modifyQuery(Builder $query): Builder
     {
-        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'acknowledgement']);
+        return $query->with(['campaign.policy:id,code,name', 'user:id,name,email', 'delivery', 'acknowledgement']);
     }
 
     public static function getCompletedNotificationBody(Export $export): string
