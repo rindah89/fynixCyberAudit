@@ -88,6 +88,11 @@ class AuditItem extends Model
         return $this->hasMany(DataRequest::class);
     }
 
+    public function procedures(): HasMany
+    {
+        return $this->hasMany(AuditProcedure::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

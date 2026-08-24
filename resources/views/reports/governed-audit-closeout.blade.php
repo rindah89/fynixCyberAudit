@@ -10,6 +10,13 @@
 <h2>Scope limitations</h2><p>{{ data_get($report, 'scope_limitations') ?: 'None reported.' }}</p>
 <h2>Significant matters</h2><p>{{ data_get($report, 'significant_matters') }}</p>
 <h2>Recommendations</h2><p>{{ data_get($report, 'recommendations_summary') }}</p>
+<h2>Governed work program</h2>
+<p>{{ count(data_get($report, 'audit_procedure_snapshots', [])) }} procedure version(s) retained in the report snapshot.</p>
+@foreach (data_get($report, 'audit_procedure_snapshots', []) as $procedure)
+    <p><strong>{{ data_get($procedure, 'code') }} v{{ data_get($procedure, 'version') }}:</strong>
+        {{ str_replace('_', ' ', data_get($procedure, 'execution.outcome', 'pending')) }} —
+        {{ \Illuminate\Support\Str::limit(data_get($procedure, 'execution.result', 'No execution result'), 500) }}</p>
+@endforeach
 <h2>Independent review</h2><p>{{ data_get($report, 'review_summary') }}</p>
 <p><strong>Submission fingerprint:</strong> {{ data_get($report, 'submission_fingerprint') }}</p>
 <p><strong>Reviewed by user:</strong> {{ data_get($report, 'reviewed_by') }} at {{ data_get($report, 'reviewed_at') }}</p>

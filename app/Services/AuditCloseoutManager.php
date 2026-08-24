@@ -62,6 +62,13 @@ class AuditCloseoutManager
             if ($requests->count() > 500) {
                 throw ValidationException::withMessages(['data_requests' => 'A governed closeout is bounded to 500 data requests. Split larger scopes into separate engagements.']);
             }
+            $procedures = $locked->procedures()->with('execution')->orderBy('id')->lockForUpdate()->get();
+            if ($procedures->count() > 250) {
+                throw ValidationException::withMessages(['audit_procedures' => 'Governed closeout is bounded to 250 procedure versions.']);
+            }
+            if ($procedures->contains(fn ($procedure): bool => ! $procedure->execution)) {
+                throw ValidationException::withMessages(['audit_procedures' => 'Every defined audit procedure must be executed before closeout.']);
+            }
             DB::table('audit_user')->where('audit_id', $locked->id)->orderBy('user_id')->lockForUpdate()->get();
             $memberIds = $locked->members()->orderBy('users.id')->lockForUpdate()->pluck('users.id')->map(fn ($id): int => (int) $id)->all();
             User::query()->whereKey(collect($memberIds)->push($locked->manager_id)->filter()->unique())->orderBy('id')->lockForUpdate()->get();
@@ -78,12 +85,14 @@ class AuditCloseoutManager
                 'auditable_snapshot' => $auditableSnapshots->get($item->auditable_type.':'.$item->auditable_id),
             ])->all();
             $requestSnapshots = $requests->map(fn (DataRequest $request): array => $request->only(['id', 'code', 'audit_item_id', 'created_by_id', 'assigned_to_id', 'status', 'details', 'created_at', 'updated_at']))->all();
+            $procedureSnapshots = $this->procedureSnapshots($procedures);
             $submittedAt = now();
             $payload = [
                 'audit_snapshot' => $auditSnapshot,
                 'engagement_baseline_snapshot' => $baseline->only(['id', 'audit_id', 'audit_plan_item_id', 'objective', 'scope', 'exclusions', 'team_user_ids', 'audit_snapshot', 'plan_snapshot', 'entity_assessment_snapshot', 'launched_by', 'launched_at', 'fingerprint']),
                 'audit_item_snapshots' => $itemSnapshots,
                 'data_request_snapshots' => $requestSnapshots,
+                'audit_procedure_snapshots' => $procedureSnapshots,
                 'opinion' => $validated['opinion'],
                 'executive_summary' => $validated['executive_summary'],
                 'scope_limitations' => $validated['scope_limitations'] ?? null,
@@ -135,6 +144,7 @@ class AuditCloseoutManager
                     'engagement_baseline_snapshot' => $locked->engagement_baseline_snapshot,
                     'audit_item_snapshots' => $locked->audit_item_snapshots,
                     'data_request_snapshots' => $locked->data_request_snapshots,
+                    'audit_procedure_snapshots' => $locked->audit_procedure_snapshots,
                     'decision' => $validated['decision'],
                     'review_summary' => $validated['review_summary'],
                     'reviewed_by' => $actor->id,
@@ -231,6 +241,7 @@ class AuditCloseoutManager
     {
         $items = $audit->auditItems()->orderBy('id')->lockForUpdate()->get();
         $requests = $audit->dataRequest()->orderBy('id')->lockForUpdate()->get();
+        $procedures = $audit->procedures()->with('execution')->orderBy('id')->lockForUpdate()->get();
         DB::table('audit_user')->where('audit_id', $audit->id)->orderBy('user_id')->lockForUpdate()->get();
         $memberIds = $audit->members()->orderBy('users.id')->lockForUpdate()->pluck('users.id')->map(fn ($id): int => (int) $id)->all();
         $auditableSnapshots = $this->lockAuditableSnapshots($items);
@@ -246,10 +257,12 @@ class AuditCloseoutManager
             'auditable_snapshot' => $auditableSnapshots->get($item->auditable_type.':'.$item->auditable_id),
         ])->all();
         $currentRequests = $requests->map(fn (DataRequest $request): array => $request->only(['id', 'code', 'audit_item_id', 'created_by_id', 'assigned_to_id', 'status', 'details', 'created_at', 'updated_at']))->all();
+        $currentProcedures = $this->procedureSnapshots($procedures);
 
         if ($this->canonicalSnapshot($currentAudit) !== $submission->audit_snapshot
             || $this->canonicalSnapshot($currentItems) !== $submission->audit_item_snapshots
-            || $this->canonicalSnapshot($currentRequests) !== $submission->data_request_snapshots) {
+            || $this->canonicalSnapshot($currentRequests) !== $submission->data_request_snapshots
+            || $this->canonicalSnapshot($currentProcedures) !== ($submission->audit_procedure_snapshots ?? [])) {
             throw ValidationException::withMessages([
                 'submission' => 'The captured audit scope or fieldwork changed after submission. Reject this version and submit a fresh closeout snapshot.',
             ]);
@@ -259,6 +272,14 @@ class AuditCloseoutManager
     private function canonicalSnapshot(array $snapshot): array
     {
         return json_decode(json_encode($snapshot, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private function procedureSnapshots(Collection $procedures): array
+    {
+        return $procedures->map(fn ($procedure): array => [
+            ...$procedure->only(['id', 'audit_id', 'audit_item_id', 'version', 'code', 'title', 'objective', 'steps', 'method', 'population_description', 'planned_sample_size', 'assigned_to', 'due_at', 'status', 'created_by', 'created_at']),
+            'execution' => $procedure->execution?->only(['id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
+        ])->all();
     }
 
     private function lockAuditableSnapshots(Collection $items): Collection

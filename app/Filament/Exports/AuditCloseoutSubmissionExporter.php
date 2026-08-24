@@ -21,6 +21,7 @@ class AuditCloseoutSubmissionExporter extends Exporter
             ExportColumn::make('engagement_baseline_snapshot')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->engagement_baseline_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('audit_item_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->audit_item_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('data_request_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->data_request_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
+            ExportColumn::make('audit_procedure_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->audit_procedure_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('submitter.name'), ExportColumn::make('submitted_at'), ExportColumn::make('fingerprint'),
             ExportColumn::make('review.decision'), ExportColumn::make('review.review_summary'), ExportColumn::make('review.reviewer.name'),
             ExportColumn::make('review.reviewed_at'), ExportColumn::make('review.report_size'), ExportColumn::make('review.report_sha256'), ExportColumn::make('review.fingerprint')->label('Review Fingerprint'),

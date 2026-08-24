@@ -16,6 +16,7 @@ use App\Filament\Resources\AuditResource\RelationManagers\AttachmentsRelationMan
 use App\Filament\Resources\AuditResource\RelationManagers\AuditItemRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\CloseoutSubmissionsRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\DataRequestsRelationManager;
+use App\Filament\Resources\AuditResource\RelationManagers\ProceduresRelationManager;
 use App\Filament\Resources\AuditResource\Widgets\AuditStatsWidget;
 use App\Models\Audit;
 use App\Models\AuditCloseoutSubmission;
@@ -263,6 +264,7 @@ class AuditResource extends Resource
         if (! request()->routeIs('filament.app.resources.audits.edit')) {
             return [
                 AuditItemRelationManager::class,
+                ProceduresRelationManager::class,
                 DataRequestsRelationManager::class,
                 AttachmentsRelationManager::class,
                 CloseoutSubmissionsRelationManager::class,

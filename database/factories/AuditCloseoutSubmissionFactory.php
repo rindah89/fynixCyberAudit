@@ -49,6 +49,7 @@ class AuditCloseoutSubmissionFactory extends Factory
                 })->all();
             },
             'data_request_snapshots' => [],
+            'audit_procedure_snapshots' => [],
             'submitted_by' => fn (array $attributes): int => (int) Audit::query()->findOrFail($attributes['audit_id'])->manager_id,
             'submitted_at' => now(),
             'fingerprint' => fn (array $attributes): string => hash('sha256', json_encode($this->payload($attributes), JSON_THROW_ON_ERROR)),
@@ -69,6 +70,7 @@ class AuditCloseoutSubmissionFactory extends Factory
         return [
             'audit_snapshot' => $attributes['audit_snapshot'], 'engagement_baseline_snapshot' => $attributes['engagement_baseline_snapshot'],
             'audit_item_snapshots' => $attributes['audit_item_snapshots'], 'data_request_snapshots' => $attributes['data_request_snapshots'],
+            'audit_procedure_snapshots' => $attributes['audit_procedure_snapshots'],
             'opinion' => $attributes['opinion'] instanceof AuditOpinion ? $attributes['opinion']->value : $attributes['opinion'],
             'executive_summary' => $attributes['executive_summary'], 'scope_limitations' => $attributes['scope_limitations'],
             'significant_matters' => $attributes['significant_matters'], 'recommendations_summary' => $attributes['recommendations_summary'],

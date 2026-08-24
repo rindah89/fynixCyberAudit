@@ -283,6 +283,7 @@ class AuditCloseoutTest extends TestCase
         return hash('sha256', json_encode([
             'audit_snapshot' => $submission->audit_snapshot, 'engagement_baseline_snapshot' => $submission->engagement_baseline_snapshot,
             'audit_item_snapshots' => $submission->audit_item_snapshots, 'data_request_snapshots' => $submission->data_request_snapshots,
+            'audit_procedure_snapshots' => $submission->audit_procedure_snapshots ?? [],
             'opinion' => $submission->opinion->value, 'executive_summary' => $submission->executive_summary,
             'scope_limitations' => $submission->scope_limitations, 'significant_matters' => $submission->significant_matters,
             'recommendations_summary' => $submission->recommendations_summary, 'submitted_by' => $submission->submitted_by,

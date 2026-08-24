@@ -6,6 +6,7 @@ use App\Http\Controllers\API\AssetController;
 use App\Http\Controllers\API\AuditCloseoutController;
 use App\Http\Controllers\API\AuditController;
 use App\Http\Controllers\API\AuditItemController;
+use App\Http\Controllers\API\AuditProcedureController;
 use App\Http\Controllers\API\AuditUniverseController;
 use App\Http\Controllers\API\ChecklistController;
 use App\Http\Controllers\API\ChecklistTemplateController;
@@ -83,6 +84,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/recovery-plans/{plan}/exercises', [OperationalResilienceController::class, 'storeExercise']);
     Route::post('/recovery-exercises/{exercise}/complete', [OperationalResilienceController::class, 'completeExercise']);
     Route::apiResource('audits', AuditController::class);
+    Route::get('/audits/{audit}/procedures', [AuditProcedureController::class, 'index']);
+    Route::post('/audits/{audit}/procedures', [AuditProcedureController::class, 'store']);
+    Route::post('/audit-procedures/{procedure}/execute', [AuditProcedureController::class, 'execute']);
     Route::get('/audits/{audit}/closeouts', [AuditCloseoutController::class, 'index']);
     Route::post('/audits/{audit}/closeouts', [AuditCloseoutController::class, 'submit']);
     Route::post('/audit-closeout-submissions/{submission}/review', [AuditCloseoutController::class, 'review']);

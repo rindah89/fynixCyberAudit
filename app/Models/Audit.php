@@ -136,6 +136,11 @@ class Audit extends Model
         return $this->hasMany(AuditCloseoutSubmission::class);
     }
 
+    public function procedures(): HasMany
+    {
+        return $this->hasMany(AuditProcedure::class);
+    }
+
     public function latestCloseoutSubmission(): HasOne
     {
         return $this->hasOne(AuditCloseoutSubmission::class)->latestOfMany('version');
