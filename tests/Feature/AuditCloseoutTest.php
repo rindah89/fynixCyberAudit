@@ -236,6 +236,7 @@ class AuditCloseoutTest extends TestCase
 
         $columns = collect(AuditCloseoutSubmissionExporter::getColumns())->map->getName();
         $this->assertContains('audit_item_snapshots', $columns);
+        $this->assertContains('audit_finding_snapshots', $columns);
         $this->assertContains('review.report_sha256', $columns);
         $factorySubmission = AuditCloseoutSubmission::factory()->create();
         $factoryReview = AuditCloseoutReview::factory()->create(['audit_closeout_submission_id' => $factorySubmission->id]);
@@ -285,6 +286,7 @@ class AuditCloseoutTest extends TestCase
             'audit_item_snapshots' => $submission->audit_item_snapshots, 'data_request_snapshots' => $submission->data_request_snapshots,
             'audit_procedure_snapshots' => $submission->audit_procedure_snapshots ?? [],
             'audit_effort_snapshots' => $submission->audit_effort_snapshots ?? ['budgets' => [], 'time_entries' => [], 'summary' => ['planned_minutes' => 0, 'actual_minutes' => 0, 'variance_minutes' => 0, 'allocations' => []]],
+            'audit_finding_snapshots' => $submission->audit_finding_snapshots ?? [],
             'opinion' => $submission->opinion->value, 'executive_summary' => $submission->executive_summary,
             'scope_limitations' => $submission->scope_limitations, 'significant_matters' => $submission->significant_matters,
             'recommendations_summary' => $submission->recommendations_summary, 'submitted_by' => $submission->submitted_by,

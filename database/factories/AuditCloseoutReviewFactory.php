@@ -32,6 +32,7 @@ class AuditCloseoutReviewFactory extends Factory
                     'audit_item_snapshots' => $submission->audit_item_snapshots, 'data_request_snapshots' => $submission->data_request_snapshots,
                     'audit_procedure_snapshots' => $submission->audit_procedure_snapshots,
                     'audit_effort_snapshots' => $submission->audit_effort_snapshots,
+                    'audit_finding_snapshots' => $submission->audit_finding_snapshots,
                     'decision' => AuditCloseoutDecision::Rejected->value, 'review_summary' => $attributes['review_summary'],
                     'reviewed_by' => $attributes['reviewed_by'], 'reviewed_at' => $attributes['reviewed_at']->toIso8601String(),
                 ];

@@ -93,6 +93,11 @@ class AuditItem extends Model
         return $this->hasMany(AuditProcedure::class);
     }
 
+    public function governedFindings(): HasMany
+    {
+        return $this->hasMany(AuditFinding::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

@@ -93,6 +93,7 @@ class AuditCloseoutManager
             $requestSnapshots = $requests->map(fn (DataRequest $request): array => $request->only(['id', 'code', 'audit_item_id', 'created_by_id', 'assigned_to_id', 'status', 'details', 'created_at', 'updated_at']))->all();
             $procedureSnapshots = $this->procedureSnapshots($procedures);
             $effortSnapshots = $this->lockEffortSnapshots($locked);
+            $findingSnapshots = $this->lockFindingSnapshots($locked, requireResponses: true);
             $submittedAt = now();
             $payload = [
                 'audit_snapshot' => $auditSnapshot,
@@ -101,6 +102,7 @@ class AuditCloseoutManager
                 'data_request_snapshots' => $requestSnapshots,
                 'audit_procedure_snapshots' => $procedureSnapshots,
                 'audit_effort_snapshots' => $effortSnapshots,
+                'audit_finding_snapshots' => $findingSnapshots,
                 'opinion' => $validated['opinion'],
                 'executive_summary' => $validated['executive_summary'],
                 'scope_limitations' => $validated['scope_limitations'] ?? null,
@@ -154,6 +156,7 @@ class AuditCloseoutManager
                     'data_request_snapshots' => $locked->data_request_snapshots,
                     'audit_procedure_snapshots' => $locked->audit_procedure_snapshots,
                     'audit_effort_snapshots' => $locked->audit_effort_snapshots,
+                    'audit_finding_snapshots' => $locked->audit_finding_snapshots,
                     'decision' => $validated['decision'],
                     'review_summary' => $validated['review_summary'],
                     'reviewed_by' => $actor->id,
@@ -268,12 +271,14 @@ class AuditCloseoutManager
         $currentRequests = $requests->map(fn (DataRequest $request): array => $request->only(['id', 'code', 'audit_item_id', 'created_by_id', 'assigned_to_id', 'status', 'details', 'created_at', 'updated_at']))->all();
         $currentProcedures = $this->procedureSnapshots($procedures);
         $currentEffort = $this->lockEffortSnapshots($audit);
+        $currentFindings = $this->lockFindingSnapshots($audit, requireResponses: false);
 
         if ($this->canonicalSnapshot($currentAudit) !== $submission->audit_snapshot
             || $this->canonicalSnapshot($currentItems) !== $submission->audit_item_snapshots
             || $this->canonicalSnapshot($currentRequests) !== $submission->data_request_snapshots
             || $this->canonicalSnapshot($currentProcedures) !== ($submission->audit_procedure_snapshots ?? [])
-            || $this->canonicalSnapshot($currentEffort) !== ($submission->audit_effort_snapshots ?? ['budgets' => [], 'time_entries' => [], 'summary' => ['planned_minutes' => 0, 'actual_minutes' => 0, 'variance_minutes' => 0, 'allocations' => []]])) {
+            || $this->canonicalSnapshot($currentEffort) !== ($submission->audit_effort_snapshots ?? ['budgets' => [], 'time_entries' => [], 'summary' => ['planned_minutes' => 0, 'actual_minutes' => 0, 'variance_minutes' => 0, 'allocations' => []]])
+            || $this->canonicalSnapshot($currentFindings) !== ($submission->audit_finding_snapshots ?? [])) {
             throw ValidationException::withMessages([
                 'submission' => 'The captured audit scope or fieldwork changed after submission. Reject this version and submit a fresh closeout snapshot.',
             ]);
@@ -304,6 +309,27 @@ class AuditCloseoutManager
             'time_entries' => $entries->map(fn ($entry): array => $entry->only(['id', 'audit_id', 'audit_procedure_id', 'user_id', 'entry_type', 'reverses_time_entry_id', 'work_date', 'minutes', 'activity', 'notes', 'source_reference', 'budget_snapshot', 'procedure_snapshot', 'entered_by', 'entered_at', 'fingerprint']))->all(),
             'summary' => app(AuditEffortManager::class)->summary($audit),
         ];
+    }
+
+    private function lockFindingSnapshots(Audit $audit, bool $requireResponses): array
+    {
+        $findings = $audit->governedFindings()->with(['responses' => fn ($query) => $query->orderBy('version')])->orderBy('id')->lockForUpdate()->get();
+        if ($findings->count() > 500) {
+            throw ValidationException::withMessages(['audit_findings' => 'Governed closeout is bounded to 500 findings.']);
+        }
+        if ($requireResponses && $findings->contains(fn ($finding): bool => $finding->responses->isEmpty())) {
+            throw ValidationException::withMessages(['audit_findings' => 'Every governed audit finding requires an accountable management response before closeout.']);
+        }
+
+        $snapshots = $findings->map(fn ($finding): array => [
+            ...$finding->only(['id', 'audit_id', 'audit_item_id', 'code', 'title', 'severity', 'condition', 'criteria', 'cause', 'effect', 'recommendation', 'accountable_owner_id', 'source_snapshot', 'raised_by', 'raised_at', 'fingerprint']),
+            'responses' => $finding->responses->map(fn ($response): array => $response->only(['id', 'audit_finding_id', 'version', 'position', 'response', 'action_plan', 'target_date', 'finding_snapshot', 'responded_by', 'responded_at', 'fingerprint']))->all(),
+        ])->all();
+        if (strlen(json_encode($snapshots, JSON_THROW_ON_ERROR)) > AuditFindingManager::MAX_EVIDENCE_BYTES) {
+            throw ValidationException::withMessages(['audit_findings' => 'Governed finding and management-response evidence exceeds the 5,000,000-byte closeout bound.']);
+        }
+
+        return $snapshots;
     }
 
     private function lockAuditableSnapshots(Collection $items): Collection

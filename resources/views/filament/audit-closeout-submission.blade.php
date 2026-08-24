@@ -10,7 +10,7 @@
     <div><span class="font-semibold">Significant matters</span><div class="whitespace-pre-wrap">{{ $submission->significant_matters }}</div></div>
     <div><span class="font-semibold">Recommendations</span><div class="whitespace-pre-wrap">{{ $submission->recommendations_summary }}</div></div>
     <div><span class="font-semibold">Submission fingerprint</span><div class="break-all font-mono text-xs">{{ $submission->fingerprint }}</div></div>
-    @foreach (['audit_snapshot' => 'Audit snapshot', 'engagement_baseline_snapshot' => 'Engagement baseline snapshot', 'audit_item_snapshots' => 'Audit item snapshots', 'data_request_snapshots' => 'Data request snapshots', 'audit_procedure_snapshots' => 'Audit procedure snapshots', 'audit_effort_snapshots' => 'Audit effort snapshots'] as $field => $label)
+    @foreach (['audit_snapshot' => 'Audit snapshot', 'engagement_baseline_snapshot' => 'Engagement baseline snapshot', 'audit_item_snapshots' => 'Audit item snapshots', 'data_request_snapshots' => 'Data request snapshots', 'audit_procedure_snapshots' => 'Audit procedure snapshots', 'audit_effort_snapshots' => 'Audit effort snapshots', 'audit_finding_snapshots' => 'Governed finding and management-response snapshots'] as $field => $label)
         <div><span class="font-semibold">{{ $label }}</span><pre class="mt-1 overflow-x-auto whitespace-pre-wrap rounded p-3 text-xs" style="background: var(--gray-100);">{{ json_encode($submission->{$field}, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre></div>
     @endforeach
     @if ($review)

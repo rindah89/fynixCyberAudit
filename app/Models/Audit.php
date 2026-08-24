@@ -151,6 +151,11 @@ class Audit extends Model
         return $this->hasMany(AuditTimeEntry::class);
     }
 
+    public function governedFindings(): HasMany
+    {
+        return $this->hasMany(AuditFinding::class);
+    }
+
     public function latestCloseoutSubmission(): HasOne
     {
         return $this->hasOne(AuditCloseoutSubmission::class)->latestOfMany('version');
