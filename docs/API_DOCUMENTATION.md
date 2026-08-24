@@ -815,10 +815,15 @@ When `MODULE_PRIVACY_MANAGEMENT_ENABLED=true`, authenticated privacy users use:
 - `GET|PUT /api/privacy-processing-activities/{activity}`
 - `GET /api/privacy-processing-activities/{activity}/versions`
 - `GET|POST /api/privacy-processing-activities/{activity}/assessments`
+- `GET|POST /api/privacy-rights-requests`
+- `GET /api/privacy-rights-requests/{rightsRequest}`
+- `GET|POST /api/privacy-rights-requests/{rightsRequest}/events`
 
 Lists and histories validate `page >= 1` and `per_page` from 1 through 100. Registration/revision records complete immutable processing-context versions. Assessment records bind the exact latest activity version and require separation from the owner and latest version author. Server-owned number, state evidence, version, snapshots, attribution, timestamps, and fingerprints are prohibited in caller payloads. Activation requires an approved assessment of the unchanged latest version; later material change derives `Assessment Required`.
 
-Inputs and judgments are deliberate. These endpoints do not discover personal data, determine legal basis, provide legal advice, manage consent or data-subject requests, validate controls, or prove regulatory compliance.
+Rights requests use a separate sensitive authorization boundary: `Manage Privacy Rights` sees and governs all records, `Handle Privacy Rights` sees and advances current assignments only, and `Read Privacy Rights` is read-only. General privacy-read permission does not expose them. The forward lifecycle is `received` → `identity_verification` → `in_progress` → `fulfilled`, with terminal `denied` or `withdrawn` alternatives. Identity review, response, denial, and unverified delivery-reference fields are required at their applicable decisions. Each event retains a complete request/assignment snapshot, actor/time, version, and fingerprint. Due state compares the operator-selected due time rather than calculating a statutory deadline.
+
+Inputs and judgments are deliberate. These endpoints do not discover personal data, determine legal basis or entitlement, provide legal advice, manage consent, authenticate a data subject, search or alter source systems, generate/transmit responses, prove delivery, calculate regulatory deadlines, validate controls, or prove regulatory compliance.
 
 ## Governed model risk management
 

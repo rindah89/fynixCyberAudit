@@ -14,6 +14,7 @@ use App\Models\GovernedModel;
 use App\Models\Policy;
 use App\Models\PolicyObligation;
 use App\Models\PrivacyProcessingActivity;
+use App\Models\PrivacyRightsRequest;
 use App\Models\Survey;
 use App\Models\SurveyTemplate;
 use App\Models\SystemAuthorizationPackage;
@@ -29,6 +30,7 @@ use App\Policies\PermissionPolicy;
 use App\Policies\PolicyObligationPolicy;
 use App\Policies\PolicyPolicy;
 use App\Policies\PrivacyProcessingActivityPolicy;
+use App\Policies\PrivacyRightsRequestPolicy;
 use App\Policies\RolePolicy;
 use App\Policies\SurveyPolicy;
 use App\Policies\SurveyTemplatePolicy;
@@ -63,6 +65,7 @@ class AuthServiceProvider extends ServiceProvider
         EsgDisclosure::class => EsgDisclosurePolicy::class,
         SystemAuthorizationPackage::class => SystemAuthorizationPackagePolicy::class,
         PrivacyProcessingActivity::class => PrivacyProcessingActivityPolicy::class,
+        PrivacyRightsRequest::class => PrivacyRightsRequestPolicy::class,
         AiSystem::class => AiSystemPolicy::class,
         Survey::class => SurveyPolicy::class,
         SurveyTemplate::class => SurveyTemplatePolicy::class,
