@@ -81,4 +81,9 @@ class ThirdPartyEngagement extends Model
     {
         return $this->hasMany(ThirdPartyEngagementOffboardingReadinessReview::class);
     }
+
+    public function collaborationRequests(): HasMany
+    {
+        return $this->hasMany(ThirdPartyEngagementCollaborationRequest::class);
+    }
 }

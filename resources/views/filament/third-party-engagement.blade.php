@@ -157,3 +157,26 @@
         @endforelse
     </div>
 </div>
+<div class="mt-4 space-y-2">
+    <div class="font-medium">Governed provider collaboration history</div>
+    @forelse ($engagement->collaborationRequests->sortBy('version') as $request)
+        <div class="rounded-lg border p-3">
+            <div>Request v{{ $request->version }} · {{ $request->category->getLabel() }} · {{ $request->subject }}</div>
+            <div>Recipient: {{ $request->recipient?->name }} · due {{ $request->due_at?->toDateString() }} · opened by {{ $request->opener?->name }}</div>
+            <div class="mt-1 whitespace-pre-wrap">{{ $request->request_text }}</div>
+            <details class="mt-2"><summary class="font-medium">Retained request context</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['engagement' => $request->engagement_snapshot, 'recipient' => $request->recipient_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+            @foreach ($request->events->sortBy('version') as $event)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div>Event v{{ $event->version }} · {{ $event->status->getLabel() }} · {{ data_get($event->actor_snapshot, 'name') }} · {{ $event->recorded_at?->toDayDateTimeString() }}</div>
+                    @if ($event->response_text)<div class="whitespace-pre-wrap">{{ $event->response_text }}</div>@endif
+                    @if ($event->summary)<div class="whitespace-pre-wrap">{{ $event->summary }}</div>@endif
+                    <div>Source reference: {{ $event->source_reference ?: 'None recorded' }}</div>
+                    <div class="break-all font-mono text-xs">{{ $event->fingerprint }}</div>
+                </div>
+            @endforeach
+            <div class="mt-1 break-all font-mono text-xs">{{ $request->fingerprint }}</div>
+        </div>
+    @empty
+        <div>No governed provider collaboration has been recorded.</div>
+    @endforelse
+</div>

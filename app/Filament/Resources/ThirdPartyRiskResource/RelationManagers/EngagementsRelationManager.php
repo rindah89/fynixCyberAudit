@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\ThirdPartyRiskResource\RelationManagers;
 
 use App\Enums\RiskIndicatorDirection;
+use App\Enums\ThirdPartyCollaborationCategory;
+use App\Enums\ThirdPartyCollaborationStatus;
 use App\Enums\ThirdPartyContractDecision;
 use App\Enums\ThirdPartyDueDiligenceDecision;
 use App\Enums\ThirdPartyEngagementStatus;
@@ -13,12 +15,15 @@ use App\Enums\ThirdPartyOnboardingCategory;
 use App\Enums\ThirdPartyOnboardingDecision;
 use App\Models\Survey;
 use App\Models\ThirdPartyEngagement;
+use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\ThirdPartyEngagementOffboardingRequirement;
 use App\Models\ThirdPartyEngagementOnboardingRequirement;
 use App\Models\User;
 use App\Models\VendorDocument;
+use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementDueDiligenceManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementMonitoringManager;
@@ -44,7 +49,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.events', 'collaborationRequests.latestEvent'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -60,6 +65,7 @@ class EngagementsRelationManager extends RelationManager
                 TextColumn::make('onboarding_readiness_reviews_count')->label('Readiness reviews'),
                 TextColumn::make('offboarding_requirements_count')->label('Exit controls'),
                 TextColumn::make('offboarding_readiness_reviews_count')->label('Exit reviews'),
+                TextColumn::make('collaboration_requests_count')->label('Collaboration'),
             ])->headerActions([
                 Action::make('propose')->label('Propose engagement')->icon('heroicon-o-plus')
                     ->visible(fn (): bool => auth()->user()?->can('Manage Third Party Risk') ?? false)
@@ -83,6 +89,32 @@ class EngagementsRelationManager extends RelationManager
                         $visible->setRelation('dueDiligenceReviews', $manager->visibleReviews($record->dueDiligenceReviews, auth()->user()));
 
                         return view('filament.third-party-engagement', ['engagement' => $visible]);
+                    }),
+                Action::make('open_collaboration')->label('Request provider response')->icon('heroicon-o-chat-bubble-left-right')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && in_array($record->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true))
+                    ->schema(fn (ThirdPartyEngagement $record): array => [
+                        Select::make('category')->options(ThirdPartyCollaborationCategory::class)->required(),
+                        TextInput::make('subject')->required()->maxLength(255),
+                        Textarea::make('request_text')->required()->maxLength(30000)->columnSpanFull(),
+                        Select::make('recipient_vendor_user_id')->label('Provider contact')->searchable()
+                            ->getSearchResultsUsing(fn (string $search): array => $this->vendorUserOptions($record, $search))
+                            ->getOptionLabelUsing(fn ($value): ?string => $this->vendorUserOptions($record, '', [(int) $value])[(int) $value] ?? null)->required(),
+                        DatePicker::make('due_at')->required(),
+                    ])->action(fn (ThirdPartyEngagement $record, array $data) => app(ThirdPartyEngagementCollaborationManager::class)->open(auth()->user(), $record, $data)),
+                Action::make('decide_collaboration')->label('Review provider response')->icon('heroicon-o-shield-check')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false)
+                        && in_array($record->status, [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
+                        && $record->collaborationRequests->contains(fn (ThirdPartyEngagementCollaborationRequest $request): bool => $request->opened_by !== auth()->id() && $request->latestStatus() === ThirdPartyCollaborationStatus::Responded))
+                    ->schema(fn (ThirdPartyEngagement $record): array => [
+                        Select::make('collaboration_request_id')->label('Responded request')->options($record->collaborationRequests
+                            ->filter(fn (ThirdPartyEngagementCollaborationRequest $request): bool => $request->opened_by !== auth()->id() && $request->latestStatus() === ThirdPartyCollaborationStatus::Responded)
+                            ->mapWithKeys(fn (ThirdPartyEngagementCollaborationRequest $request) => [$request->id => "v{$request->version} — {$request->subject}"]))->required(),
+                        Select::make('decision')->options([ThirdPartyCollaborationStatus::Accepted->value => ThirdPartyCollaborationStatus::Accepted->getLabel(), ThirdPartyCollaborationStatus::FollowUp->value => ThirdPartyCollaborationStatus::FollowUp->getLabel()])->required(),
+                        Textarea::make('summary')->required()->maxLength(30000)->columnSpanFull(),
+                    ])->action(function (array $data): void {
+                        $request = ThirdPartyEngagementCollaborationRequest::query()->findOrFail($data['collaboration_request_id']);
+                        unset($data['collaboration_request_id']);
+                        app(ThirdPartyEngagementCollaborationManager::class)->decide(auth()->user(), $request, $data);
                     }),
                 Action::make('due_diligence_review')->label('Record due-diligence review')->icon('heroicon-o-magnifying-glass-circle')
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false) && $record->status === ThirdPartyEngagementStatus::DueDiligence)
@@ -223,5 +255,14 @@ class EngagementsRelationManager extends RelationManager
             ->when($ids !== [], fn ($query) => $query->whereIn('id', $ids))
             ->when($ids === [] && $search !== '', fn ($query) => $query->where('name', 'like', "%{$search}%"))
             ->orderBy('name')->limit(50)->get()->filter(fn (VendorDocument $document) => auth()->user()->can('view', $document))->pluck('name', 'id')->all();
+    }
+
+    /** @param  array<int, int>  $ids */
+    private function vendorUserOptions(ThirdPartyEngagement $engagement, string $search, array $ids = []): array
+    {
+        return VendorUser::query()->where('vendor_id', $engagement->vendor_id)->whereNull('deleted_at')->whereNotNull('password')
+            ->when($ids !== [], fn ($query) => $query->whereIn('id', $ids))
+            ->when($ids === [] && $search !== '', fn ($query) => $query->where(fn ($query) => $query->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%")))
+            ->orderBy('name')->limit(50)->get()->mapWithKeys(fn (VendorUser $user) => [$user->id => "{$user->name} ({$user->email})"])->all();
     }
 }
