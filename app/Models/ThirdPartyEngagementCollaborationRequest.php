@@ -56,6 +56,11 @@ class ThirdPartyEngagementCollaborationRequest extends Model
         return $this->hasMany(ThirdPartyEngagementCollaborationReminder::class)->orderBy('delivered_at');
     }
 
+    public function escalation(): HasOne
+    {
+        return $this->hasOne(ThirdPartyEngagementCollaborationEscalation::class);
+    }
+
     public function latestStatus(): ?ThirdPartyCollaborationStatus
     {
         $event = $this->getRelationValue('latestEvent');

@@ -185,6 +185,14 @@
                     <div class="break-all font-mono text-xs">{{ $reminder->fingerprint }}</div>
                 </div>
             @endforeach
+            @if ($request->escalation)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div class="font-medium">Persistently overdue escalation · {{ $request->escalation->channel }} · attempted {{ $request->escalation->attempted_at?->toDayDateTimeString() }} · delivered {{ $request->escalation->delivered_at?->toDayDateTimeString() }}</div>
+                    <div>Notifications: {{ implode(', ', $request->escalation->notification_ids) }}</div>
+                    <details class="mt-1"><summary class="font-medium">Retained recipients, request, event, and overdue reminder</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipients' => $request->escalation->recipient_snapshots, 'request' => $request->escalation->request_snapshot, 'event' => $request->escalation->event_snapshot, 'overdue_reminder' => $request->escalation->overdue_reminder_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $request->escalation->fingerprint }}</div>
+                </div>
+            @endif
             <div class="mt-1 break-all font-mono text-xs">{{ $request->fingerprint }}</div>
         </div>
     @empty

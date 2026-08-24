@@ -53,6 +53,7 @@ class CollaborationRequestResource extends Resource
                     ->with('document'),
                 'latestEvent',
                 'reminders',
+                'escalation:id,third_party_engagement_collaboration_request_id,channel,delivered_at,fingerprint',
             ]);
     }
 
@@ -110,6 +111,11 @@ class CollaborationRequestResource extends Resource
                     TextEntry::make('fingerprint')->columnSpanFull(),
                 ])->columns(3),
             ]),
+            Section::make('Escalated internally')->schema([
+                TextEntry::make('escalation.channel')->label('Channel'),
+                TextEntry::make('escalation.delivered_at')->label('Delivered')->dateTime(),
+                TextEntry::make('escalation.fingerprint')->label('Evidence fingerprint')->columnSpanFull(),
+            ])->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->escalation !== null),
         ]);
     }
 

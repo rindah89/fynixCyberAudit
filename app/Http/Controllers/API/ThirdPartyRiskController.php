@@ -186,7 +186,7 @@ class ThirdPartyRiskController extends Controller
 
     public function collaborationRequests(ShowThirdPartyEngagementRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'events.evidence.document', 'reminders'])->latest('version')->paginate($request->integer('per_page', 50));
+        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'events.evidence.document', 'reminders', 'escalation'])->latest('version')->paginate($request->integer('per_page', 50));
         $history->setCollection(app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($history->getCollection(), $request->user()));
 
         return response()->json($history);

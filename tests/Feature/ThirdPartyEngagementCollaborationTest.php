@@ -7,6 +7,7 @@ use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRe
 use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
+use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
 use App\Models\ThirdPartyEngagementCollaborationReminder;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
@@ -14,6 +15,7 @@ use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationReminderManager;
 use Database\Seeders\RolePermissionSeeder;
@@ -325,6 +327,76 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $migration = require database_path('migrations/2026_08_24_830000_create_third_party_collaboration_reminders.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_engagement_collaboration_reminders', ['id' => $request->reminders->last()->id]);
+        Carbon::setTestNow();
+    }
+
+    public function test_persistently_overdue_request_escalates_once_to_current_internal_accountability(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($opener, $engagement, [
+            'category' => 'risk', 'subject' => 'Resolve overdue risk response', 'request_text' => 'Provide the outstanding response.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-27',
+        ]);
+        $reminders = app(ThirdPartyEngagementCollaborationReminderManager::class);
+        $this->assertSame(1, $reminders->reconcile(now()));
+        Carbon::setTestNow('2026-08-28 00:00:01');
+        $this->assertSame(1, $reminders->reconcile(now()));
+
+        $currentBusinessOwner = User::factory()->create();
+        $currentVendorManager = User::factory()->create();
+        $engagement->update(['business_owner_id' => $currentBusinessOwner->id]);
+        $engagement->vendor->update(['vendor_manager_id' => $currentVendorManager->id]);
+        $escalations = app(ThirdPartyEngagementCollaborationEscalationManager::class);
+        Carbon::setTestNow('2026-08-30 23:59:59');
+        $this->assertSame(0, $escalations->reconcile(now()));
+        Carbon::setTestNow('2026-08-31 00:00:00');
+
+        Event::listen(NotificationSending::class, fn (): bool => false);
+        try {
+            $escalations->reconcile(now());
+            $this->fail('A cancelled escalation must not be represented as delivered.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('not accepted', $exception->getMessage());
+        }
+        $this->assertDatabaseCount('third_party_engagement_collaboration_escalations', 0);
+        $this->assertDatabaseCount('notifications', 2);
+        Event::forget(NotificationSending::class);
+
+        $this->assertSame(1, $escalations->reconcile(now()));
+        $this->assertSame(0, $escalations->reconcile(now()));
+        $this->artisan('fynix:reconcile-third-party-collaboration-escalations')->assertSuccessful();
+        $escalation = $request->escalation()->firstOrFail();
+        $this->assertEqualsCanonicalizing([$currentBusinessOwner->id, $currentVendorManager->id], collect($escalation->recipient_snapshots)->pluck('id')->all());
+        $this->assertEqualsCanonicalizing(['business_owner', 'vendor_manager'], collect($escalation->recipient_snapshots)->flatMap(fn (array $recipient): array => $recipient['roles'])->all());
+        $this->assertCount(2, $escalation->notification_ids);
+        $this->assertDatabaseCount('notifications', 4);
+        $this->assertArrayHasKey('evidence_manifest', $escalation->event_snapshot);
+        $eventFingerprintPayload = collect($escalation->event_snapshot)->except(['id', 'fingerprint'])->all();
+        $this->assertSame($escalation->event_snapshot['fingerprint'], hash('sha256', json_encode($eventFingerprintPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
+        $payload = $escalation->only(['third_party_engagement_collaboration_request_id', 'third_party_engagement_id', 'vendor_user_id', 'channel', 'notification_ids', 'recipient_snapshots', 'request_snapshot', 'event_snapshot', 'overdue_reminder_snapshot']);
+        $payload['attempted_at'] = $escalation->attempted_at->toIso8601String();
+        $payload['delivered_at'] = $escalation->delivered_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $escalation->fingerprint);
+
+        Sanctum::actingAs($opener);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonPath('data.0.escalation.recipient_snapshots.0.id', $currentBusinessOwner->id);
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($contact, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee('Escalated internally')
+            ->assertDontSee($currentBusinessOwner->email)
+            ->assertDontSee($currentVendorManager->email);
+
+        $this->assertThrows(fn () => ThirdPartyEngagementCollaborationEscalation::query()->firstOrFail()->delete(), \LogicException::class);
+        DB::table('notifications')->where('id', $escalation->notification_ids[0])->delete();
+        $this->assertDatabaseHas('third_party_engagement_collaboration_escalations', ['id' => $escalation->id]);
+        $migration = require database_path('migrations/2026_08_24_840000_create_third_party_collaboration_escalations.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_engagement_collaboration_escalations', ['id' => $escalation->id]);
         Carbon::setTestNow();
     }
 }
