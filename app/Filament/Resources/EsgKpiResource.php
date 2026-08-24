@@ -48,7 +48,7 @@ class EsgKpiResource extends Resource
     {
         $query = parent::getEloquentQuery()->with(['goal.topic:id,code,name,owner_id', 'owner:id,name', 'creator:id,name', 'latestObservation.observer:id,name']);
         $actor = auth()->user();
-        if ($actor && ! $actor->can('Read ESG') && ! $actor->can('Manage ESG') && ! $actor->can('Assess ESG')) {
+        if ($actor && ! $actor->can('Read ESG') && ! $actor->can('Manage ESG') && ! $actor->can('Assess ESG') && ! $actor->can('Validate ESG Data') && ! $actor->can('Approve ESG Disclosures')) {
             $query->where(function (Builder $scope) use ($actor): void {
                 $scope->where('owner_id', $actor->id)
                     ->orWhereHas('goal', fn (Builder $goal): Builder => $goal->where('owner_id', $actor->id))

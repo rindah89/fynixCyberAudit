@@ -6,6 +6,7 @@ use App\Enums\EsgKpiStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 
 class EsgKpiObservation extends Model
@@ -30,5 +31,10 @@ class EsgKpiObservation extends Model
     public function observer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'observed_by')->withTrashed();
+    }
+
+    public function validations(): HasMany
+    {
+        return $this->hasMany(EsgDataValidation::class, 'esg_kpi_observation_id')->with('validator:id,name')->orderBy('version');
     }
 }

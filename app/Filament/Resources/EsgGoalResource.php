@@ -48,7 +48,7 @@ class EsgGoalResource extends Resource
     {
         $query = parent::getEloquentQuery()->with(['topic:id,code,name,owner_id', 'owner:id,name', 'creator:id,name']);
         $actor = auth()->user();
-        if ($actor && ! $actor->can('Read ESG') && ! $actor->can('Manage ESG') && ! $actor->can('Assess ESG')) {
+        if ($actor && ! $actor->can('Read ESG') && ! $actor->can('Manage ESG') && ! $actor->can('Assess ESG') && ! $actor->can('Validate ESG Data') && ! $actor->can('Approve ESG Disclosures')) {
             $query->where(function (Builder $scope) use ($actor): void {
                 $scope->where('owner_id', $actor->id)
                     ->orWhereHas('topic', fn (Builder $topic): Builder => $topic->where('owner_id', $actor->id))

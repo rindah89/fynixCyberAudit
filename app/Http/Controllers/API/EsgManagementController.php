@@ -25,7 +25,7 @@ class EsgManagementController extends Controller
     public function index(ListEsgTopicsRequest $r): JsonResponse
     {
         $q = EsgMaterialTopic::query()->with(['owner:id,name', 'latestVersion', 'latestAssessment'])->latest('id');
-        if (! $r->user()->can('Read ESG') && ! $r->user()->can('Manage ESG') && ! $r->user()->can('Assess ESG')) {
+        if (! $r->user()->can('Read ESG') && ! $r->user()->can('Manage ESG') && ! $r->user()->can('Assess ESG') && ! $r->user()->can('Validate ESG Data') && ! $r->user()->can('Approve ESG Disclosures')) {
             $q->where(function ($scope) use ($r): void {
                 $scope->where('owner_id', $r->user()->id)
                     ->orWhereHas('goals', fn ($goal) => $goal->where('owner_id', $r->user()->id))

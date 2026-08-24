@@ -103,6 +103,8 @@ class RolePermissionSeeder extends Seeder
             'Own ESG Topics',
             'Assess ESG',
             'Manage ESG',
+            'Validate ESG Data',
+            'Approve ESG Disclosures',
         ] as $permission) {
             Permission::firstOrCreate(['name' => $permission, 'category' => 'Enterprise']);
         }
@@ -164,6 +166,8 @@ class RolePermissionSeeder extends Seeder
             'Own ESG Topics',
             'Assess ESG',
             'Manage ESG',
+            'Validate ESG Data',
+            'Approve ESG Disclosures',
         ]);
 
         // Assign specific Permissions to Internal Auditor
