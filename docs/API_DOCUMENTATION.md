@@ -610,6 +610,8 @@ curl -X POST "https://your-domain.com/api/recovery-exercises/9/complete" \
 
 The server prohibits caller-supplied `outcome`, RTO, and RPO snapshots. It uses the latest approved impact analysis, derives the result, snapshots both objectives, and opens an issue when an objective is missed. Exercise completion optionally accepts `evidence_attachment_ids`, an array of up to 20 distinct accepted data-request attachments downloadable by the completer. The server retains copies bounded to 10 MiB per file and 50 MiB per completion and returns append-only provenance, size, disk/path, and SHA-256 snapshots under `data.evidence`; hashes prove byte identity rather than truth, sufficiency, authenticity, or result inference. The evidence reference remains unverified external text. See `docs/OPERATIONAL_RESILIENCE.md` for every route and limitation.
 
+For an actual disruption, `POST /api/recovery-plans/{plan}/continuity-activations` activates an approved plan with a deliberate disruption summary, business impact, and start time. `POST /api/continuity-activations/{activation}/events` advances the forward-only `activated` → `recovering` → `restored` → `closed` lifecycle; `cancelled` is terminal before restoration. Restoration requires `actual_recovery_point_minutes`; the server derives elapsed recovery time and an RTO/RPO outcome from retained objectives. Scoped `GET /api/business-services/{service}/continuity-activations` and `GET /api/continuity-activations/{activation}` expose complete immutable event history. These records evidence operator decisions, not detected downtime, executed recovery procedures, service availability, or recovery assurance.
+
 ### AI Governance
 
 AI governance endpoints require `Manage AI Governance`. The creation sequence is:

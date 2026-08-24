@@ -58,6 +58,11 @@ class BusinessService extends Model
         return $this->hasMany(ResilienceIssue::class);
     }
 
+    public function continuityActivations(): HasMany
+    {
+        return $this->hasMany(ContinuityActivation::class);
+    }
+
     public function latestApprovedRecoveryPlan(): HasOne
     {
         return $this->hasOne(RecoveryPlan::class)->where('status', 'approved')->latestOfMany('version');

@@ -113,6 +113,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/business-services/{service}/recovery-plans', [OperationalResilienceController::class, 'storePlan']);
     Route::post('/recovery-plans/{plan}/exercises', [OperationalResilienceController::class, 'storeExercise']);
     Route::post('/recovery-exercises/{exercise}/complete', [OperationalResilienceController::class, 'completeExercise']);
+    Route::get('/business-services/{service}/continuity-activations', [OperationalResilienceController::class, 'continuityActivations']);
+    Route::post('/recovery-plans/{plan}/continuity-activations', [OperationalResilienceController::class, 'activateContinuity']);
+    Route::get('/continuity-activations/{activation}', [OperationalResilienceController::class, 'showContinuityActivation']);
+    Route::post('/continuity-activations/{activation}/events', [OperationalResilienceController::class, 'transitionContinuity']);
 
     Route::get('/incidents', [IncidentGovernanceController::class, 'index']);
     Route::post('/incidents', [IncidentGovernanceController::class, 'store']);

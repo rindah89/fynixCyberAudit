@@ -4,19 +4,45 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CompleteRecoveryExerciseRequest;
+use App\Http\Requests\ListContinuityActivationsRequest;
+use App\Http\Requests\ShowContinuityActivationRequest;
 use App\Http\Requests\StoreBusinessImpactAnalysisRequest;
 use App\Http\Requests\StoreBusinessServiceDependencyRequest;
 use App\Http\Requests\StoreBusinessServiceRequest;
+use App\Http\Requests\StoreContinuityActivationRequest;
 use App\Http\Requests\StoreRecoveryExerciseRequest;
 use App\Http\Requests\StoreRecoveryPlanRequest;
+use App\Http\Requests\TransitionContinuityActivationRequest;
 use App\Models\BusinessService;
+use App\Models\ContinuityActivation;
 use App\Models\RecoveryExercise;
 use App\Models\RecoveryPlan;
+use App\OperationalResilience\ContinuityActivationManager;
 use App\OperationalResilience\ResilienceManager;
 use Illuminate\Http\JsonResponse;
 
 class OperationalResilienceController extends Controller
 {
+    public function continuityActivations(ListContinuityActivationsRequest $request, BusinessService $service): JsonResponse
+    {
+        return response()->json($service->continuityActivations()->with(['activator:id,name', 'events.recorder:id,name'])->latest('started_at')->paginate($request->integer('per_page', 25)));
+    }
+
+    public function showContinuityActivation(ShowContinuityActivationRequest $request, ContinuityActivation $activation): JsonResponse
+    {
+        return response()->json(['data' => $activation->load(['activator:id,name', 'events.recorder:id,name'])]);
+    }
+
+    public function activateContinuity(StoreContinuityActivationRequest $request, RecoveryPlan $plan, ContinuityActivationManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->activate($request->user(), $plan, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function transitionContinuity(TransitionContinuityActivationRequest $request, ContinuityActivation $activation, ContinuityActivationManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->transition($request->user(), $activation, $request->validated())]);
+    }
+
     public function storeService(StoreBusinessServiceRequest $request): JsonResponse
     {
         $service = BusinessService::create($request->validated());

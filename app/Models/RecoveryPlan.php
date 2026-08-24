@@ -59,4 +59,9 @@ class RecoveryPlan extends Model
     {
         return $this->hasOne(RecoveryExercise::class)->whereNotNull('completed_at')->latestOfMany('completed_at');
     }
+
+    public function continuityActivations(): HasMany
+    {
+        return $this->hasMany(ContinuityActivation::class);
+    }
 }

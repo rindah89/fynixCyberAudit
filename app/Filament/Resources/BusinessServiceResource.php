@@ -7,6 +7,7 @@ use App\Filament\Resources\BusinessServiceResource\Pages\CreateBusinessService;
 use App\Filament\Resources\BusinessServiceResource\Pages\EditBusinessService;
 use App\Filament\Resources\BusinessServiceResource\Pages\ListBusinessServices;
 use App\Filament\Resources\BusinessServiceResource\Pages\ViewBusinessService;
+use App\Filament\Resources\BusinessServiceResource\RelationManagers\ContinuityActivationsRelationManager;
 use App\Filament\Resources\BusinessServiceResource\RelationManagers\DependenciesRelationManager;
 use App\Filament\Resources\BusinessServiceResource\RelationManagers\ImpactAnalysesRelationManager;
 use App\Filament\Resources\BusinessServiceResource\RelationManagers\RecoveryExercisesRelationManager;
@@ -82,7 +83,7 @@ class BusinessServiceResource extends Resource
 
     public static function getRelations(): array
     {
-        return [ImpactAnalysesRelationManager::class, DependenciesRelationManager::class, RecoveryPlansRelationManager::class, RecoveryExercisesRelationManager::class, ResilienceIssuesRelationManager::class];
+        return [ImpactAnalysesRelationManager::class, DependenciesRelationManager::class, RecoveryPlansRelationManager::class, RecoveryExercisesRelationManager::class, ContinuityActivationsRelationManager::class, ResilienceIssuesRelationManager::class];
     }
 
     public static function getPages(): array
