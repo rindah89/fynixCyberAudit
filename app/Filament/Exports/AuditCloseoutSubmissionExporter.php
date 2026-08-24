@@ -21,7 +21,16 @@ class AuditCloseoutSubmissionExporter extends Exporter
             ExportColumn::make('engagement_baseline_snapshot')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->engagement_baseline_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('audit_item_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->audit_item_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('data_request_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->data_request_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
-            ExportColumn::make('audit_procedure_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->audit_procedure_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
+            ExportColumn::make('audit_procedure_snapshots')->state(function (AuditCloseoutSubmission $record): string {
+                $snapshots = collect($record->audit_procedure_snapshots)->map(function (array $procedure): array {
+                    data_forget($procedure, 'execution.evidence_manifest');
+                    data_forget($procedure, 'supervisory_review.execution_snapshot.evidence_manifest');
+
+                    return $procedure;
+                })->all();
+
+                return json_encode($snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            }),
             ExportColumn::make('audit_effort_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->audit_effort_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('audit_finding_snapshots')->state(fn (AuditCloseoutSubmission $record): string => json_encode($record->audit_finding_snapshots, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('submitter.name'), ExportColumn::make('submitted_at'), ExportColumn::make('fingerprint'),

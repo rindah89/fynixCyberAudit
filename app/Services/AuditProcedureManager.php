@@ -15,6 +15,7 @@ use App\Models\AuditWorkpaperReview;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -58,34 +59,53 @@ class AuditProcedureManager
 
     public function execute(AuditProcedure $procedure, User $actor, array $data): AuditProcedureExecution
     {
-        return DB::transaction(function () use ($procedure, $actor, $data): AuditProcedureExecution {
-            $auditId = AuditProcedure::query()->findOrFail($procedure->id)->audit_id;
-            $audit = Audit::query()->lockForUpdate()->findOrFail($auditId);
-            $locked = AuditProcedure::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($procedure->id);
-            $item = AuditItem::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($locked->audit_item_id);
-            $this->authorizeExecute($audit, $locked, $actor);
-            $this->assertMutable($audit);
-            if ($locked->execution()->exists()) {
-                throw ValidationException::withMessages(['procedure' => 'This procedure version has already been executed.']);
-            }
-            $validated = Validator::make($data, self::executionRules())->validate();
-            if ($locked->planned_sample_size !== null && ($validated['sample_tested'] ?? 0) > $locked->planned_sample_size) {
-                throw ValidationException::withMessages(['sample_tested' => 'The tested sample cannot exceed the planned sample size.']);
-            }
-            $executedAt = now();
-            $snapshot = [
-                'procedure' => $locked->only(['id', 'audit_id', 'audit_item_id', 'version', 'code', 'title', 'objective', 'steps', 'method', 'population_description', 'planned_sample_size', 'assigned_to', 'due_at', 'created_by', 'created_at']),
-                'audit_item' => $item->only(['id', 'audit_id', 'auditable_id', 'auditable_type', 'user_id', 'status', 'auditor_notes', 'effectiveness', 'applicability']),
-                'auditable' => $item->auditable?->toArray(),
-            ];
-            $payload = $validated + ['procedure_snapshot' => $snapshot, 'executed_by' => $actor->id, 'executed_at' => $executedAt->toIso8601String()];
-            $locked->update(['status' => 'completed']);
+        $snapshotter = app(GovernedEvidenceSnapshotter::class);
+        $snapshotBatch = Str::uuid()->toString();
+        $retainedCopies = [];
 
-            return $locked->execution()->create($payload + [
-                'executed_at' => $executedAt,
-                'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
-            ])->load(['executor:id,name', 'procedure.auditItem']);
-        }, 3);
+        try {
+            return DB::transaction(function () use ($procedure, $actor, $data, $snapshotter, $snapshotBatch, &$retainedCopies): AuditProcedureExecution {
+                $auditId = AuditProcedure::query()->findOrFail($procedure->id)->audit_id;
+                $audit = Audit::query()->lockForUpdate()->findOrFail($auditId);
+                $locked = AuditProcedure::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($procedure->id);
+                $item = AuditItem::query()->where('audit_id', $audit->id)->lockForUpdate()->findOrFail($locked->audit_item_id);
+                $this->authorizeExecute($audit, $locked, $actor);
+                $this->assertMutable($audit);
+                if ($locked->execution()->exists()) {
+                    throw ValidationException::withMessages(['procedure' => 'This procedure version has already been executed.']);
+                }
+                $validated = Validator::make($data, self::executionRules())->validate();
+                if ($locked->planned_sample_size !== null && ($validated['sample_tested'] ?? 0) > $locked->planned_sample_size) {
+                    throw ValidationException::withMessages(['sample_tested' => 'The tested sample cannot exceed the planned sample size.']);
+                }
+                $evidenceAttachmentIds = $validated['evidence_attachment_ids'] ?? [];
+                unset($validated['evidence_attachment_ids']);
+                $evidenceManifest = $evidenceAttachmentIds === [] ? [] : $snapshotter->snapshot(
+                    $evidenceAttachmentIds, $actor, 'audit-procedure-execution', $snapshotBatch, $retainedCopies,
+                );
+                $executedAt = now();
+                $snapshot = [
+                    'procedure' => $locked->only(['id', 'audit_id', 'audit_item_id', 'version', 'code', 'title', 'objective', 'steps', 'method', 'population_description', 'planned_sample_size', 'assigned_to', 'due_at', 'created_by', 'created_at']),
+                    'audit_item' => $item->only(['id', 'audit_id', 'auditable_id', 'auditable_type', 'user_id', 'status', 'auditor_notes', 'effectiveness', 'applicability']),
+                    'auditable' => $item->auditable?->toArray(),
+                ];
+                $payload = $validated + ['evidence_manifest' => $evidenceManifest, 'procedure_snapshot' => $snapshot, 'executed_by' => $actor->id, 'executed_at' => $executedAt->toIso8601String()];
+                $locked->update(['status' => 'completed']);
+                $execution = $locked->execution()->create($payload + [
+                    'executed_at' => $executedAt,
+                    'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),
+                ]);
+                foreach ($evidenceManifest as $manifest) {
+                    $execution->evidence()->create($manifest + ['linked_by' => $actor->id, 'linked_at' => $executedAt]);
+                }
+
+                return $execution->load(['executor:id,name', 'procedure.auditItem', 'evidence.linkedBy:id,name']);
+            }, 3);
+        } catch (\Throwable $exception) {
+            $snapshotter->cleanup($retainedCopies);
+
+            throw $exception;
+        }
     }
 
     public function review(AuditProcedureExecution $execution, User $actor, array $data): AuditWorkpaperReview
@@ -106,7 +126,7 @@ class AuditProcedureManager
             }
             $validated = Validator::make($data, self::reviewRules())->validate();
             $reviewedAt = now();
-            $snapshot = $locked->only(['id', 'audit_procedure_id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']);
+            $snapshot = $locked->only(['id', 'audit_procedure_id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'evidence_manifest', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']);
             $payload = $validated + ['execution_snapshot' => $snapshot, 'reviewed_by' => $actor->id, 'reviewed_at' => $reviewedAt->toIso8601String()];
 
             return $locked->review()->create($payload + [
@@ -136,6 +156,9 @@ class AuditProcedureManager
             'outcome' => ['required', Rule::enum(AuditProcedureOutcome::class)], 'result' => ['required', 'string', 'max:30000'],
             'exceptions' => ['nullable', 'string', 'max:30000'], 'sample_tested' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'evidence_reference' => ['nullable', 'string', 'max:2000'],
+            'evidence_attachment_ids' => ['sometimes', 'array', 'max:20'],
+            'evidence_attachment_ids.*' => ['integer', 'distinct'],
+            'evidence_manifest' => ['prohibited'],
         ];
     }
 

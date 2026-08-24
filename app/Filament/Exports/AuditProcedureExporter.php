@@ -24,7 +24,14 @@ class AuditProcedureExporter extends Exporter
             ExportColumn::make('execution.procedure_snapshot')->state(fn (AuditProcedure $record): string => json_encode($record->execution?->procedure_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
             ExportColumn::make('execution.executor.name'), ExportColumn::make('execution.executed_at'), ExportColumn::make('execution.fingerprint'),
             ExportColumn::make('execution.review.decision'), ExportColumn::make('execution.review.review_summary'),
-            ExportColumn::make('execution.review.execution_snapshot')->state(fn (AuditProcedure $record): string => json_encode($record->execution?->review?->execution_snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
+            ExportColumn::make('execution.review.execution_snapshot')->state(function (AuditProcedure $record): string {
+                $snapshot = $record->execution?->review?->execution_snapshot;
+                if (is_array($snapshot)) {
+                    unset($snapshot['evidence_manifest']);
+                }
+
+                return json_encode($snapshot, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            }),
             ExportColumn::make('execution.review.reviewer.name'), ExportColumn::make('execution.review.reviewed_at'), ExportColumn::make('execution.review.fingerprint'),
         ];
     }

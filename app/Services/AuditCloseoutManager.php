@@ -294,7 +294,7 @@ class AuditCloseoutManager
     {
         return $procedures->map(fn ($procedure): array => [
             ...$procedure->only(['id', 'audit_id', 'audit_item_id', 'version', 'code', 'title', 'objective', 'steps', 'method', 'population_description', 'planned_sample_size', 'assigned_to', 'due_at', 'status', 'created_by', 'created_at']),
-            'execution' => $procedure->execution?->only(['id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
+            'execution' => $procedure->execution?->only(['id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'evidence_manifest', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
             'supervisory_review' => $procedure->execution?->review?->only(['id', 'audit_procedure_execution_id', 'decision', 'review_summary', 'execution_snapshot', 'reviewed_by', 'reviewed_at', 'fingerprint']),
         ])->all();
     }

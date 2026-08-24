@@ -20,7 +20,7 @@ class AuditWorkpaperReviewFactory extends Factory
             'decision' => AuditWorkpaperReviewDecision::Approved,
             'review_summary' => 'The workpaper supports its conclusion and documents the tested population.',
             'execution_snapshot' => fn (array $attributes): array => AuditProcedureExecution::query()->findOrFail($attributes['audit_procedure_execution_id'])
-                ->only(['id', 'audit_procedure_id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
+                ->only(['id', 'audit_procedure_id', 'outcome', 'result', 'exceptions', 'sample_tested', 'evidence_reference', 'evidence_manifest', 'procedure_snapshot', 'executed_by', 'executed_at', 'fingerprint']),
             'reviewed_by' => fn (array $attributes): int => (int) AuditProcedureExecution::query()->findOrFail($attributes['audit_procedure_execution_id'])->procedure->audit->manager_id,
             'reviewed_at' => $reviewedAt,
             'fingerprint' => fn (array $attributes): string => hash('sha256', json_encode([

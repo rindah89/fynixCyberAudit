@@ -18,14 +18,15 @@ class AuditProcedureExecutionFactory extends Factory
         return [
             'audit_procedure_id' => AuditProcedure::factory()->state(['status' => 'completed']),
             'outcome' => AuditProcedureOutcome::Effective, 'result' => 'The selected items met the defined criteria.',
-            'exceptions' => null, 'sample_tested' => 10, 'evidence_reference' => null,
+            'exceptions' => null, 'sample_tested' => 10, 'evidence_reference' => null, 'evidence_manifest' => [],
             'procedure_snapshot' => fn (array $attributes): array => $this->snapshot(AuditProcedure::query()->findOrFail($attributes['audit_procedure_id'])),
             'executed_by' => fn (array $attributes): int => (int) AuditProcedure::query()->findOrFail($attributes['audit_procedure_id'])->assigned_to,
             'executed_at' => $executedAt,
             'fingerprint' => fn (array $attributes): string => hash('sha256', json_encode([
                 'outcome' => $attributes['outcome'] instanceof AuditProcedureOutcome ? $attributes['outcome']->value : $attributes['outcome'],
                 'result' => $attributes['result'], 'exceptions' => $attributes['exceptions'], 'sample_tested' => $attributes['sample_tested'],
-                'evidence_reference' => $attributes['evidence_reference'], 'procedure_snapshot' => $attributes['procedure_snapshot'],
+                'evidence_reference' => $attributes['evidence_reference'], 'evidence_manifest' => $attributes['evidence_manifest'],
+                'procedure_snapshot' => $attributes['procedure_snapshot'],
                 'executed_by' => $attributes['executed_by'], 'executed_at' => $attributes['executed_at']->toIso8601String(),
             ], JSON_THROW_ON_ERROR)),
         ];

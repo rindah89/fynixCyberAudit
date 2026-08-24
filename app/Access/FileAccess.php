@@ -5,6 +5,7 @@ namespace App\Access;
 use App\Models\AiJob;
 use App\Models\AiMonitoringReviewEvidence;
 use App\Models\AuditFindingFollowUpEvidence;
+use App\Models\AuditProcedureExecutionEvidence;
 use App\Models\ControlTestExecutionEvidence;
 use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
@@ -142,6 +143,18 @@ class FileAccess
         );
     }
 
+    public function streamAuditProcedureExecutionEvidence(User $actor, AuditProcedureExecutionEvidence $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['execution.procedure.audit', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $audit = $evidence->execution?->procedure?->audit;
+        if (! $audit || ! $actor->can('view', $audit)
+            || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed audit-procedure evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
     public function streamAiMonitoringReviewEvidence(User $actor, AiMonitoringReviewEvidence $evidence): StreamedResponse
     {
         $evidence->loadMissing(['review.useCase.aiSystem', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
@@ -252,7 +265,8 @@ class FileAccess
                 ->orWhereHas('recoveryExerciseEvidence')
                 ->orWhereHas('policyAttestationEvidence')
                 ->orWhereHas('riskGovernanceReviewEvidence')
-                ->orWhereHas('auditFindingFollowUpEvidence'))
+                ->orWhereHas('auditFindingFollowUpEvidence')
+                ->orWhereHas('auditProcedureExecutionEvidence'))
             ->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',

@@ -9,6 +9,7 @@ use App\Enums\WorkflowStatus;
 use App\Filament\Exports\AuditProcedureExporter;
 use App\Models\AuditCloseoutSubmission;
 use App\Models\AuditProcedure;
+use App\Models\FileAttachment;
 use App\Services\AuditProcedureManager;
 use Filament\Actions\Action;
 use Filament\Actions\ExportAction;
@@ -30,7 +31,10 @@ class ProceduresRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['auditItem.auditable', 'assignee:id,name', 'creator:id,name', 'execution.executor:id,name', 'execution.review.reviewer:id,name']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with([
+            'auditItem.auditable', 'assignee:id,name', 'creator:id,name', 'execution.executor:id,name', 'execution.review.reviewer:id,name',
+            'execution.evidence.attachment.audit.members', 'execution.evidence.attachment.dataRequestResponse.dataRequest.audit.members',
+        ]))
             ->defaultSort('id', 'desc')->columns([
                 TextColumn::make('code')->searchable(), TextColumn::make('version')->sortable(), TextColumn::make('title')->searchable(),
                 TextColumn::make('method')->badge(), TextColumn::make('assignee.name'), TextColumn::make('due_at')->date()->sortable(),
@@ -84,7 +88,26 @@ class ProceduresRelationManager extends RelationManager
             Select::make('outcome')->options(AuditProcedureOutcome::class)->required(), Textarea::make('result')->required()->maxLength(30000),
             Textarea::make('exceptions')->maxLength(30000), TextInput::make('sample_tested')->numeric()->minValue(0)->maxValue(1000000),
             Textarea::make('evidence_reference')->helperText('Optional operator-supplied reference; Fynix does not verify it.')->maxLength(2000),
+            Select::make('evidence_attachment_ids')->label('Governed evidence attachments')->multiple()->maxItems(20)
+                ->searchable()->options(fn (): array => $this->evidenceOptions())->getOptionLabelsUsing(fn (array $values): array => $this->evidenceLabels($values))
+                ->helperText('Optional accepted audit files you can access. Fynix retains bounded copies and SHA-256 identity; it does not validate truth or sufficiency.'),
         ];
+    }
+
+    private function evidenceOptions(): array
+    {
+        $actor = auth()->user();
+
+        return $actor ? FileAttachment::query()->eligibleGovernedEvidenceFor($actor)->latest('id')->limit(100)->get()
+            ->mapWithKeys(fn (FileAttachment $file): array => [$file->id => $file->file_name.' · Audit '.$file->audit_id])->all() : [];
+    }
+
+    private function evidenceLabels(array $ids): array
+    {
+        $actor = auth()->user();
+
+        return $actor ? FileAttachment::query()->eligibleGovernedEvidenceFor($actor)
+            ->whereKey($ids)->pluck('file_name', 'id')->all() : [];
     }
 
     private function isCloseoutFrozen(): bool

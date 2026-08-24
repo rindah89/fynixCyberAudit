@@ -7,16 +7,21 @@ use App\Enums\Effectiveness;
 use App\Enums\WorkflowStatus;
 use App\Filament\Exports\AuditProcedureExporter;
 use App\Filament\Resources\AuditResource\Pages\ViewAudit;
+use App\Filament\Resources\AuditResource\RelationManagers\CloseoutSubmissionsRelationManager;
 use App\Filament\Resources\AuditResource\RelationManagers\ProceduresRelationManager;
 use App\Models\AuditEngagementBaseline;
 use App\Models\AuditItem;
 use App\Models\AuditProcedureExecution;
 use App\Models\AuditWorkpaperReview;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\User;
 use App\Services\AuditCloseoutManager;
 use App\Services\AuditProcedureManager;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Sanctum;
 use Livewire\Livewire;
@@ -32,6 +37,7 @@ class AuditProcedureTest extends TestCase
     {
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
+        Storage::fake('private');
     }
 
     public function test_manager_defines_and_assignee_executes_immutable_procedure_snapshot(): void
@@ -41,7 +47,8 @@ class AuditProcedureTest extends TestCase
 
         $this->assertSame(1, $procedure->version);
         $this->assertSame('planned', $procedure->status);
-        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution());
+        $attachment = $this->acceptedEvidence($assignee, 'audit-procedures/closeout.txt', 'closeout workpaper evidence');
+        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution() + ['evidence_attachment_ids' => [$attachment->id]]);
 
         $this->assertSame('completed', $procedure->fresh()->status);
         $this->assertSame($procedure->id, data_get($execution->procedure_snapshot, 'procedure.id'));
@@ -52,11 +59,70 @@ class AuditProcedureTest extends TestCase
         $this->assertSame($execution->fingerprint, hash('sha256', json_encode([
             'outcome' => $execution->outcome->value, 'result' => $execution->result, 'exceptions' => $execution->exceptions,
             'sample_tested' => $execution->sample_tested, 'evidence_reference' => $execution->evidence_reference,
+            'evidence_manifest' => $execution->evidence_manifest,
             'procedure_snapshot' => $execution->procedure_snapshot, 'executed_by' => $execution->executed_by,
             'executed_at' => $execution->executed_at->toIso8601String(),
         ], JSON_THROW_ON_ERROR)));
         $this->expectException(LogicException::class);
         $execution->update(['result' => 'Rewritten result']);
+    }
+
+    public function test_assignee_executes_procedure_with_retained_governed_evidence(): void
+    {
+        [$audit, $manager, $assignee, $item] = $this->auditContext();
+        $procedure = app(AuditProcedureManager::class)->define($audit, $manager, $this->definition($item, $assignee));
+        $attachment = $this->acceptedEvidence($assignee, 'audit-procedures/access-review.txt', 'attributable access-review evidence');
+
+        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution() + [
+            'evidence_attachment_ids' => [$attachment->id],
+        ]);
+
+        $evidence = $execution->evidence->sole();
+        $this->assertSame($attachment->id, $evidence->file_attachment_id);
+        $this->assertSame(hash('sha256', 'attributable access-review evidence'), $evidence->sha256);
+        $this->assertSame($evidence->sha256, data_get($execution->evidence_manifest, '0.sha256'));
+        $this->assertSame($execution->fingerprint, hash('sha256', json_encode($execution->fingerprintPayload(), JSON_THROW_ON_ERROR)));
+        Storage::disk('private')->put($attachment->file_path, 'replaced source bytes');
+
+        $assignee->givePermissionTo('Read Audits');
+        $this->actingAs($assignee, 'web')->get(route('audit-procedure-execution-evidence.download', $evidence))
+            ->assertSuccessful()->assertStreamedContent('attributable access-review evidence');
+        $assignee->revokePermissionTo('Read Audits');
+        $this->actingAs($assignee, 'web')->get(route('audit-procedure-execution-evidence.download', $evidence))->assertForbidden();
+        try {
+            $attachment->delete();
+            $this->fail('A governed procedure source attachment was deleted.');
+        } catch (LogicException) {
+            $this->assertDatabaseHas('file_attachments', ['id' => $attachment->id]);
+        }
+    }
+
+    public function test_mixed_unauthorized_evidence_rolls_back_execution_and_retained_copies(): void
+    {
+        [$audit, $manager, $assignee, $item] = $this->auditContext();
+        $procedure = app(AuditProcedureManager::class)->define($audit, $manager, $this->definition($item, $assignee));
+        $authorized = $this->acceptedEvidence($assignee, 'audit-procedures/authorized.txt', 'authorized evidence');
+        $foreign = $this->acceptedEvidence(User::factory()->create(), 'audit-procedures/foreign.txt', 'foreign evidence');
+        $this->actingAs($assignee, 'web');
+        Livewire::test(ProceduresRelationManager::class, ['ownerRecord' => $audit, 'pageClass' => ViewAudit::class])
+            ->mountTableAction('execute', $procedure)
+            ->fillForm(['evidence_attachment_ids' => [$authorized->id, $foreign->id]])
+            ->assertDontSee($foreign->file_name);
+        $this->assertSame([$authorized->id => $authorized->file_name], FileAttachment::query()->eligibleGovernedEvidenceFor($assignee)
+            ->whereKey([$authorized->id, $foreign->id])->pluck('file_name', 'id')->all());
+
+        try {
+            app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution() + [
+                'evidence_attachment_ids' => [$authorized->id, $foreign->id],
+            ]);
+            $this->fail('A mixed unauthorized evidence selection created a workpaper execution.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('evidence_attachment_ids.1', $exception->errors());
+        }
+        $this->assertDatabaseCount('audit_procedure_executions', 0);
+        $this->assertDatabaseCount('audit_procedure_execution_evidence', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles('governed-evidence/audit-procedure-execution'));
+        $this->assertSame('planned', $procedure->fresh()->status);
     }
 
     public function test_assignment_scope_sampling_and_direct_service_authorization_are_enforced(): void
@@ -84,7 +150,8 @@ class AuditProcedureTest extends TestCase
     {
         [$audit, $manager, $assignee, $item] = $this->auditContext();
         $procedure = app(AuditProcedureManager::class)->define($audit, $manager, $this->definition($item, $assignee));
-        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution());
+        $attachment = $this->acceptedEvidence($assignee, 'audit-procedures/closeout.txt', 'closeout workpaper evidence');
+        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution() + ['evidence_attachment_ids' => [$attachment->id]]);
         $assignee->givePermissionTo('Update Audits');
         try {
             app(AuditProcedureManager::class)->review($execution, $assignee, ['decision' => 'approved', 'review_summary' => 'Self reviewed.']);
@@ -140,17 +207,20 @@ class AuditProcedureTest extends TestCase
         $procedureId = $this->postJson("/api/audits/{$audit->id}/procedures", $this->definition($item, $assignee))
             ->assertCreated()->assertJsonPath('data.version', 1)->json('data.id');
         Sanctum::actingAs($assignee);
-        $this->postJson("/api/audit-procedures/{$procedureId}/execute", $this->execution() + ['fingerprint' => str_repeat('a', 64)])
-            ->assertUnprocessable()->assertJsonValidationErrors('fingerprint');
-        $this->postJson("/api/audit-procedures/{$procedureId}/execute", $this->execution())
-            ->assertCreated()->assertJsonPath('data.executed_by', $assignee->id);
+        $attachment = $this->acceptedEvidence($assignee, 'audit-procedures/rest.txt', 'REST governed evidence');
+        $this->postJson("/api/audit-procedures/{$procedureId}/execute", $this->execution() + ['fingerprint' => str_repeat('a', 64), 'evidence_manifest' => [['sha256' => str_repeat('b', 64)]]])
+            ->assertUnprocessable()->assertJsonValidationErrors(['fingerprint', 'evidence_manifest']);
+        $this->postJson("/api/audit-procedures/{$procedureId}/execute", $this->execution() + ['evidence_attachment_ids' => [$attachment->id]])
+            ->assertCreated()->assertJsonPath('data.executed_by', $assignee->id)
+            ->assertJsonPath('data.evidence.0.file_attachment_id', $attachment->id);
         Sanctum::actingAs($manager);
         $executionId = AuditProcedureExecution::query()->where('audit_procedure_id', $procedureId)->value('id');
         $this->postJson("/api/audit-procedure-executions/{$executionId}/review", ['decision' => 'approved', 'review_summary' => 'The workpaper supports its conclusion.', 'fingerprint' => str_repeat('a', 64)])
             ->assertUnprocessable()->assertJsonValidationErrors('fingerprint');
         $this->postJson("/api/audit-procedure-executions/{$executionId}/review", ['decision' => 'approved', 'review_summary' => 'The workpaper supports its conclusion.'])
             ->assertCreated()->assertJsonPath('data.reviewed_by', $manager->id);
-        $this->getJson("/api/audits/{$audit->id}/procedures")->assertOk()->assertJsonPath('data.0.id', $procedureId);
+        $this->getJson("/api/audits/{$audit->id}/procedures")->assertOk()->assertJsonPath('data.0.id', $procedureId)
+            ->assertJsonPath('data.0.execution.evidence_manifest', [])->assertJsonCount(0, 'data.0.execution.evidence');
         $this->getJson("/api/audits/{$audit->id}/procedures?per_page=0")->assertUnprocessable()->assertJsonValidationErrors('per_page');
     }
 
@@ -171,7 +241,8 @@ class AuditProcedureTest extends TestCase
             $this->assertArrayHasKey('audit_procedures', $exception->errors());
         }
 
-        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution());
+        $attachment = $this->acceptedEvidence($assignee, 'audit-procedures/closeout-modal.txt', 'closeout workpaper evidence');
+        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution() + ['evidence_attachment_ids' => [$attachment->id]]);
         try {
             app(AuditCloseoutManager::class)->submit($audit, $manager, $closeout);
             $this->fail('An unreviewed workpaper was accepted at closeout.');
@@ -183,6 +254,12 @@ class AuditProcedureTest extends TestCase
         $this->assertSame($procedure->id, data_get($submission->audit_procedure_snapshots, '0.id'));
         $this->assertSame($execution->fingerprint, data_get($submission->audit_procedure_snapshots, '0.execution.fingerprint'));
         $this->assertSame($review->fingerprint, data_get($submission->audit_procedure_snapshots, '0.supervisory_review.fingerprint'));
+        $this->assertSame($attachment->file_name, data_get($submission->audit_procedure_snapshots, '0.execution.evidence_manifest.0.file_name_snapshot'));
+        $restrictedViewer = User::factory()->create();
+        $restrictedViewer->givePermissionTo('Read Audits');
+        $this->actingAs($restrictedViewer, 'web');
+        Livewire::test(CloseoutSubmissionsRelationManager::class, ['ownerRecord' => $audit, 'pageClass' => ViewAudit::class])
+            ->mountTableAction('inspect', $submission)->assertDontSee($attachment->file_name)->assertDontSee($execution->evidence->first()->sha256);
     }
 
     public function test_operator_history_export_factories_and_migration_preserve_complete_evidence(): void
@@ -190,7 +267,8 @@ class AuditProcedureTest extends TestCase
         [$audit, $manager, $assignee, $item] = $this->auditContext();
         $manager->givePermissionTo('Read Audits');
         $procedure = app(AuditProcedureManager::class)->define($audit, $manager, $this->definition($item, $assignee));
-        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution());
+        $attachment = $this->acceptedEvidence($assignee, 'audit-procedures/operator.txt', 'operator workpaper evidence');
+        $execution = app(AuditProcedureManager::class)->execute($procedure, $assignee, $this->execution() + ['evidence_attachment_ids' => [$attachment->id]]);
 
         $this->actingAs($manager, 'web');
         Livewire::test(ProceduresRelationManager::class, ['ownerRecord' => $audit, 'pageClass' => ViewAudit::class])
@@ -198,8 +276,17 @@ class AuditProcedureTest extends TestCase
         $review = app(AuditProcedureManager::class)->review($execution, $manager, ['decision' => 'approved', 'review_summary' => 'The workpaper supports its conclusion.']);
         Livewire::test(ProceduresRelationManager::class, ['ownerRecord' => $audit, 'pageClass' => ViewAudit::class])
             ->assertCanSeeTableRecords([$procedure])->assertTableActionVisible('inspect', $procedure);
-        $this->view('filament.audit-procedure', ['procedure' => $procedure->load(['assignee', 'execution.executor', 'execution.review.reviewer'])])
-            ->assertSee($procedure->objective)->assertSee($execution->result)->assertSee($execution->fingerprint)->assertSee($review->fingerprint);
+        $procedure->load(['assignee', 'execution.executor', 'execution.review.reviewer', 'execution.evidence.attachment.audit.members', 'execution.evidence.attachment.dataRequestResponse.dataRequest.audit.members']);
+        $this->view('filament.audit-procedure', ['procedure' => $procedure])
+            ->assertSee($procedure->objective)->assertSee($execution->result)->assertSee($execution->fingerprint)->assertSee($review->fingerprint)
+            ->assertDontSee($attachment->file_name);
+        $metadataRestrictedViewer = User::factory()->create();
+        $metadataRestrictedViewer->givePermissionTo('Read Audits');
+        $this->actingAs($metadataRestrictedViewer, 'web')->view('filament.audit-procedure', ['procedure' => $procedure])
+            ->assertDontSee($attachment->file_name)->assertDontSee($execution->evidence->first()->sha256);
+        $assignee->givePermissionTo('Read Audits');
+        $this->actingAs($assignee, 'web')->view('filament.audit-procedure', ['procedure' => $procedure])
+            ->assertSee($attachment->file_name)->assertSee($execution->evidence->first()->sha256);
         $columns = collect(AuditProcedureExporter::getColumns())->map->getName();
         $this->assertContains('execution.procedure_snapshot', $columns);
         $this->assertContains('execution.fingerprint', $columns);
@@ -214,7 +301,8 @@ class AuditProcedureTest extends TestCase
         $this->assertSame($factoryExecution->fingerprint, hash('sha256', json_encode([
             'outcome' => $factoryExecution->outcome->value, 'result' => $factoryExecution->result,
             'exceptions' => $factoryExecution->exceptions, 'sample_tested' => $factoryExecution->sample_tested,
-            'evidence_reference' => $factoryExecution->evidence_reference, 'procedure_snapshot' => $factoryExecution->procedure_snapshot,
+            'evidence_reference' => $factoryExecution->evidence_reference, 'evidence_manifest' => $factoryExecution->evidence_manifest,
+            'procedure_snapshot' => $factoryExecution->procedure_snapshot,
             'executed_by' => $factoryExecution->executed_by, 'executed_at' => $factoryExecution->executed_at->toIso8601String(),
         ], JSON_THROW_ON_ERROR)));
         $factoryReview = AuditWorkpaperReview::factory()->create();
@@ -233,6 +321,10 @@ class AuditProcedureTest extends TestCase
         $reviewMigration->up();
         $reviewMigration->down();
         $this->assertDatabaseHas('audit_workpaper_reviews', ['id' => $factoryReview->id]);
+        $evidenceMigration = require database_path('migrations/2026_08_24_450000_create_audit_procedure_execution_evidence.php');
+        $evidenceMigration->up();
+        $evidenceMigration->down();
+        $this->assertDatabaseHas('audit_procedure_execution_evidence', ['id' => $execution->evidence->first()?->id]);
     }
 
     private function auditContext(): array
@@ -260,6 +352,21 @@ class AuditProcedureTest extends TestCase
             'method' => 'inspection', 'population_description' => 'Quarterly access reviews in the audit period.',
             'planned_sample_size' => 10, 'assigned_to' => $assignee->id, 'due_at' => $item->audit->start_date->toDateString(),
         ];
+    }
+
+    private function acceptedEvidence(User $actor, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = AuditEngagementBaseline::factory()->create(['launched_by' => $actor->id])->audit;
+        $audit->update(['manager_id' => $actor->id]);
+        $request = DataRequest::factory()->create(['audit_id' => $audit->id, 'created_by_id' => $actor->id, 'assigned_to_id' => $actor->id]);
+        $response = DataRequestResponse::factory()->accepted()->create(['data_request_id' => $request->id, 'requester_id' => $actor->id, 'requestee_id' => $actor->id]);
+
+        return FileAttachment::query()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => basename($path), 'file_path' => $path, 'file_size' => strlen($contents),
+            'description' => 'Governed audit-procedure evidence', 'uploaded_by' => $actor->id,
+        ]);
     }
 
     private function execution(): array
