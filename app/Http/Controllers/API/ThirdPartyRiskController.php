@@ -7,6 +7,7 @@ use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AcknowledgeThirdPartyCollaborationEscalationRequest;
 use App\Http\Requests\CancelThirdPartyCollaborationRequest;
+use App\Http\Requests\CloseThirdPartyCollaborationRequest;
 use App\Http\Requests\CompleteThirdPartyOffboardingRequirementRequest;
 use App\Http\Requests\CompleteThirdPartyOnboardingRequirementRequest;
 use App\Http\Requests\DecideThirdPartyCollaborationExtensionRequest;
@@ -48,6 +49,7 @@ use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationIssueManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
@@ -208,6 +210,11 @@ class ThirdPartyRiskController extends Controller
         return response()->json(['data' => $manager->cancel($request->user(), $collaborationRequest, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 
+    public function closeCollaborationRequest(CloseThirdPartyCollaborationRequest $request, ThirdPartyEngagementCollaborationRequest $collaborationRequest, ThirdPartyEngagementCollaborationClosureManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->close($request->user(), $collaborationRequest, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
     public function decideCollaborationExtension(DecideThirdPartyCollaborationExtensionRequest $request, ThirdPartyCollaborationExtension $extension, ThirdPartyEngagementCollaborationExtensionManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->decide($request->user(), $extension, $request->validated())], JsonResponse::HTTP_CREATED);
@@ -215,7 +222,7 @@ class ThirdPartyRiskController extends Controller
 
     public function collaborationRequests(ListThirdPartyCollaborationRequestsRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'reassignments.actor:id,name,email', 'acknowledgements.recipient:id,vendor_id,name,email', 'cancellation.actor:id,name,email', 'events.evidence.document', 'extensions.decision.decider:id,name,email', 'reminders', 'escalation.actions.actor:id,name,email', 'escalation.issue.owner:id,name', 'escalation.issue.lifecycle'])->latest('version')->paginate($request->integer('per_page', 50));
+        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'reassignments.actor:id,name,email', 'acknowledgements.recipient:id,vendor_id,name,email', 'cancellation.actor:id,name,email', 'closure.actor:id,name,email', 'events.evidence.document', 'extensions.decision.decider:id,name,email', 'reminders', 'escalation.actions.actor:id,name,email', 'escalation.issue.owner:id,name', 'escalation.issue.lifecycle'])->latest('version')->paginate($request->integer('per_page', 50));
         $history->setCollection(app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($history->getCollection(), $request->user()));
 
         return response()->json($history);

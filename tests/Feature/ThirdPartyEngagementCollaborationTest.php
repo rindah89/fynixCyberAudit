@@ -13,6 +13,7 @@ use App\Models\ThirdPartyCollaborationExtensionDecision;
 use App\Models\ThirdPartyCollaborationRecipientReassignment;
 use App\Models\ThirdPartyCollaborationRequestAcknowledgement;
 use App\Models\ThirdPartyCollaborationRequestCancellation;
+use App\Models\ThirdPartyCollaborationRequestClosure;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
@@ -24,6 +25,7 @@ use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationAcknowledgementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
@@ -461,12 +463,22 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         app(ThirdPartyEngagementCollaborationManager::class)->respond($contact, $request, ['response_text' => 'The requested assurance response.']);
         $reviewer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
         app(ThirdPartyEngagementCollaborationManager::class)->decide($reviewer, $request, ['decision' => 'accepted', 'summary' => 'Response accepted.']);
+        $closureActor = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        try {
+            app(ThirdPartyEngagementCollaborationClosureManager::class)->close($closureActor, $request, ['summary' => 'Closure before escalation resolution.']);
+            $this->fail('An unresolved escalation must prevent request closure.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
         Sanctum::actingAs($reviewer);
         $this->postJson("/api/third-party-engagement-collaboration-escalations/{$escalation->id}/resolve", [
             'summary' => 'Self-reviewed resolution.',
         ])->assertForbidden();
         $resolved = $resolution->resolve($vendorManager, $escalation, ['summary' => 'Internal escalation resolved after acceptance.']);
         $this->assertSame('resolved', $resolved->status->value);
+        $closure = app(ThirdPartyEngagementCollaborationClosureManager::class)->close($closureActor, $request, ['summary' => 'Accepted request closed after escalation resolution.']);
+        $this->assertSame($resolved->fingerprint, data_get($closure->escalation_snapshot, 'latest_action.fingerprint'));
+        $this->assertSame($escalation->fingerprint, data_get($closure->escalation_snapshot, 'escalation.fingerprint'));
         $this->assertCount(2, $escalation->actions()->get());
         $this->assertSame($acknowledgement['fingerprint'], $escalation->actions()->first()->fingerprint);
         Sanctum::actingAs($businessOwner);
@@ -1046,5 +1058,94 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             $this->assertArrayHasKey('request', $exception->errors());
         }
         $this->assertDatabaseCount('third_party_collaboration_request_acknowledgements', 21);
+    }
+
+    public function test_accepted_request_requires_separated_governed_closure_and_exposes_scoped_evidence(): void
+    {
+        Storage::fake('private');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $acceptor = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $closer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $replacement = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $document = VendorDocument::factory()->create([
+            'vendor_id' => $engagement->vendor_id, 'uploaded_by' => $replacement->id, 'document_type' => 'other',
+            'name' => 'Closure evidence', 'file_path' => 'vendor-documents/closure.txt', 'file_name' => 'closure.txt',
+            'file_size' => 23, 'mime_type' => 'text/plain', 'status' => 'pending',
+        ]);
+        Storage::disk('private')->put($document->file_path, 'closure evidence bytes');
+        $collaboration = app(ThirdPartyEngagementCollaborationManager::class);
+        $closures = app(ThirdPartyEngagementCollaborationClosureManager::class);
+        $request = $collaboration->open($opener, $engagement, [
+            'category' => 'assurance', 'subject' => 'Close accepted assurance request',
+            'request_text' => 'Provide and complete the governed assurance response.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => today()->addWeek()->toDateString(),
+        ]);
+        try {
+            $closures->close($closer, $request, ['summary' => 'Premature closure.']);
+            $this->fail('An awaiting request must not close.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        app(ThirdPartyEngagementCollaborationRecipientManager::class)->reassign($opener, $request, [
+            'recipient_vendor_user_id' => $replacement->id, 'reason' => 'The replacement owns the final response.',
+        ]);
+        $collaboration->respond($replacement, $request, ['response_text' => 'The requested assurance response is supplied.', 'vendor_document_ids' => [$document->id]]);
+        $accepted = $collaboration->decide($acceptor, $request, ['decision' => 'accepted', 'summary' => 'The response is accepted.']);
+        foreach ([$opener, $acceptor] as $conflictedActor) {
+            try {
+                $closures->close($conflictedActor, $request, ['summary' => 'Conflicted closure.']);
+                $this->fail('Opening and acceptance actors must not close the request.');
+            } catch (HttpException $exception) {
+                $this->assertSame(403, $exception->getStatusCode());
+            }
+        }
+        Sanctum::actingAs($closer);
+        $closureId = $this->postJson("/api/third-party-engagement-collaboration-requests/{$request->id}/close", [
+            'summary' => 'A separate manager administratively closes the accepted in-product request.',
+            'actor_snapshot' => ['id' => 999],
+        ])->assertUnprocessable()->json('data.id');
+        $this->assertNull($closureId);
+        $closureId = $this->postJson("/api/third-party-engagement-collaboration-requests/{$request->id}/close", [
+            'summary' => 'A separate manager administratively closes the accepted in-product request.',
+        ])->assertCreated()->assertJsonPath('data.accepted_event_id', $accepted->id)->json('data.id');
+        $closure = ThirdPartyCollaborationRequestClosure::query()->findOrFail($closureId);
+        $payload = $closure->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
+        $payload['closed_at'] = $closure->closed_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $closure->fingerprint);
+        $this->assertCount(1, $closure->accepted_event_snapshot['response']['evidence_manifest']);
+        $this->assertSame('closure.txt', $closure->accepted_event_snapshot['response']['evidence_manifest'][0]['file_name_snapshot']);
+        $this->assertSame($accepted->fingerprint, $closure->accepted_event_snapshot['acceptance']['fingerprint']);
+        $this->postJson("/api/third-party-engagement-collaboration-requests/{$request->id}/close", ['summary' => 'Duplicate.'])->assertUnprocessable();
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonPath('data.0.closure.id', $closure->id)
+            ->assertJsonPath('data.0.closure.accepted_event_snapshot.acceptance.fingerprint', $accepted->fingerprint)
+            ->assertJsonPath('data.0.closure.accepted_event_snapshot.response.evidence_manifest.0.file_name_snapshot', 'closure.txt');
+        $document->delete();
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonCount(0, 'data.0.closure.accepted_event_snapshot.response.evidence_manifest');
+        $persistedClosure = ThirdPartyCollaborationRequestClosure::query()->findOrFail($closure->id);
+        $this->assertSame('closure.txt', $persistedClosure->accepted_event_snapshot['response']['evidence_manifest'][0]['file_name_snapshot']);
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($contact, 'vendor');
+        Livewire::test(ListCollaborationRequests::class)->assertCanNotSeeTableRecords([$request]);
+        $this->actingAs($replacement, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee('Staff closure')->assertSee($closure->fingerprint)->assertDontSee($closer->email);
+        $portalRequest = CollaborationRequestResource::getEloquentQuery()->findOrFail($request->id);
+        $this->assertEqualsCanonicalizing(
+            ['id', 'third_party_engagement_collaboration_request_id', 'summary', 'closed_at', 'fingerprint'],
+            array_keys($portalRequest->closure->getAttributes()),
+        );
+        $this->assertThrows(fn () => $closure->update(['summary' => 'Rewritten.']), \LogicException::class);
+        $factory = ThirdPartyCollaborationRequestClosure::factory()->create();
+        $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
+        $factoryPayload['closed_at'] = $factory->closed_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
+        $this->assertSame('responded', data_get($factory->accepted_event_snapshot, 'response.status'));
+        $migration = require database_path('migrations/2026_08_25_010000_create_third_party_collaboration_request_closures.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_request_closures', ['id' => $closure->id]);
     }
 }

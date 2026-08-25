@@ -189,6 +189,14 @@
                     <div class="break-all font-mono text-xs">{{ $request->cancellation->fingerprint }}</div>
                 </div>
             @endif
+            @if ($request->closure)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div class="font-medium">Closed · {{ $request->closure->closed_at?->toDayDateTimeString() }} · {{ $request->closure->actor?->name }}</div>
+                    <div class="whitespace-pre-wrap">{{ $request->closure->summary }}</div>
+                    <details class="mt-1"><summary class="font-medium">Retained closure evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['request' => $request->closure->request_snapshot, 'accepted_event' => $request->closure->accepted_event_snapshot, 'recipient' => $request->closure->recipient_context, 'due' => $request->closure->due_context, 'escalation' => $request->closure->escalation_snapshot, 'actor' => $request->closure->actor_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $request->closure->fingerprint }}</div>
+                </div>
+            @endif
             <div>Effective due date: {{ $request->effective_due_at }}</div>
             @foreach ($request->extensions->sortBy('version') as $extension)
                 <div class="mt-2 rounded-lg border p-2">

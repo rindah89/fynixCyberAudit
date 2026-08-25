@@ -101,8 +101,12 @@ class ThirdPartyEngagementCollaborationManager
             $this->assertCollaborativeState($engagement);
             abort_if($actor->id === $locked->opened_by, 403, 'Response disposition must be independent from the request opener.');
             $latest = $this->latestEvent($locked);
+            $extensions = $locked->extensions()->with('decision')->orderBy('version')->lockForUpdate()->get();
             if ($locked->cancellation()->lockForUpdate()->exists()) {
                 throw ValidationException::withMessages(['request' => 'A cancelled collaboration request is terminal.']);
+            }
+            if ($extensions->contains(fn ($extension): bool => $extension->decision === null)) {
+                throw ValidationException::withMessages(['request' => 'The pending due-date extension requires a decision before response disposition.']);
             }
             $decision = ThirdPartyCollaborationStatus::from($data['decision']);
             if ($latest->status !== ThirdPartyCollaborationStatus::Responded || ! in_array($decision, [ThirdPartyCollaborationStatus::Accepted, ThirdPartyCollaborationStatus::FollowUp], true)) {
@@ -123,7 +127,7 @@ class ThirdPartyEngagementCollaborationManager
     {
         return $requests->map(function (ThirdPartyEngagementCollaborationRequest $request) use ($actor): ThirdPartyEngagementCollaborationRequest {
             $visible = clone $request;
-            $visible->setRelation('events', $request->events->map(function (ThirdPartyEngagementCollaborationEvent $event) use ($actor): ThirdPartyEngagementCollaborationEvent {
+            $visibleEvents = $request->events->map(function (ThirdPartyEngagementCollaborationEvent $event) use ($actor): ThirdPartyEngagementCollaborationEvent {
                 $copy = clone $event;
                 $copy->setRelation('evidence', $event->evidence->filter(function (ThirdPartyEngagementCollaborationEvidence $evidence) use ($actor): bool {
                     $document = $evidence->currentDocument();
@@ -132,7 +136,19 @@ class ThirdPartyEngagementCollaborationManager
                 })->values());
 
                 return $copy;
-            }));
+            });
+            $visible->setRelation('events', $visibleEvents);
+            if ($request->relationLoaded('closure') && $request->closure !== null) {
+                $closure = clone $request->closure;
+                $snapshot = $closure->accepted_event_snapshot;
+                $responseId = data_get($snapshot, 'response.id');
+                $visibleResponse = $visibleEvents->firstWhere('id', $responseId);
+                $authorizedDocumentIds = $visibleResponse?->evidence?->pluck('vendor_document_id')->all() ?? [];
+                $snapshot['response']['evidence_manifest'] = collect(data_get($snapshot, 'response.evidence_manifest', []))
+                    ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
+                $closure->accepted_event_snapshot = $snapshot;
+                $visible->setRelation('closure', $closure);
+            }
 
             return $visible;
         });
