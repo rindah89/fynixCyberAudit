@@ -951,10 +951,15 @@ class ComplianceCaseManagementTest extends TestCase
     {
         $plan = $case->investigationPlans()->latest('version')->firstOrFail();
         $service = app(ComplianceCaseInvestigationProcedureExecutionManager::class);
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo('Manage Compliance Cases');
         foreach ($plan->procedures as $offset => $procedure) {
-            $service->record($investigator, $case->refresh(), [
+            $execution = $service->record($investigator, $case->refresh(), [
                 'procedure_index' => $offset + 1, 'result' => ComplianceCaseInvestigationProcedureResult::Completed->value,
                 'summary' => "Completed: {$procedure}", 'findings' => 'Retained test conclusion.',
+            ]);
+            $service->review($reviewer, $execution, [
+                'decision' => 'approved', 'summary' => 'The retained procedure conclusion is approved.',
             ]);
         }
     }

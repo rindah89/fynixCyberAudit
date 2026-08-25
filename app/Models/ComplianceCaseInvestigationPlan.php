@@ -45,6 +45,6 @@ class ComplianceCaseInvestigationPlan extends Model
 
     public function executions(): HasMany
     {
-        return $this->hasMany(ComplianceCaseInvestigationProcedureExecution::class, 'compliance_case_investigation_plan_id')->orderBy('procedure_index');
+        return $this->hasMany(ComplianceCaseInvestigationProcedureExecution::class, 'compliance_case_investigation_plan_id')->orderBy('procedure_index')->orderBy('version');
     }
 }

@@ -68,7 +68,7 @@ class ComplianceCase extends Model
 
     public function investigationProcedureExecutions(): HasMany
     {
-        return $this->hasMany(ComplianceCaseInvestigationProcedureExecution::class)->orderBy('procedure_index');
+        return $this->hasMany(ComplianceCaseInvestigationProcedureExecution::class)->orderBy('procedure_index')->orderBy('version');
     }
 
     public function getInvestigationPlanningGovernanceStatusAttribute(): string

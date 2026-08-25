@@ -7,13 +7,14 @@ use Database\Factories\ComplianceCaseInvestigationProcedureExecutionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ComplianceCaseInvestigationProcedureExecution extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'compliance_case_id', 'compliance_case_investigation_plan_id', 'procedure_index', 'procedure_text',
+        'compliance_case_id', 'compliance_case_investigation_plan_id', 'procedure_index', 'version', 'fingerprint_version', 'procedure_text',
         'result', 'summary', 'findings', 'source_reference', 'executed_by', 'executor_snapshot',
         'plan_snapshot', 'case_snapshot', 'executed_at', 'fingerprint',
     ];
@@ -47,5 +48,10 @@ class ComplianceCaseInvestigationProcedureExecution extends Model
     public function executor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'executed_by')->withTrashed();
+    }
+
+    public function review(): HasOne
+    {
+        return $this->hasOne(ComplianceCaseInvestigationProcedureReview::class, 'compliance_case_investigation_procedure_execution_id');
     }
 }

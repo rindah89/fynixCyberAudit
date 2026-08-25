@@ -26,7 +26,7 @@ class ComplianceCaseInvestigationProcedureExecutionFactory extends Factory
                 return $review->compliance_case_investigation_plan_id;
             },
             'compliance_case_id' => fn (array $attributes): int => ComplianceCaseInvestigationPlan::query()->findOrFail($attributes['compliance_case_investigation_plan_id'])->compliance_case_id,
-            'procedure_index' => 1, 'procedure_text' => 'Establish material facts',
+            'procedure_index' => 1, 'version' => 1, 'fingerprint_version' => 'procedure-execution/v2', 'procedure_text' => 'Establish material facts',
             'result' => ComplianceCaseInvestigationProcedureResult::Completed,
             'summary' => 'Factory procedure conclusion.', 'findings' => 'Factory retained findings.', 'source_reference' => null,
             'executed_by' => fn (array $attributes): int => (int) ComplianceCaseInvestigationPlan::query()->findOrFail($attributes['compliance_case_investigation_plan_id'])->authored_by,

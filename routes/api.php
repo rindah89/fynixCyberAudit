@@ -116,6 +116,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/compliance-case-investigation-plans/{plan}/review', [ComplianceCaseController::class, 'reviewInvestigationPlan']);
     Route::get('/compliance-cases/{case}/investigation-procedure-executions', [ComplianceCaseController::class, 'investigationProcedureExecutions']);
     Route::post('/compliance-cases/{case}/investigation-procedure-executions', [ComplianceCaseController::class, 'recordInvestigationProcedureExecution']);
+    Route::post('/compliance-case-investigation-procedure-executions/{execution}/review', [ComplianceCaseController::class, 'reviewInvestigationProcedureExecution']);
     Route::get('/my-compliance-case-legal-holds', [ComplianceCaseController::class, 'myLegalHolds']);
     Route::post('/compliance-case-legal-holds/{legalHold}/acknowledge', [ComplianceCaseController::class, 'acknowledgeLegalHold']);
     Route::get('/privacy-processing-activities', [PrivacyManagementController::class, 'index']);

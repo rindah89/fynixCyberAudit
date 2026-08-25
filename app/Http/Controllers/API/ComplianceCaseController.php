@@ -18,6 +18,7 @@ use App\Http\Requests\RecordComplianceCaseEventRequest;
 use App\Http\Requests\RecordComplianceCaseInterviewEventRequest;
 use App\Http\Requests\ReleaseComplianceCaseLegalHoldRequest;
 use App\Http\Requests\ReviewComplianceCaseInvestigationPlanRequest;
+use App\Http\Requests\ReviewComplianceCaseInvestigationProcedureExecutionRequest;
 use App\Http\Requests\ShowComplianceCaseRequest;
 use App\Http\Requests\StoreComplianceCaseEvidenceRequest;
 use App\Http\Requests\StoreComplianceCaseInterviewRequest;
@@ -28,6 +29,7 @@ use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseInterview;
 use App\Models\ComplianceCaseInvestigationPlan;
+use App\Models\ComplianceCaseInvestigationProcedureExecution;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldCustodian;
 use Illuminate\Http\JsonResponse;
@@ -181,5 +183,10 @@ class ComplianceCaseController extends Controller
     public function recordInvestigationProcedureExecution(StoreComplianceCaseInvestigationProcedureExecutionRequest $request, ComplianceCase $case, ComplianceCaseInvestigationProcedureExecutionManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->record($request->user(), $case, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function reviewInvestigationProcedureExecution(ReviewComplianceCaseInvestigationProcedureExecutionRequest $request, ComplianceCaseInvestigationProcedureExecution $execution, ComplianceCaseInvestigationProcedureExecutionManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $execution, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }
