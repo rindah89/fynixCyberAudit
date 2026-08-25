@@ -50,4 +50,9 @@ class ComplianceCase extends Model
     {
         return $this->hasMany(ComplianceCaseActionIssue::class)->orderBy('id');
     }
+
+    public function interviews(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseInterview::class)->orderBy('id');
+    }
 }

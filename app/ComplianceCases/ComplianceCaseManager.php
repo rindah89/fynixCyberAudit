@@ -3,12 +3,14 @@
 namespace App\ComplianceCases;
 
 use App\Enums\ComplianceCaseCategory;
+use App\Enums\ComplianceCaseInterviewStatus;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Enums\GovernanceIssueStatus;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseEvent;
+use App\Models\ComplianceCaseInterview;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\User;
 use App\Services\GovernanceIssueLifecycleManager;
@@ -58,6 +60,7 @@ class ComplianceCaseManager
             abort_unless($isManager || $isInvestigator, 403);
             $data = Validator::make($data, self::eventRules())->validate();
             $events = ComplianceCaseEvent::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            $interviews = ComplianceCaseInterview::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
             $issues = ComplianceCaseActionIssue::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
             if ($issues->isNotEmpty()) {
                 $lifecycles = GovernanceIssueLifecycle::query()->where('issue_type', ComplianceCaseActionIssue::class)
@@ -102,6 +105,10 @@ class ComplianceCaseManager
                 throw ValidationException::withMessages(['status' => 'Final closure may add only the closure decision and summary.']);
             }
             $this->assertStateRequirements($status, $prospective, $actor, $locked, $events, $issues);
+            if (in_array($status, [ComplianceCaseStatus::Resolved, ComplianceCaseStatus::Closed], true)
+                && $interviews->contains(fn (ComplianceCaseInterview $interview): bool => $interview->status === ComplianceCaseInterviewStatus::Scheduled)) {
+                throw ValidationException::withMessages(['status' => 'Every scheduled interview must be conducted or cancelled before resolution.']);
+            }
 
             if ($status === ComplianceCaseStatus::Resolved && $locked->status !== $status) {
                 $changes['resolved_at'] = now();

@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Access\FileAccess;
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
+use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
+use App\Enums\ComplianceCaseInterviewStatus;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource;
@@ -13,11 +15,14 @@ use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InterviewsRelationManager;
 use App\Models\Audit;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseEvidenceSubmission;
+use App\Models\ComplianceCaseInterview;
+use App\Models\ComplianceCaseInterviewEvent;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
@@ -519,6 +524,164 @@ class ComplianceCaseManagementTest extends TestCase
         $migration->up();
         $migration->down();
         $this->assertDatabaseHas('compliance_case_evidence_submissions', ['id' => $submission->id, 'fingerprint' => $submission->fingerprint]);
+    }
+
+    public function test_case_team_governs_bounded_interviews_with_reconstructible_terminal_history(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Compliance Cases');
+        $outsider = User::factory()->create();
+        $subject = User::factory()->create();
+        $caseManager = app(ComplianceCaseManager::class);
+        $interviews = app(ComplianceCaseInterviewManager::class);
+        $case = $caseManager->open($manager, [
+            'title' => 'Interview-governed inquiry', 'category' => ComplianceCaseCategory::Fraud->value,
+            'priority' => ComplianceCasePriority::High->value, 'allegation' => 'A deliberate allegation requiring interviews.',
+            'summary' => 'Open the governed case.',
+        ]);
+        $caseManager->record($manager, $case, [
+            'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
+            'triage_summary' => 'Interview fact gathering is required.', 'summary' => 'Assign the investigator.',
+        ]);
+        $caseManager->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Investigating->value,
+            'investigation_summary' => 'Interview work is underway.', 'summary' => 'Begin investigation.',
+        ]);
+
+        try {
+            $interviews->schedule($outsider, $case, ['interviewer_id' => PHP_INT_MAX]);
+            $this->fail('Expected authorization before interview payload validation.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $scheduledAt = now()->addDay()->startOfSecond();
+        $response = $this->actingAs($investigator)->postJson("/api/compliance-cases/{$case->id}/interviews", [
+            'subject_user_id' => $subject->id, 'interviewer_id' => $investigator->id,
+            'scheduled_at' => $scheduledAt->toIso8601String(), 'location' => 'Secure room',
+            'purpose' => 'Ask the witness about the deliberate allegation.', 'rationale' => 'Schedule attributable fact gathering.',
+            'fingerprint' => str_repeat('a', 64),
+        ])->assertUnprocessable()->assertJsonValidationErrors('fingerprint');
+        $this->assertNull($response->json('data.id'));
+        $interviewId = $this->postJson("/api/compliance-cases/{$case->id}/interviews", [
+            'subject_user_id' => $subject->id, 'interviewer_id' => $investigator->id,
+            'scheduled_at' => $scheduledAt->toIso8601String(), 'location' => 'Secure room',
+            'purpose' => 'Ask the witness about the deliberate allegation.', 'rationale' => 'Schedule attributable fact gathering.',
+        ])->assertCreated()->assertJsonPath('data.status', ComplianceCaseInterviewStatus::Scheduled->value)->json('data.id');
+        $interview = ComplianceCaseInterview::query()->findOrFail($interviewId);
+        try {
+            $caseManager->record($manager, $case->refresh(), [
+                'status' => ComplianceCaseStatus::Resolved->value,
+                'resolution_summary' => 'Premature resolution.', 'summary' => 'Attempt resolution with a scheduled interview.',
+            ]);
+            $this->fail('Expected scheduled interviews to block case resolution.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('status', $exception->errors());
+        }
+        $this->actingAs($outsider)->getJson("/api/compliance-cases/{$case->id}/interviews")->assertForbidden();
+        $this->actingAs($reader)->getJson("/api/compliance-cases/{$case->id}/interviews?per_page=1")
+            ->assertOk()->assertJsonPath('total', 1)->assertJsonPath('data.0.events.0.event_type', 'scheduled');
+
+        $conductedAt = now()->startOfSecond();
+        $this->actingAs($manager)->postJson("/api/compliance-cases/{$case->id}/interviews/{$interview->id}/events", [
+            'status' => ComplianceCaseInterviewStatus::Conducted->value, 'conducted_at' => now()->addMinute()->toIso8601String(),
+            'summary' => 'A future interview cannot already have occurred.', 'rationale' => 'Reject future actual time.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('conducted_at');
+        $this->actingAs($manager)->postJson("/api/compliance-cases/{$case->id}/interviews/{$interview->id}/events", [
+            'status' => ComplianceCaseInterviewStatus::Conducted->value, 'conducted_at' => $conductedAt->toIso8601String(),
+            'summary' => 'The subject supplied a deliberate account; no truth determination is inferred.',
+            'rationale' => 'Retain the interview outcome.',
+        ])->assertOk()->assertJsonPath('data.version', 2)->assertJsonPath('data.event_type', 'conducted')
+            ->assertJsonPath('data.after_snapshot.summary', 'The subject supplied a deliberate account; no truth determination is inferred.');
+        $event = $interview->events()->reorder()->latest('version')->firstOrFail();
+        $payload = $event->only(['compliance_case_interview_id', 'version', 'event_type', 'before_snapshot', 'after_snapshot', 'rationale', 'recorded_by']);
+        $payload['recorded_at'] = $event->recorded_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $event->fingerprint);
+        $this->assertSame($subject->email, data_get($event->after_snapshot, 'subject.email'));
+        $this->assertSame($investigator->email, data_get($event->after_snapshot, 'interviewer.email'));
+        $this->assertSame('The subject supplied a deliberate account; no truth determination is inferred.', data_get($event->after_snapshot, 'summary'));
+        $this->assertThrows(fn () => $event->update(['rationale' => 'Rewrite']), \LogicException::class);
+        $this->actingAs($manager)->postJson("/api/compliance-cases/{$case->id}/interviews/{$interview->id}/events", [
+            'status' => ComplianceCaseInterviewStatus::Cancelled->value, 'cancellation_reason' => 'Rewrite terminal state.',
+            'rationale' => 'Invalid terminal rewrite.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('interview');
+
+        $factoryInterview = ComplianceCaseInterview::factory()->create([
+            'compliance_case_id' => $case->id, 'subject_user_id' => $subject->id,
+        ]);
+        $this->assertTrue($factoryInterview->interviewer->can('Investigate Compliance Cases'));
+        $factoryEvent = ComplianceCaseInterviewEvent::factory()->create([
+            'compliance_case_interview_id' => $factoryInterview->id, 'recorded_by' => $factoryInterview->interviewer_id,
+        ]);
+        $factoryPayload = $factoryEvent->only(['compliance_case_interview_id', 'version', 'event_type', 'before_snapshot', 'after_snapshot', 'rationale', 'recorded_by']);
+        $factoryPayload['recorded_at'] = $factoryEvent->recorded_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryPayload)), $factoryEvent->fingerprint);
+
+        Livewire::actingAs($reader);
+        Livewire::test(InterviewsRelationManager::class, ['ownerRecord' => $case->refresh(), 'pageClass' => ViewComplianceCase::class])
+            ->assertCanSeeTableRecords([$interview, $factoryInterview])->assertTableActionVisible('history', $interview);
+        $rendered = view('filament.compliance-case-interview-history', [
+            'interview' => $interview->fresh()->load(['subjectUser:id,name,email', 'interviewer:id,name,email', 'events.actor:id,name,email']),
+        ])->render();
+        $this->assertStringContainsString($event->fingerprint, $rendered);
+        $this->assertStringContainsString($subject->name, $rendered);
+
+        $migration = require database_path('migrations/2026_08_25_090000_create_compliance_case_interviews.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('compliance_case_interview_events', ['id' => $event->id, 'fingerprint' => $event->fingerprint]);
+    }
+
+    public function test_compliance_case_interview_and_event_bounds_are_exact(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $subject = User::factory()->create();
+        $case = ComplianceCase::factory()->create([
+            'opened_by' => $manager->id, 'assigned_to' => $investigator->id,
+            'status' => ComplianceCaseStatus::Investigating, 'investigation_summary' => 'Bound test.',
+        ]);
+        foreach (range(1, 100) as $number) {
+            $interview = ComplianceCaseInterview::factory()->create([
+                'compliance_case_id' => $case->id, 'subject_user_id' => $subject->id,
+                'interviewer_id' => $investigator->id, 'scheduled_at' => now()->addDays($number),
+            ]);
+            ComplianceCaseInterviewEvent::factory()->create([
+                'compliance_case_interview_id' => $interview->id, 'recorded_by' => $manager->id,
+            ]);
+        }
+        $this->assertSame(100, $case->interviews()->count());
+        try {
+            app(ComplianceCaseInterviewManager::class)->schedule($manager, $case, [
+                'subject_user_id' => $subject->id, 'interviewer_id' => $investigator->id,
+                'scheduled_at' => now()->addYear(), 'purpose' => 'Interview 101.', 'rationale' => 'Exceed bound.',
+            ]);
+            $this->fail('Expected interview 101 to be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('case', $exception->errors());
+        }
+
+        $bounded = $case->interviews()->firstOrFail();
+        foreach (range(2, 20) as $version) {
+            ComplianceCaseInterviewEvent::factory()->create([
+                'compliance_case_interview_id' => $bounded->id, 'recorded_by' => $manager->id, 'version' => $version,
+            ]);
+        }
+        $this->assertSame(20, $bounded->events()->count());
+        try {
+            app(ComplianceCaseInterviewManager::class)->record($manager, $case, $bounded, [
+                'scheduled_at' => now()->addYears(2), 'rationale' => 'Event 21.',
+            ]);
+            $this->fail('Expected interview event 21 to be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('interview', $exception->errors());
+        }
+        $this->assertSame(20, $bounded->events()->count());
     }
 
     private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment

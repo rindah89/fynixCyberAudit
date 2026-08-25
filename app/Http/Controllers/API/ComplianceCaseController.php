@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\API;
 
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
+use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListComplianceCasesRequest;
 use App\Http\Requests\RecordComplianceCaseEventRequest;
+use App\Http\Requests\RecordComplianceCaseInterviewEventRequest;
 use App\Http\Requests\ShowComplianceCaseRequest;
 use App\Http\Requests\StoreComplianceCaseEvidenceRequest;
+use App\Http\Requests\StoreComplianceCaseInterviewRequest;
 use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
+use App\Models\ComplianceCaseInterview;
 use Illuminate\Http\JsonResponse;
 
 class ComplianceCaseController extends Controller
@@ -63,6 +67,23 @@ class ComplianceCaseController extends Controller
             'lifecycle.remediationTask', 'lifecycle.verifier:id,name,email', 'lifecycle.closer:id,name,email',
             'lifecycle.transitions.actor:id,name,email', 'lifecycle.closureEvidence.linkedBy:id,name,email',
         ])->paginate($request->integer('per_page', 50)));
+    }
+
+    public function interviews(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase): JsonResponse
+    {
+        return response()->json($complianceCase->interviews()->with([
+            'subjectUser:id,name,email', 'interviewer:id,name,email', 'events.actor:id,name,email',
+        ])->paginate($request->integer('per_page', 50)));
+    }
+
+    public function scheduleInterview(StoreComplianceCaseInterviewRequest $request, ComplianceCase $complianceCase, ComplianceCaseInterviewManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->schedule($request->user(), $complianceCase, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function recordInterview(RecordComplianceCaseInterviewEventRequest $request, ComplianceCase $complianceCase, ComplianceCaseInterview $interview, ComplianceCaseInterviewManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->record($request->user(), $complianceCase, $interview, $request->validated())]);
     }
 
     public function storeEvidence(StoreComplianceCaseEvidenceRequest $request, ComplianceCase $complianceCase, ComplianceCaseEvidenceManager $manager): JsonResponse
