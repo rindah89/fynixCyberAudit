@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ThirdPartyCollaborationTimeliness;
+use App\Support\CanonicalJson;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
@@ -54,7 +55,7 @@ return new class extends Migration
                 'response_recorded_at' => $responseAt,
                 'timeliness_status' => $status,
                 'days_late' => $daysLate,
-                'timeliness_fingerprint' => hash('sha256', json_encode($fingerprintPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+                'timeliness_fingerprint' => hash('sha256', CanonicalJson::encode($fingerprintPayload)),
                 'calendar_timezone' => 'UTC',
                 'fingerprint_version' => $row->fingerprint_version ?? 'closure/v1',
             ]);

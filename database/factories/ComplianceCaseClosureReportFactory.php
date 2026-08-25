@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Access\FileAccess;
 use App\ComplianceCases\ComplianceCaseClosureReportManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseStatus;
@@ -11,7 +12,6 @@ use App\Models\ComplianceCaseInvestigationReportReview;
 use App\Models\User;
 use App\Support\CanonicalJson;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class ComplianceCaseClosureReportFactory extends Factory
@@ -41,7 +41,7 @@ class ComplianceCaseClosureReportFactory extends Factory
             $report->generator_snapshot = $report->generator->only(['id', 'name', 'email']);
             $report->fingerprint = hash('sha256', CanonicalJson::encode(app(ComplianceCaseClosureReportManager::class)->payload($report)));
         })->afterCreating(function (ComplianceCaseClosureReport $report): void {
-            Storage::disk($report->report_disk)->put($report->report_path, 'x');
+            app(FileAccess::class)->putPrivate($report->report_disk, $report->report_path, 'x');
         });
     }
 

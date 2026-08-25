@@ -11,6 +11,7 @@ use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorUser;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -60,7 +61,7 @@ class ThirdPartyEngagementCollaborationCancellationManager
             $record = $locked->cancellation()->create($payload + ['fingerprint' => $this->fingerprint($payload)]);
             $notificationIds = $reminders->pluck('notification_id')->filter();
             if ($notificationIds->isNotEmpty()) {
-                DB::table('notifications')->whereIn('id', $notificationIds)
+                DatabaseNotification::query()->whereIn('id', $notificationIds)
                     ->where('notifiable_type', VendorUser::class)->where('notifiable_id', $recipientContext['recipient_vendor_user_id'])->delete();
             }
 

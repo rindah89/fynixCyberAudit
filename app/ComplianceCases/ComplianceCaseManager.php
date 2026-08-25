@@ -22,6 +22,7 @@ use App\Models\ComplianceCaseInvestigationReport;
 use App\Models\ComplianceCaseInvestigationReportReview;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldRelease;
+use App\Models\ComplianceCaseMutex;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\User;
 use App\Services\GovernanceIssueLifecycleManager;
@@ -44,7 +45,7 @@ class ComplianceCaseManager
         $data = Validator::make($data, self::openRules())->validate();
 
         return DB::transaction(function () use ($actor, $data): ComplianceCase {
-            DB::table('compliance_case_mutexes')->where('id', 1)->lockForUpdate()->first();
+            ComplianceCaseMutex::query()->whereKey(1)->lockForUpdate()->first();
             $openedAt = now();
             $next = ((int) ComplianceCase::query()->max('id')) + 1;
             $case = ComplianceCase::query()->create([
@@ -116,8 +117,7 @@ class ComplianceCaseManager
                 $latestPlan = $plans->last();
                 $latestEvent = $events->last();
                 if ($latestPlan === null || $latestPlan->review?->decision !== ComplianceCaseInvestigationPlanDecision::Approved
-                    || data_get($latestPlan->case_snapshot, 'event.fingerprint') !== $latestEvent?->fingerprint
-                    || $latestPlan->target_completion_at->endOfDay()->isPast()) {
+                    || data_get($latestPlan->case_snapshot, 'event.fingerprint') !== $latestEvent?->fingerprint) {
                     throw ValidationException::withMessages(['investigation_plan' => 'Investigation requires an independently approved plan bound to the current triaged case context.']);
                 }
             }
@@ -330,7 +330,7 @@ class ComplianceCaseManager
         ];
 
         return $case->events()->create($payload + [
-            'fingerprint' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'fingerprint' => hash('sha256', CanonicalJson::encode($payload)),
         ]);
     }
 }

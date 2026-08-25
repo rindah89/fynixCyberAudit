@@ -168,7 +168,7 @@ class ComplianceCaseManagementTest extends TestCase
             'after_snapshot' => $closed->after_snapshot, 'summary' => $closed->summary,
             'recorded_by' => $closed->recorded_by, 'recorded_at' => $closed->recorded_at->toIso8601String(),
         ];
-        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $closed->fingerprint);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $closed->fingerprint);
         $this->assertSame($investigator->email, data_get($closed->after_snapshot, 'assigned_to.email'));
     }
 
@@ -356,7 +356,7 @@ class ComplianceCaseManagementTest extends TestCase
             'after_snapshot' => $factoryEvent->after_snapshot, 'summary' => $factoryEvent->summary,
             'recorded_by' => $factoryEvent->recorded_by, 'recorded_at' => $factoryEvent->recorded_at->toIso8601String(),
         ];
-        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factoryEvent->fingerprint);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $factoryEvent->fingerprint);
         $investigator = User::factory()->create();
         $assigned = ComplianceCase::factory()->create([
             'opened_by' => $manager->id, 'assigned_to' => $investigator->id, 'status' => ComplianceCaseStatus::Triaged,

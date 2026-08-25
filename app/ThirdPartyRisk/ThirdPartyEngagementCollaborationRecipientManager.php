@@ -11,6 +11,7 @@ use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorUser;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -71,7 +72,7 @@ class ThirdPartyEngagementCollaborationRecipientManager
             $record = $locked->reassignments()->create($payload + ['fingerprint' => $this->fingerprint($payload)]);
             $notificationIds = $locked->reminders()->where('vendor_user_id', $from->id)->lockForUpdate()->pluck('notification_id');
             if ($notificationIds->isNotEmpty()) {
-                DB::table('notifications')->whereIn('id', $notificationIds)
+                DatabaseNotification::query()->whereIn('id', $notificationIds)
                     ->where('notifiable_type', VendorUser::class)->where('notifiable_id', $from->id)->delete();
             }
 

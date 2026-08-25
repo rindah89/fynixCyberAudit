@@ -19,6 +19,7 @@ use Illuminate\Validation\ValidationException;
 
 class ComplianceCaseInvestigationPlanManager
 {
+    /** @param array{objectives:list<string>,scope:string,procedures:list<string>,target_completion_at:string,rationale:string} $data */
     public function submit(User $actor, ComplianceCase $case, array $data): ComplianceCaseInvestigationPlan
     {
         Enterprise::assertEnabled('compliance_cases');
@@ -69,6 +70,7 @@ class ComplianceCaseInvestigationPlanManager
         }, 3);
     }
 
+    /** @param array{decision:string,summary:string} $data */
     public function review(User $actor, ComplianceCaseInvestigationPlan $plan, array $data): ComplianceCaseInvestigationPlanReview
     {
         Enterprise::assertEnabled('compliance_cases');
@@ -96,9 +98,6 @@ class ComplianceCaseInvestigationPlanManager
             $event = ComplianceCaseEvent::query()->where('compliance_case_id', $case->id)->orderByDesc('version')->lockForUpdate()->firstOrFail();
             if ($data['decision'] === ComplianceCaseInvestigationPlanDecision::Approved->value && data_get($locked->case_snapshot, 'event.fingerprint') !== $event->fingerprint) {
                 throw ValidationException::withMessages(['plan' => 'Case context changed; submit a new investigation plan.']);
-            }
-            if ($data['decision'] === ComplianceCaseInvestigationPlanDecision::Approved->value && $locked->target_completion_at->endOfDay()->isPast()) {
-                throw ValidationException::withMessages(['plan' => 'An expired target date cannot be approved.']);
             }
             $actor = User::query()->whereNull('deleted_at')->lockForUpdate()->findOrFail($actor->id);
             $reviewedAt = now()->startOfSecond();

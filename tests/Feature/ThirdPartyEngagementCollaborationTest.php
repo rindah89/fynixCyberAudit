@@ -1249,7 +1249,7 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $payload['fingerprint_version'] = $closure->fingerprint_version;
         $payload += $closure->only(['summary', 'closed_by', 'actor_snapshot']);
         $payload['closed_at'] = $closure->closed_at->toIso8601String();
-        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $closure->fingerprint);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $closure->fingerprint);
         $this->assertSame('on_time', $closure->timeliness_status->value);
         $this->assertSame(0, $closure->days_late);
         $this->assertCount(1, $closure->accepted_event_snapshot['response']['evidence_manifest']);
@@ -1348,7 +1348,7 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $factoryPayload['fingerprint_version'] = $factory->fingerprint_version;
         $factoryPayload += $factory->only(['summary', 'closed_by', 'actor_snapshot']);
         $factoryPayload['closed_at'] = $factory->closed_at->toIso8601String();
-        $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryPayload)), $factory->fingerprint);
         $this->assertSame('responded', data_get($factory->accepted_event_snapshot, 'response.status'));
         $factoryDelivery = ThirdPartyCollaborationClosureDelivery::factory()->create();
         $factoryDeliveryPayload = $factoryDelivery->only([
@@ -1560,7 +1560,7 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             'timeliness_status' => $late->timeliness_status->value,
             'days_late' => $late->days_late,
         ];
-        $this->assertSame(hash('sha256', json_encode($timelinessPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $late->timeliness_fingerprint);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($timelinessPayload)), $late->timeliness_fingerprint);
 
         DB::table('third_party_collaboration_request_closures')->where('id', $late->id)->update([
             'response_recorded_at' => null, 'timeliness_status' => null, 'days_late' => null,
@@ -1584,7 +1584,7 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             'timeliness_status' => $recovered->timeliness_status->value,
             'days_late' => $recovered->days_late,
         ];
-        $this->assertSame(hash('sha256', json_encode($recoveredTimelinessPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $recovered->timeliness_fingerprint);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($recoveredTimelinessPayload)), $recovered->timeliness_fingerprint);
 
         $legacyPayload = $onTime->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
         $legacyPayload['closed_at'] = $onTime->closed_at->toIso8601String();

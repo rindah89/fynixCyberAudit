@@ -11,6 +11,7 @@ use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\Vendor;
 use App\Models\VendorUser;
 use App\Notifications\ThirdPartyCollaborationReminderNotification;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -89,7 +90,7 @@ class ThirdPartyEngagementCollaborationReminderManager
                 $effectiveDue->toDateString(),
                 $request->id,
             ));
-            if (! DB::table('notifications')->where('id', $notificationId)
+            if (! DatabaseNotification::query()->whereKey($notificationId)
                 ->where('notifiable_type', VendorUser::class)->where('notifiable_id', $recipient->id)->exists()) {
                 throw new \LogicException('The collaboration reminder was not accepted by the database delivery channel.');
             }

@@ -12,7 +12,7 @@ class AcknowledgeThirdPartyCollaborationClosureDeliveryRequest extends FormReque
         $delivery = $this->route('delivery');
 
         return $delivery instanceof ThirdPartyCollaborationClosureAcknowledgementDelivery
-            && $this->user()?->id === $delivery->user_id;
+            && $this->user()?->can('acknowledge', $delivery) === true;
     }
 
     public function rules(): array

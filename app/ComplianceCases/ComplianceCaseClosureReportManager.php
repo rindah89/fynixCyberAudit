@@ -2,6 +2,7 @@
 
 namespace App\ComplianceCases;
 
+use App\Access\FileAccess;
 use App\Enums\ComplianceCaseClosureReportReviewDecision;
 use App\Enums\ComplianceCaseInvestigationReportDecision;
 use App\Enums\ComplianceCaseStatus;
@@ -33,7 +34,6 @@ use App\Support\Enterprise;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -83,7 +83,7 @@ class ComplianceCaseClosureReportManager
                     throw ValidationException::withMessages(['case' => 'The governed closure-report PDF exceeds 10 MiB.']);
                 }
                 $written = true;
-                if (! Storage::disk($disk)->put($path, $bytes)) {
+                if (! app(FileAccess::class)->putPrivate($disk, $path, $bytes)) {
                     throw ValidationException::withMessages(['case' => 'The governed closure-report PDF could not be retained.']);
                 }
                 $generatedAt = now()->startOfSecond();
@@ -102,7 +102,7 @@ class ComplianceCaseClosureReportManager
         } catch (\Throwable $exception) {
             if ($written) {
                 try {
-                    Storage::disk($disk)->delete($path);
+                    app(FileAccess::class)->deletePrivate($disk, $path);
                 } catch (\Throwable $cleanupException) {
                     report($cleanupException);
                 }

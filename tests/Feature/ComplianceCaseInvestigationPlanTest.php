@@ -145,6 +145,46 @@ class ComplianceCaseInvestigationPlanTest extends TestCase
         $this->assertStringContainsString($plan->scope, $operatorEvidence);
     }
 
+    public function test_current_approved_plan_still_permits_investigation_after_the_target_date(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Security Admin');
+        $cases = app(ComplianceCaseManager::class);
+        $plans = app(ComplianceCaseInvestigationPlanManager::class);
+        $case = $cases->open($manager, [
+            'title' => 'Time-elapsed investigation', 'category' => ComplianceCaseCategory::Other->value,
+            'priority' => ComplianceCasePriority::High->value, 'allegation' => 'A governed allegation.',
+            'summary' => 'Open the case.',
+        ]);
+        $cases->record($manager, $case, [
+            'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
+            'triage_summary' => 'Fact finding is required.', 'summary' => 'Assign the investigator.',
+        ]);
+        $plan = $plans->submit($investigator, $case->refresh(), [
+            'objectives' => ['Establish the relevant facts'],
+            'scope' => 'The current triaged case context.',
+            'procedures' => ['Inspect the retained records'],
+            'target_completion_at' => now()->toDateString(),
+            'rationale' => 'Bind the current case event before the target date elapses.',
+        ]);
+        $this->travel(2)->days();
+        $review = $plans->review($reviewer, $plan, [
+            'decision' => ComplianceCaseInvestigationPlanDecision::Approved->value,
+            'summary' => 'The current plan remains the independently approved investigation authority.',
+        ]);
+        $this->assertSame(ComplianceCaseInvestigationPlanDecision::Approved, $review->decision);
+        $cases->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Investigating->value,
+            'investigation_summary' => 'The approved current plan still authorizes investigation.',
+            'summary' => 'Begin investigation after the target date.',
+        ]);
+        $this->assertSame(ComplianceCaseStatus::Investigating, $case->refresh()->status);
+    }
+
     public function test_rejected_stale_bounds_factory_and_retained_migration_are_governed(): void
     {
         $plan = ComplianceCaseInvestigationPlan::factory()->create();

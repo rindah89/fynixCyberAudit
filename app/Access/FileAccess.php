@@ -6,6 +6,7 @@ use App\Models\AiJob;
 use App\Models\AiMonitoringReviewEvidence;
 use App\Models\AuditFindingFollowUpEvidence;
 use App\Models\AuditProcedureExecutionEvidence;
+use App\Models\ComplianceCaseClosureReport;
 use App\Models\ComplianceCaseEvidenceFile;
 use App\Models\ControlTestExecutionEvidence;
 use App\Models\FileAttachment;
@@ -89,6 +90,14 @@ class FileAccess
             abort(403, 'You do not have access to this file.');
         }
 
+        if ($report = ComplianceCaseClosureReport::query()->where('report_path', $path)->first()) {
+            if ($actor instanceof User && $this->canStreamComplianceCaseClosureReport($actor, $report)) {
+                return;
+            }
+
+            abort(403, 'You do not have access to this file.');
+        }
+
         abort(403, 'You do not have access to this file.');
     }
 
@@ -149,6 +158,73 @@ class FileAccess
         }
 
         return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
+    }
+
+    public function putPrivate(string $disk, string $path, string $contents): bool
+    {
+        return Storage::disk($disk)->put($this->normalizePath($path), $contents, ['visibility' => 'private']);
+    }
+
+    public function deletePrivate(string $disk, string $path): void
+    {
+        Storage::disk($disk)->delete($this->normalizePath($path));
+    }
+
+    public function verifiedContents(
+        string $disk,
+        string $path,
+        int $expectedSize,
+        string $expectedSha256,
+        int $maxBytes,
+        string $unreadableMessage,
+        string $mismatchMessage,
+    ): string {
+        $path = $this->normalizePath($path);
+        $storage = Storage::disk($disk);
+        abort_unless($storage->exists($path), 404);
+        $stream = $storage->readStream($path);
+        abort_unless(is_resource($stream), 404);
+        try {
+            $bytes = '';
+            $size = 0;
+            $hash = hash_init('sha256');
+            while (! feof($stream)) {
+                $chunk = fread($stream, 8192);
+                abort_if($chunk === false, 409, $unreadableMessage);
+                $size += strlen($chunk);
+                abort_if($size > $maxBytes, 409, $unreadableMessage);
+                $bytes .= $chunk;
+                hash_update($hash, $chunk);
+            }
+        } finally {
+            fclose($stream);
+        }
+        abort_unless($size === $expectedSize && hash_final($hash) === $expectedSha256, 409, $mismatchMessage);
+
+        return $bytes;
+    }
+
+    public function verifiedComplianceCaseClosureReport(ComplianceCaseClosureReport $report): string
+    {
+        return $this->verifiedContents(
+            $report->report_disk,
+            $report->report_path,
+            $report->report_size,
+            $report->report_sha256,
+            10 * 1024 * 1024,
+            'The retained compliance case closure report could not be verified.',
+            'The retained compliance case closure report no longer matches its governed fingerprint.',
+        );
+    }
+
+    public function streamComplianceCaseClosureReport(User $actor, ComplianceCaseClosureReport $report): StreamedResponse
+    {
+        abort_unless($this->canStreamComplianceCaseClosureReport($actor, $report), 403);
+        $bytes = $this->verifiedComplianceCaseClosureReport($report);
+
+        return response()->streamDownload(static function () use ($bytes): void {
+            echo $bytes;
+        }, 'Compliance-Case-Closure-'.$report->complianceCase->number.'-v'.$report->version.'.pdf', ['Content-Type' => 'application/pdf']);
     }
 
     public function streamControlTestExecutionEvidence(User $actor, ControlTestExecutionEvidence $evidence): StreamedResponse
@@ -374,6 +450,13 @@ class FileAccess
         }
 
         Storage::disk($disk)->delete($path);
+    }
+
+    private function canStreamComplianceCaseClosureReport(User $actor, ComplianceCaseClosureReport $report): bool
+    {
+        $report->loadMissing('complianceCase');
+
+        return Enterprise::enabled('compliance_cases') && $report->complianceCase !== null && $actor->can('view', $report);
     }
 
     public function canDownloadFileAttachment(Authenticatable $actor, FileAttachment $attachment): bool

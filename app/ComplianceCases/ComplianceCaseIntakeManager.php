@@ -7,6 +7,7 @@ use App\Enums\ComplianceCaseIntakeDecision;
 use App\Enums\ComplianceCasePriority;
 use App\Models\ComplianceCaseIntake;
 use App\Models\ComplianceCaseIntakeDisposition;
+use App\Models\ComplianceCaseIntakeMutex;
 use App\Models\User;
 use App\Support\CanonicalJson;
 use App\Support\Enterprise;
@@ -33,7 +34,7 @@ class ComplianceCaseIntakeManager
         $data = Validator::make($data, self::submissionRules())->validate();
 
         return DB::transaction(function () use ($actor, $data): ComplianceCaseIntake {
-            DB::table('compliance_case_intake_mutexes')->where('id', 1)->lockForUpdate()->first();
+            ComplianceCaseIntakeMutex::query()->whereKey(1)->lockForUpdate()->first();
             $lockedActor = User::query()->whereNull('deleted_at')->lockForUpdate()->findOrFail($actor->id);
             $submittedAt = now()->startOfSecond();
             $next = ((int) ComplianceCaseIntake::query()->max('id')) + 1;

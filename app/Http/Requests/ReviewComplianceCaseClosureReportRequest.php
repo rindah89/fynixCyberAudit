@@ -11,9 +11,10 @@ class ReviewComplianceCaseClosureReportRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return Enterprise::enabled('compliance_cases')
-            && $this->route('report') instanceof ComplianceCaseClosureReport
-            && $this->user()->can('Manage Compliance Cases');
+        $report = $this->route('report');
+
+        return Enterprise::enabled('compliance_cases') && $report instanceof ComplianceCaseClosureReport
+            && $this->user()?->can('update', $report) === true;
     }
 
     public function rules(): array

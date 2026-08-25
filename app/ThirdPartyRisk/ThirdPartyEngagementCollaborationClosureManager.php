@@ -14,6 +14,7 @@ use App\Models\Vendor;
 use App\Models\VendorUser;
 use App\Notifications\ThirdPartyCollaborationClosureNotification;
 use App\Support\CanonicalJson;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -22,6 +23,7 @@ use Illuminate\Validation\ValidationException;
 
 class ThirdPartyEngagementCollaborationClosureManager
 {
+    /** @param array{summary:string} $data */
     public function close(User $actor, ThirdPartyEngagementCollaborationRequest $request, array $data): ThirdPartyCollaborationRequestClosure
     {
         return DB::transaction(function () use ($actor, $request, $data): ThirdPartyCollaborationRequestClosure {
@@ -85,7 +87,7 @@ class ThirdPartyEngagementCollaborationClosureManager
                 'timeliness_status' => $timelinessStatus,
                 'days_late' => $daysLate,
                 'calendar_timezone' => 'UTC',
-                'timeliness_fingerprint' => hash('sha256', json_encode($timelinessPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+                'timeliness_fingerprint' => hash('sha256', CanonicalJson::encode($timelinessPayload)),
                 'fingerprint_version' => 'closure/v2',
                 'summary' => $validated['summary'],
                 'closed_by' => $lockedActor->id,
@@ -98,7 +100,7 @@ class ThirdPartyEngagementCollaborationClosureManager
             $notificationId = Str::uuid()->toString();
             $attemptedAt = now()->startOfSecond();
             $recipient->notifyNow(new ThirdPartyCollaborationClosureNotification($notificationId, $engagement->code, $locked->subject, $locked->id));
-            if (! DB::table('notifications')->where('id', $notificationId)
+            if (! DatabaseNotification::query()->whereKey($notificationId)
                 ->where('notifiable_type', VendorUser::class)->where('notifiable_id', $recipient->id)->exists()) {
                 throw new \LogicException('The collaboration closure notification was not accepted by the database delivery channel.');
             }
@@ -150,6 +152,6 @@ class ThirdPartyEngagementCollaborationClosureManager
 
     private function fingerprint(array $payload): string
     {
-        return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        return hash('sha256', CanonicalJson::encode($payload));
     }
 }

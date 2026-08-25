@@ -7,6 +7,15 @@ use Aliziodev\LaravelTaxonomy\Models\Taxonomy;
 use App\Models\AiSystem;
 use App\Models\BusinessService;
 use App\Models\ComplianceCase;
+use App\Models\ComplianceCaseClosureReport;
+use App\Models\ComplianceCaseEvidenceSubmission;
+use App\Models\ComplianceCaseIntake;
+use App\Models\ComplianceCaseIntakeMessage;
+use App\Models\ComplianceCaseInterview;
+use App\Models\ComplianceCaseInvestigationPlan;
+use App\Models\ComplianceCaseInvestigationProcedureExecution;
+use App\Models\ComplianceCaseInvestigationReport;
+use App\Models\ComplianceCaseLegalHold;
 use App\Models\ControlTestDefinition;
 use App\Models\EsgDisclosure;
 use App\Models\EsgMaterialTopic;
@@ -18,9 +27,16 @@ use App\Models\PrivacyRightsRequest;
 use App\Models\Survey;
 use App\Models\SurveyTemplate;
 use App\Models\SystemAuthorizationPackage;
+use App\Models\ThirdPartyCollaborationClosureAcknowledgementDelivery;
+use App\Models\ThirdPartyCollaborationRequestClosure;
 use App\Models\VendorDocument;
 use App\Policies\AiSystemPolicy;
 use App\Policies\BusinessServicePolicy;
+use App\Policies\ComplianceCaseClosureReportPolicy;
+use App\Policies\ComplianceCaseIntakeMessagePolicy;
+use App\Policies\ComplianceCaseIntakePolicy;
+use App\Policies\ComplianceCaseLegalHoldPolicy;
+use App\Policies\ComplianceCaseOwnedPolicy;
 use App\Policies\ComplianceCasePolicy;
 use App\Policies\ControlTestDefinitionPolicy;
 use App\Policies\EsgDisclosurePolicy;
@@ -36,6 +52,8 @@ use App\Policies\SurveyPolicy;
 use App\Policies\SurveyTemplatePolicy;
 use App\Policies\SystemAuthorizationPackagePolicy;
 use App\Policies\TaxonomyPolicy;
+use App\Policies\ThirdPartyCollaborationClosureAcknowledgementDeliveryPolicy;
+use App\Policies\ThirdPartyCollaborationRequestClosurePolicy;
 use App\Policies\VendorDocumentPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 use Laravel\Passport\Passport;
@@ -60,6 +78,17 @@ class AuthServiceProvider extends ServiceProvider
         ControlTestDefinition::class => ControlTestDefinitionPolicy::class,
         BusinessService::class => BusinessServicePolicy::class,
         ComplianceCase::class => ComplianceCasePolicy::class,
+        ComplianceCaseIntake::class => ComplianceCaseIntakePolicy::class,
+        ComplianceCaseIntakeMessage::class => ComplianceCaseIntakeMessagePolicy::class,
+        ComplianceCaseEvidenceSubmission::class => ComplianceCaseOwnedPolicy::class,
+        ComplianceCaseInterview::class => ComplianceCaseOwnedPolicy::class,
+        ComplianceCaseLegalHold::class => ComplianceCaseLegalHoldPolicy::class,
+        ComplianceCaseInvestigationPlan::class => ComplianceCaseOwnedPolicy::class,
+        ComplianceCaseInvestigationProcedureExecution::class => ComplianceCaseOwnedPolicy::class,
+        ComplianceCaseInvestigationReport::class => ComplianceCaseOwnedPolicy::class,
+        ComplianceCaseClosureReport::class => ComplianceCaseClosureReportPolicy::class,
+        ThirdPartyCollaborationRequestClosure::class => ThirdPartyCollaborationRequestClosurePolicy::class,
+        ThirdPartyCollaborationClosureAcknowledgementDelivery::class => ThirdPartyCollaborationClosureAcknowledgementDeliveryPolicy::class,
         GovernedModel::class => GovernedModelPolicy::class,
         EsgMaterialTopic::class => EsgMaterialTopicPolicy::class,
         EsgDisclosure::class => EsgDisclosurePolicy::class,

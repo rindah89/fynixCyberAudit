@@ -8,6 +8,7 @@ use App\Models\ThirdPartyCollaborationRequestClosure;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\User;
+use App\Support\CanonicalJson;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 
@@ -61,7 +62,7 @@ class ThirdPartyCollaborationRequestClosureFactory extends Factory
             'escalation_snapshot' => null, 'response_recorded_at' => $response->recorded_at->copy()->utc()->startOfSecond(),
             'timeliness_status' => $timelinessStatus, 'days_late' => $daysLate,
             'calendar_timezone' => 'UTC',
-            'timeliness_fingerprint' => hash('sha256', json_encode($timelinessPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'timeliness_fingerprint' => hash('sha256', CanonicalJson::encode($timelinessPayload)),
             'fingerprint_version' => 'closure/v2',
             'summary' => 'The accepted response completed the in-product request workflow.',
             'closed_by' => $actor->id, 'actor_snapshot' => $actor->only(['id', 'name', 'email']),
@@ -81,7 +82,7 @@ class ThirdPartyCollaborationRequestClosureFactory extends Factory
             $payload['fingerprint_version'] = $record->fingerprint_version;
             $payload += $record->only(['summary', 'closed_by', 'actor_snapshot']);
             $payload['closed_at'] = $record->closed_at->toIso8601String();
-            $record->fingerprint = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            $record->fingerprint = hash('sha256', CanonicalJson::encode($payload));
         });
     }
 

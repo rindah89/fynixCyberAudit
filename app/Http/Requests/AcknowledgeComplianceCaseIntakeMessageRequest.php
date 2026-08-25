@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\ComplianceCaseIntakeAudience;
 use App\Support\Enterprise;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -13,9 +12,7 @@ class AcknowledgeComplianceCaseIntakeMessageRequest extends FormRequest
         $message = $this->route('message');
 
         return Enterprise::enabled('compliance_cases') && $message !== null
-            && $message->audience === ComplianceCaseIntakeAudience::Reporter
-            && $message->intake()->where('submitted_by', $this->user()->id)->exists()
-            && ! $this->user()->trashed();
+            && $this->user()?->can('acknowledge', $message) === true;
     }
 
     public function rules(): array

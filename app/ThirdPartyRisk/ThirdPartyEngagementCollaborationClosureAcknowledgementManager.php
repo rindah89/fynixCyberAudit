@@ -11,6 +11,7 @@ use App\Models\Vendor;
 use App\Models\VendorUser;
 use App\Notifications\ThirdPartyCollaborationClosureAcknowledgedNotification;
 use App\Support\CanonicalJson;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -76,7 +77,7 @@ class ThirdPartyEngagementCollaborationClosureAcknowledgementManager
                 $notificationId = Str::uuid()->toString();
                 $attemptedAt = now()->startOfSecond();
                 $internalRecipient->notifyNow(new ThirdPartyCollaborationClosureAcknowledgedNotification($notificationId, $engagement->code, $locked->subject, $locked->id));
-                if (! DB::table('notifications')->where('id', $notificationId)
+                if (! DatabaseNotification::query()->whereKey($notificationId)
                     ->where('notifiable_type', User::class)->where('notifiable_id', $internalRecipient->id)->exists()) {
                     throw new \LogicException('The collaboration closure acknowledgement notification was not accepted by the database delivery channel.');
                 }

@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseEvent;
+use App\Support\CanonicalJson;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class ComplianceCaseEventFactory extends Factory
@@ -36,12 +37,12 @@ class ComplianceCaseEventFactory extends Factory
                 ? 'Factory governed case opening.' : 'Factory governed case update.',
             'recorded_by' => fn (array $attributes): int => (int) ComplianceCase::query()->findOrFail($attributes['compliance_case_id'])->opened_by,
             'recorded_at' => $recordedAt,
-            'fingerprint' => fn (array $attributes): string => hash('sha256', json_encode([
+            'fingerprint' => fn (array $attributes): string => hash('sha256', CanonicalJson::encode([
                 'compliance_case_id' => $attributes['compliance_case_id'], 'version' => $attributes['version'],
                 'event_type' => $attributes['event_type'], 'before_snapshot' => $attributes['before_snapshot'],
                 'after_snapshot' => $attributes['after_snapshot'], 'summary' => $attributes['summary'],
                 'recorded_by' => $attributes['recorded_by'], 'recorded_at' => $attributes['recorded_at']->toIso8601String(),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            ])),
         ];
     }
 }

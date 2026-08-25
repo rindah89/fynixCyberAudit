@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Access\FileAccess;
 use App\ComplianceCases\ComplianceCaseClosureReportManager;
 use App\ComplianceCases\ComplianceCaseClosureReportReviewManager;
 use App\ComplianceCases\ComplianceCaseManager;
@@ -82,6 +83,30 @@ class ComplianceCaseClosureReportTest extends TestCase
         } catch (\LogicException) {
             $this->assertDatabaseHas('compliance_case_closure_reports', ['id' => $report->id, 'fingerprint' => $report->fingerprint]);
         }
+    }
+
+    public function test_closure_report_bytes_are_authorized_through_file_access(): void
+    {
+        $report = ComplianceCaseClosureReport::factory()->create();
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Compliance Cases');
+        $outsider = User::factory()->create();
+
+        $this->assertTrue($reader->can('view', $report));
+        $this->assertFalse($outsider->can('view', $report));
+        $this->actingAs($outsider)->get('/app/priv-storage/'.$report->report_path)->assertForbidden();
+        $this->actingAs($reader)->get('/app/priv-storage/'.$report->report_path)->assertOk();
+        try {
+            app(FileAccess::class)->streamComplianceCaseClosureReport($outsider, $report);
+            $this->fail('Expected unauthorized FileAccess closure-report streaming to fail closed.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $stream = app(FileAccess::class)->streamComplianceCaseClosureReport($reader, $report);
+        $this->assertSame(200, $stream->getStatusCode());
+        ob_start();
+        $stream->sendContent();
+        $this->assertSame($report->report_sha256, hash('sha256', (string) ob_get_clean()));
     }
 
     public function test_closure_report_authorization_bounds_factory_and_retained_migration_are_governed(): void
