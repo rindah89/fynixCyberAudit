@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API;
 
 use App\ComplianceCases\ComplianceCaseClosureReportManager;
+use App\ComplianceCases\ComplianceCaseClosureReportReviewManager;
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
@@ -22,6 +23,7 @@ use App\Http\Requests\ListMyComplianceCaseLegalHoldsRequest;
 use App\Http\Requests\RecordComplianceCaseEventRequest;
 use App\Http\Requests\RecordComplianceCaseInterviewEventRequest;
 use App\Http\Requests\ReleaseComplianceCaseLegalHoldRequest;
+use App\Http\Requests\ReviewComplianceCaseClosureReportRequest;
 use App\Http\Requests\ReviewComplianceCaseInvestigationPlanRequest;
 use App\Http\Requests\ReviewComplianceCaseInvestigationProcedureExecutionRequest;
 use App\Http\Requests\ReviewComplianceCaseInvestigationReportRequest;
@@ -34,6 +36,7 @@ use App\Http\Requests\StoreComplianceCaseInvestigationReportRequest;
 use App\Http\Requests\StoreComplianceCaseLegalHoldRequest;
 use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
+use App\Models\ComplianceCaseClosureReport;
 use App\Models\ComplianceCaseInterview;
 use App\Models\ComplianceCaseInvestigationPlan;
 use App\Models\ComplianceCaseInvestigationProcedureExecution;
@@ -222,5 +225,10 @@ class ComplianceCaseController extends Controller
     public function generateClosureReport(GenerateComplianceCaseClosureReportRequest $request, ComplianceCase $case, ComplianceCaseClosureReportManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->generate($request->user(), $case, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function reviewClosureReport(ReviewComplianceCaseClosureReportRequest $request, ComplianceCaseClosureReport $report, ComplianceCaseClosureReportReviewManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $report, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }

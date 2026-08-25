@@ -15,6 +15,15 @@ class ComplianceCaseClosureReportDownload
     {
         $report->loadMissing('complianceCase');
         abort_unless($actor->can('view', $report->complianceCase), 403);
+        $bytes = $this->verifiedBytes($report);
+
+        return response()->streamDownload(static function () use ($bytes): void {
+            echo $bytes;
+        }, 'Compliance-Case-Closure-'.$report->complianceCase->number.'-v'.$report->version.'.pdf', ['Content-Type' => 'application/pdf']);
+    }
+
+    public function verifiedBytes(ComplianceCaseClosureReport $report): string
+    {
         $storage = Storage::disk($report->report_disk);
         abort_unless($storage->exists($report->report_path), 404);
         $stream = $storage->readStream($report->report_path);
@@ -37,8 +46,6 @@ class ComplianceCaseClosureReportDownload
         abort_unless($size === $report->report_size && hash_final($hash) === $report->report_sha256, 409,
             'The retained compliance case closure report no longer matches its governed fingerprint.');
 
-        return response()->streamDownload(static function () use ($bytes): void {
-            echo $bytes;
-        }, 'Compliance-Case-Closure-'.$report->complianceCase->number.'-v'.$report->version.'.pdf', ['Content-Type' => 'application/pdf']);
+        return $bytes;
     }
 }

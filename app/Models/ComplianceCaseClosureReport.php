@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 class ComplianceCaseClosureReport extends Model
@@ -36,5 +37,10 @@ class ComplianceCaseClosureReport extends Model
     public function generator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'generated_by')->withTrashed();
+    }
+
+    public function review(): HasOne
+    {
+        return $this->hasOne(ComplianceCaseClosureReportReview::class);
     }
 }

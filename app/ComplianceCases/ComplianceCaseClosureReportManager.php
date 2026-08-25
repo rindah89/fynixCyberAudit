@@ -2,11 +2,13 @@
 
 namespace App\ComplianceCases;
 
+use App\Enums\ComplianceCaseClosureReportReviewDecision;
 use App\Enums\ComplianceCaseInvestigationReportDecision;
 use App\Enums\ComplianceCaseStatus;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseClosureReport;
+use App\Models\ComplianceCaseClosureReportReview;
 use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseEvidenceSubmission;
 use App\Models\ComplianceCaseIntake;
@@ -63,6 +65,14 @@ class ComplianceCaseClosureReportManager
                 if ($existing->count() >= 20) {
                     throw ValidationException::withMessages(['case' => 'A governed compliance case is limited to 20 closure-report versions.']);
                 }
+                $latest = $existing->last();
+                if ($latest !== null) {
+                    $latestReview = ComplianceCaseClosureReportReview::query()
+                        ->where('compliance_case_closure_report_id', $latest->id)->lockForUpdate()->first();
+                    if ($latestReview?->decision !== ComplianceCaseClosureReportReviewDecision::Rejected) {
+                        throw ValidationException::withMessages(['report' => 'A replacement closure package requires a rejected prior package.']);
+                    }
+                }
                 $actor = User::query()->whereNull('deleted_at')->lockForUpdate()->findOrFail($actor->id);
                 $snapshot = $this->lockAndSnapshot($locked, $data['executive_summary']);
                 if (strlen(CanonicalJson::encode($snapshot)) > self::MAX_SNAPSHOT_BYTES) {
@@ -107,7 +117,7 @@ class ComplianceCaseClosureReportManager
         $case = ComplianceCase::query()->findOrFail($case->id);
         abort_unless($actor->can('view', $case), 403);
 
-        return $case->closureReports()->with('generator:id,name,email')->paginate($perPage);
+        return $case->closureReports()->with(['generator:id,name,email', 'review.reviewer:id,name,email'])->paginate($perPage);
     }
 
     /** @internal Canonical factory construction for persisted evidence fixtures. */

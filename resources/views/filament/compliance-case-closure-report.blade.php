@@ -6,6 +6,12 @@
         <div class="sm:col-span-2"><dt class="font-medium">Closure</dt><dd class="whitespace-pre-wrap">{{ data_get($report->report_snapshot, 'case.case.closure_summary') }}</dd></div>
         <div><dt class="font-medium">PDF SHA-256</dt><dd class="break-all font-mono text-xs">{{ $report->report_sha256 }}</dd></div>
         <div><dt class="font-medium">Evidence fingerprint</dt><dd class="break-all font-mono text-xs">{{ $report->fingerprint }}</dd></div>
+        <div><dt class="font-medium">Independent review</dt><dd>{{ $report->review?->decision?->getLabel() ?? __('Pending') }}</dd></div>
+        <div><dt class="font-medium">Reviewed by / at</dt><dd>{{ $report->review?->reviewer?->name ?? '—' }} · {{ $report->review?->reviewed_at?->format('Y-m-d H:i:s') ?? '—' }}</dd></div>
+        @if ($report->review)
+            <div class="sm:col-span-2"><dt class="font-medium">Review summary</dt><dd class="whitespace-pre-wrap">{{ $report->review->summary }}</dd></div>
+            <div class="sm:col-span-2"><dt class="font-medium">Review fingerprint</dt><dd class="break-all font-mono text-xs">{{ $report->review->fingerprint }}</dd></div>
+        @endif
     </dl>
     <a class="underline" href="{{ route('compliance-case-closure-reports.download', $report) }}">Download verified retained PDF</a>
 </div>

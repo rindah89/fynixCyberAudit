@@ -3,13 +3,16 @@
 namespace Tests\Feature;
 
 use App\ComplianceCases\ComplianceCaseClosureReportManager;
+use App\ComplianceCases\ComplianceCaseClosureReportReviewManager;
 use App\ComplianceCases\ComplianceCaseManager;
+use App\Enums\ComplianceCaseClosureReportReviewDecision;
 use App\Enums\ComplianceCaseInvestigationReportDecision;
 use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ClosureReportsRelationManager;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseClosureReport;
+use App\Models\ComplianceCaseClosureReportReview;
 use App\Models\ComplianceCaseInvestigationReport;
 use App\Models\ComplianceCaseInvestigationReportReview;
 use App\Models\User;
@@ -118,8 +121,12 @@ class ComplianceCaseClosureReportTest extends TestCase
         }
         [$boundCase] = $this->closedGovernedCase();
         foreach (range(1, 19) as $version) {
-            ComplianceCaseClosureReport::factory()->create([
+            $rejected = ComplianceCaseClosureReport::factory()->create([
                 'compliance_case_id' => $boundCase->id, 'generated_by' => $generator->id, 'version' => $version,
+            ]);
+            ComplianceCaseClosureReportReview::factory()->create([
+                'compliance_case_closure_report_id' => $rejected->id,
+                'decision' => ComplianceCaseClosureReportReviewDecision::Rejected,
             ]);
         }
         $twentieth = $service->generate($generator, $boundCase, ['executive_summary' => 'Exact boundary version twenty.']);
@@ -142,6 +149,113 @@ class ComplianceCaseClosureReportTest extends TestCase
         $migration->down();
         $this->assertTrue(Schema::hasTable('compliance_case_closure_reports'));
         $this->assertDatabaseHas('compliance_case_closure_reports', ['id' => $twentieth->id, 'fingerprint' => $twentieth->fingerprint]);
+    }
+
+    public function test_independent_manager_approves_the_exact_verified_closure_package_once(): void
+    {
+        $report = ComplianceCaseClosureReport::factory()->create();
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo(['Manage Compliance Cases', 'Read Compliance Cases']);
+
+        $this->actingAs($reviewer)
+            ->postJson("/api/compliance-case-closure-reports/{$report->id}/review", [
+                'decision' => 'approved', 'summary' => '   ',
+            ])->assertUnprocessable()->assertJsonValidationErrors('summary');
+
+        $reviewId = $this->actingAs($reviewer)
+            ->postJson("/api/compliance-case-closure-reports/{$report->id}/review", [
+                'decision' => 'approved',
+                'summary' => 'The retained closure package matches the independently closed case record.',
+            ])->assertCreated()->json('data.id');
+
+        $this->assertDatabaseHas('compliance_case_closure_report_reviews', [
+            'id' => $reviewId,
+            'compliance_case_closure_report_id' => $report->id,
+            'decision' => 'approved',
+            'reviewed_by' => $reviewer->id,
+        ]);
+        $review = ComplianceCaseClosureReportReview::query()->findOrFail($reviewId);
+        $this->assertSame($report->fingerprint, data_get($review->closure_report_snapshot, 'fingerprint'));
+        $this->assertSame($report->report_sha256, data_get($review->closure_report_snapshot, 'report_sha256'));
+        $this->assertSame(
+            hash('sha256', CanonicalJson::encode(app(ComplianceCaseClosureReportReviewManager::class)->payload($review))),
+            $review->fingerprint,
+        );
+        $this->actingAs($reviewer)->getJson("/api/compliance-cases/{$report->compliance_case_id}/closure-reports")
+            ->assertOk()->assertJsonPath('data.0.review.id', $review->id)
+            ->assertJsonPath('data.0.review.fingerprint', $review->fingerprint)
+            ->assertJsonMissingPath('data.0.review.closure_report_snapshot');
+        Livewire::actingAs($reviewer)->test(ClosureReportsRelationManager::class, [
+            'ownerRecord' => $report->complianceCase, 'pageClass' => ViewComplianceCase::class,
+        ])->assertCanSeeTableRecords([$report])->assertTableActionHidden('generate')->mountTableAction('inspect', $report);
+        $rendered = view('filament.compliance-case-closure-report', [
+            'report' => $report->fresh()->load(['generator', 'review.reviewer']),
+        ])->render();
+        $this->assertStringContainsString('The retained closure package matches the independently closed case record.', $rendered);
+        $this->assertStringContainsString($review->fingerprint, $rendered);
+
+        $this->actingAs($reviewer)->postJson("/api/compliance-case-closure-reports/{$report->id}/review", [
+            'decision' => 'rejected', 'summary' => 'A second decision is forbidden.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('report');
+
+        try {
+            $review->delete();
+            $this->fail('Expected retained closure-report review evidence to be immutable.');
+        } catch (\LogicException) {
+            $this->assertDatabaseHas('compliance_case_closure_report_reviews', ['id' => $review->id]);
+        }
+    }
+
+    public function test_closure_package_review_separates_actors_latest_version_and_verified_bytes(): void
+    {
+        $report = ComplianceCaseClosureReport::factory()->create();
+        $report->generator->givePermissionTo('Read Compliance Cases');
+        $payload = ['decision' => 'approved', 'summary' => 'Independent exact-package approval.'];
+        $this->actingAs($report->generator)->postJson("/api/compliance-case-closure-reports/{$report->id}/review", $payload)->assertForbidden();
+
+        $closer = User::query()->findOrFail($report->complianceCase->events()->reorder()->latest('version')->value('recorded_by'));
+        $closer->givePermissionTo('Read Compliance Cases');
+        $this->actingAs($closer)->postJson("/api/compliance-case-closure-reports/{$report->id}/review", $payload)->assertForbidden();
+
+        $rejector = User::factory()->create();
+        $rejector->givePermissionTo(['Manage Compliance Cases', 'Read Compliance Cases']);
+        $rejectionId = $this->actingAs($rejector)->postJson("/api/compliance-case-closure-reports/{$report->id}/review", [
+            'decision' => 'rejected', 'summary' => 'The package narrative requires a replacement version.',
+        ])->assertCreated()->json('data.id');
+        $rejectedFingerprint = ComplianceCaseClosureReportReview::query()->findOrFail($rejectionId)->fingerprint;
+
+        $replacementGenerator = User::factory()->create();
+        $replacementGenerator->givePermissionTo(['Manage Compliance Cases', 'Read Compliance Cases']);
+        $replacement = app(ComplianceCaseClosureReportManager::class)->generate($replacementGenerator, $report->complianceCase, [
+            'executive_summary' => 'Replacement closure package for latest-version review.',
+        ]);
+        $this->assertDatabaseHas('compliance_case_closure_report_reviews', [
+            'id' => $rejectionId, 'fingerprint' => $rejectedFingerprint, 'decision' => 'rejected',
+        ]);
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo(['Manage Compliance Cases', 'Read Compliance Cases']);
+        $this->actingAs($reviewer)->postJson("/api/compliance-case-closure-reports/{$report->id}/review", $payload)
+            ->assertUnprocessable()->assertJsonValidationErrors('report');
+
+        $validBytes = Storage::disk('private')->get($replacement->report_path);
+        Storage::disk('private')->put($replacement->report_path, 'changed');
+        $this->actingAs($reviewer)->postJson("/api/compliance-case-closure-reports/{$replacement->id}/review", $payload)->assertStatus(409);
+        $this->assertDatabaseMissing('compliance_case_closure_report_reviews', ['compliance_case_closure_report_id' => $replacement->id]);
+        Storage::disk('private')->put($replacement->report_path, $validBytes);
+        $this->actingAs($reviewer)->postJson("/api/compliance-case-closure-reports/{$replacement->id}/review", $payload)->assertCreated();
+
+        $factory = ComplianceCaseClosureReportReview::factory()->create()->fresh();
+        $this->assertSame(
+            hash('sha256', CanonicalJson::encode(app(ComplianceCaseClosureReportReviewManager::class)->payload($factory))),
+            $factory->fingerprint,
+        );
+        $this->assertSame($factory->closureReport->fingerprint, data_get($factory->closure_report_snapshot, 'fingerprint'));
+
+        $migration = require database_path('migrations/2026_08_25_190000_create_compliance_case_closure_report_reviews.php');
+        $migration->up();
+        $migration->down();
+        $this->assertTrue(Schema::hasTable('compliance_case_closure_report_reviews'));
+        $this->assertDatabaseHas('compliance_case_closure_report_reviews', ['id' => $factory->id]);
     }
 
     /** @return array{ComplianceCase,ComplianceCaseInvestigationReportReview} */
