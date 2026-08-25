@@ -156,6 +156,19 @@ class ThirdPartyEngagementCollaborationManager
                     $delivery->makeVisible(['id', 'third_party_collaboration_request_closure_id', 'third_party_engagement_collaboration_request_id', 'vendor_user_id', 'recipient_snapshot', 'closure_snapshot']);
                     $closure->setRelation('delivery', $delivery);
                 }
+                if ($request->closure->relationLoaded('acknowledgement') && $request->closure->acknowledgement !== null) {
+                    $acknowledgement = clone $request->closure->acknowledgement;
+                    $acknowledgementClosure = $acknowledgement->closure_snapshot;
+                    $acknowledgementClosure['accepted_event_snapshot']['response']['evidence_manifest'] = collect(data_get($acknowledgementClosure, 'accepted_event_snapshot.response.evidence_manifest', []))
+                        ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
+                    $acknowledgementDelivery = $acknowledgement->delivery_snapshot;
+                    $acknowledgementDelivery['closure_snapshot']['accepted_event_snapshot']['response']['evidence_manifest'] = collect(data_get($acknowledgementDelivery, 'closure_snapshot.accepted_event_snapshot.response.evidence_manifest', []))
+                        ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
+                    $acknowledgement->closure_snapshot = $acknowledgementClosure;
+                    $acknowledgement->delivery_snapshot = $acknowledgementDelivery;
+                    $acknowledgement->makeVisible(['id', 'third_party_collaboration_request_closure_id', 'third_party_collaboration_closure_delivery_id', 'third_party_engagement_collaboration_request_id', 'vendor_user_id', 'recipient_snapshot', 'closure_snapshot', 'delivery_snapshot']);
+                    $closure->setRelation('acknowledgement', $acknowledgement);
+                }
                 $visible->setRelation('closure', $closure);
             }
 

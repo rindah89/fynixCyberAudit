@@ -13,6 +13,7 @@ use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationAcknowledgementManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureAcknowledgementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use Filament\Actions\Action;
@@ -62,6 +63,7 @@ class CollaborationRequestResource extends Resource
                 'cancellation:id,third_party_engagement_collaboration_request_id,reason,cancelled_at,fingerprint',
                 'closure:id,third_party_engagement_collaboration_request_id,response_recorded_at,timeliness_status,days_late,calendar_timezone,timeliness_fingerprint,fingerprint_version,summary,closed_at,fingerprint',
                 'closure.delivery:id,third_party_collaboration_request_closure_id,channel,notification_id,attempted_at,delivered_at,fingerprint',
+                'closure.acknowledgement:id,third_party_collaboration_request_closure_id,acknowledged_at,fingerprint',
                 'reassignments' => fn ($query) => $query->select(['id', 'third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'reason', 'reassigned_at', 'fingerprint']),
                 'extensions.decision' => fn ($query) => $query->select(['id', 'third_party_collaboration_extension_id', 'decision', 'summary', 'decided_at', 'fingerprint']),
                 'reminders',
@@ -93,6 +95,11 @@ class CollaborationRequestResource extends Resource
                     && in_array($record->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
                     && ! $record->acknowledgements->contains(fn ($acknowledgement): bool => $acknowledgement->recipient_context_fingerprint === $record->currentRecipientContext()['fingerprint']))
                 ->requiresConfirmation()->action(fn (ThirdPartyEngagementCollaborationRequest $record) => app(ThirdPartyEngagementCollaborationAcknowledgementManager::class)->acknowledge(self::vendorActor(), $record)),
+            Action::make('acknowledge_closure')->label('Acknowledge closure')->icon('heroicon-o-check-badge')->color('success')
+                ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->isClosed() && $record->closure?->acknowledgement === null)
+                ->requiresConfirmation()
+                ->modalDescription(__('This records an authenticated in-product acknowledgement only. It does not signify agreement, comprehension, or contractual acceptance.'))
+                ->action(fn (ThirdPartyEngagementCollaborationRequest $record) => app(ThirdPartyEngagementCollaborationClosureAcknowledgementManager::class)->acknowledge(self::vendorActor(), $record)),
             Action::make('respond')->label('Respond')->icon('heroicon-o-paper-airplane')
                 ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
                     && ! $record->isCancelled()
@@ -171,6 +178,8 @@ class CollaborationRequestResource extends Resource
                 TextEntry::make('closure.delivery.attempted_at')->label('Attempted at')->dateTime(),
                 TextEntry::make('closure.delivery.delivered_at')->label('Delivered at')->dateTime(),
                 TextEntry::make('closure.delivery.fingerprint')->label('Delivery fingerprint')->columnSpanFull(),
+                TextEntry::make('closure.acknowledgement.acknowledged_at')->label('Closure acknowledged at')->dateTime(),
+                TextEntry::make('closure.acknowledgement.fingerprint')->label('Acknowledgement fingerprint')->columnSpanFull(),
             ])->columns(2)->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->isClosed()),
             Section::make('Due-date extension history')->schema([
                 TextEntry::make('effective_due_at')->label('Current effective due date')->date(),

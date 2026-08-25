@@ -48,4 +48,9 @@ class ThirdPartyCollaborationRequestClosure extends Model
     {
         return $this->hasOne(ThirdPartyCollaborationClosureDelivery::class, 'third_party_collaboration_request_closure_id');
     }
+
+    public function acknowledgement(): HasOne
+    {
+        return $this->hasOne(ThirdPartyCollaborationClosureAcknowledgement::class, 'third_party_collaboration_request_closure_id');
+    }
 }
