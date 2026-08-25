@@ -6,6 +6,7 @@ use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCaseInterviewStatus;
 use App\Enums\ComplianceCaseInvestigationPlanDecision;
 use App\Enums\ComplianceCaseInvestigationProcedureReviewDecision;
+use App\Enums\ComplianceCaseInvestigationReportDecision;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Enums\GovernanceIssueStatus;
@@ -17,6 +18,8 @@ use App\Models\ComplianceCaseInvestigationPlan;
 use App\Models\ComplianceCaseInvestigationPlanReview;
 use App\Models\ComplianceCaseInvestigationProcedureExecution;
 use App\Models\ComplianceCaseInvestigationProcedureReview;
+use App\Models\ComplianceCaseInvestigationReport;
+use App\Models\ComplianceCaseInvestigationReportReview;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldRelease;
 use App\Models\GovernanceIssueLifecycle;
@@ -49,6 +52,7 @@ class ComplianceCaseManager
                 'number' => 'CC-'.$openedAt->format('Y').'-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT),
                 'status' => ComplianceCaseStatus::New, 'opened_by' => $actor->id,
                 'opened_at' => $openedAt, 'governed_at' => $openedAt, 'investigation_planning_governed_at' => $openedAt,
+                'investigation_reporting_governed_at' => $openedAt,
             ]);
             $this->appendEvent($case, $actor, null, $this->snapshot($case), 'opened', $data['summary'], $openedAt, 1);
 
@@ -82,6 +86,12 @@ class ComplianceCaseManager
                 ->whereIn('compliance_case_investigation_procedure_execution_id', $procedureExecutions->pluck('id'))
                 ->orderBy('compliance_case_investigation_procedure_execution_id')->lockForUpdate()->get()
                 ->keyBy('compliance_case_investigation_procedure_execution_id');
+            $investigationReports = ComplianceCaseInvestigationReport::query()->where('compliance_case_id', $locked->id)
+                ->orderBy('version')->lockForUpdate()->get();
+            $investigationReportReviews = ComplianceCaseInvestigationReportReview::query()
+                ->whereIn('compliance_case_investigation_report_id', $investigationReports->pluck('id'))
+                ->orderBy('compliance_case_investigation_report_id')->lockForUpdate()->get()
+                ->keyBy('compliance_case_investigation_report_id');
             if ($issues->isNotEmpty()) {
                 $lifecycles = GovernanceIssueLifecycle::query()->where('issue_type', ComplianceCaseActionIssue::class)
                     ->whereIn('issue_id', $issues->pluck('id'))->orderBy('issue_id')->lockForUpdate()->get()->keyBy('issue_id');
@@ -148,7 +158,23 @@ class ComplianceCaseManager
                     throw ValidationException::withMessages(['investigation_procedures' => 'Every latest procedure conclusion requires independent supervisory approval before resolution.']);
                 }
             }
-            $this->assertStateRequirements($status, $prospective, $actor, $locked, $events, $issues, $procedureExecutions, $procedureReviews);
+            if ($locked->investigation_reporting_governed_at !== null && $status === ComplianceCaseStatus::Resolved && $locked->status !== $status) {
+                $latestReport = $investigationReports->last();
+                $latestReview = $latestReport === null ? null : $investigationReportReviews->get($latestReport->id);
+                $latestPlan = $plans->last();
+                $latestExecutions = $procedureExecutions->where('compliance_case_investigation_plan_id', $latestPlan?->id)
+                    ->groupBy('procedure_index')->map->last()->sortKeys();
+                $currentSources = $latestPlan === null || $planReviews->get($latestPlan->id) === null
+                    ? null
+                    : app(ComplianceCaseInvestigationReportManager::class)->sourceFingerprints(
+                        $events->last(), $latestPlan, $planReviews->get($latestPlan->id), $latestExecutions, $procedureReviews,
+                    );
+                if ($latestReport === null || $latestReview?->decision !== ComplianceCaseInvestigationReportDecision::Approved
+                    || data_get($latestReport->report_snapshot, 'source_fingerprints') !== $currentSources) {
+                    throw ValidationException::withMessages(['investigation_report' => 'Resolution requires the independently approved current investigation report.']);
+                }
+            }
+            $this->assertStateRequirements($status, $prospective, $actor, $locked, $events, $issues, $procedureExecutions, $procedureReviews, $investigationReports, $investigationReportReviews);
             if (in_array($status, [ComplianceCaseStatus::Resolved, ComplianceCaseStatus::Closed], true)
                 && $interviews->contains(fn (ComplianceCaseInterview $interview): bool => $interview->status === ComplianceCaseInterviewStatus::Scheduled)) {
                 throw ValidationException::withMessages(['status' => 'Every scheduled interview must be conducted or cancelled before resolution.']);
@@ -190,7 +216,7 @@ class ComplianceCaseManager
             'summary' => 'required|string|max:30000',
             'number' => 'prohibited', 'status' => 'prohibited', 'opened_by' => 'prohibited', 'assigned_to' => 'prohibited',
             'opened_at' => 'prohibited', 'resolved_at' => 'prohibited', 'closed_at' => 'prohibited', 'governed_at' => 'prohibited',
-            'investigation_planning_governed_at' => 'prohibited',
+            'investigation_planning_governed_at' => 'prohibited', 'investigation_reporting_governed_at' => 'prohibited',
         ];
     }
 
@@ -205,12 +231,12 @@ class ComplianceCaseManager
             'summary' => 'required|string|max:30000',
             'version' => 'prohibited', 'event_type' => 'prohibited', 'before_snapshot' => 'prohibited',
             'after_snapshot' => 'prohibited', 'recorded_by' => 'prohibited', 'recorded_at' => 'prohibited', 'fingerprint' => 'prohibited',
-            'investigation_planning_governed_at' => 'prohibited',
+            'investigation_planning_governed_at' => 'prohibited', 'investigation_reporting_governed_at' => 'prohibited',
         ];
     }
 
     /** @param array<string,mixed> $prospective */
-    private function assertStateRequirements(ComplianceCaseStatus $status, array $prospective, User $actor, ComplianceCase $case, $events, $issues, $procedureExecutions, $procedureReviews): void
+    private function assertStateRequirements(ComplianceCaseStatus $status, array $prospective, User $actor, ComplianceCase $case, $events, $issues, $procedureExecutions, $procedureReviews, $investigationReports, $investigationReportReviews): void
     {
         if ($status === ComplianceCaseStatus::Triaged && (blank($prospective['assigned_to'] ?? null) || blank($prospective['triage_summary'] ?? null))) {
             throw ValidationException::withMessages(['status' => 'Triage requires an active investigator and triage summary.']);
@@ -238,9 +264,10 @@ class ComplianceCaseManager
                     || data_get($event->before_snapshot, 'resolution_summary') !== data_get($event->after_snapshot, 'resolution_summary');
             })->pluck('recorded_by');
             $procedureActors = $procedureExecutions->pluck('executed_by')->merge($procedureReviews->pluck('reviewed_by'))->unique();
+            $reportActors = $investigationReports->pluck('authored_by')->merge($investigationReportReviews->pluck('reviewed_by'))->unique();
             abort_if($actor->id === $case->opened_by || $investigatorIds->contains($actor->id)
-                || $decisionActors->contains($actor->id) || $procedureActors->contains($actor->id), 403,
-                'The opener and every assignment, investigation, supervisory-review, or resolution actor are excluded from final closure.');
+                || $decisionActors->contains($actor->id) || $procedureActors->contains($actor->id) || $reportActors->contains($actor->id), 403,
+                'The opener and every assignment, investigation, supervisory-review, report, or resolution actor are excluded from final closure.');
         }
         if ($case->status === ComplianceCaseStatus::ActionRequired && $status !== ComplianceCaseStatus::ActionRequired
             && $issues->contains(fn (ComplianceCaseActionIssue $issue): bool => $issue->lifecycle?->status !== GovernanceIssueStatus::Closed)) {
@@ -286,6 +313,7 @@ class ComplianceCaseManager
             'id', 'number', 'title', 'category', 'priority', 'status', 'allegation', 'source_channel', 'source_reference',
             'reporter_reference', 'confidential', 'due_at', 'triage_summary', 'investigation_summary', 'resolution_summary',
             'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at', 'investigation_planning_governed_at',
+            'investigation_reporting_governed_at',
         ]) + [
             'opened_by' => $case->opener?->only(['id', 'name', 'email']),
             'assigned_to' => $case->assignee?->only(['id', 'name', 'email']),

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
 use App\ComplianceCases\ComplianceCaseInvestigationProcedureExecutionManager;
+use App\ComplianceCases\ComplianceCaseInvestigationReportManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCaseInvestigationPlanDecision;
@@ -12,6 +13,7 @@ use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationProcedureExecutionsRelationManager;
+use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseInvestigationProcedureExecution;
 use App\Models\ComplianceCaseInvestigationProcedureReview;
 use App\Models\User;
@@ -102,6 +104,7 @@ class ComplianceCaseInvestigationProcedureExecutionTest extends TestCase
         $executions->review($reviewer, ComplianceCaseInvestigationProcedureExecution::findOrFail($secondResponse->json('data.id')), [
             'decision' => 'approved', 'summary' => 'Approval-record conclusion approved.',
         ]);
+        $this->approveInvestigationReport($case, $investigator);
         $cases->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Resolved->value, 'resolution_summary' => 'Every planned procedure has a retained conclusion.',
             'summary' => 'Resolve after completing the approved plan.',
@@ -162,6 +165,7 @@ class ComplianceCaseInvestigationProcedureExecutionTest extends TestCase
         $this->actingAs($reviewer)->postJson("/api/compliance-case-investigation-procedure-executions/{$second['id']}/review", [
             'decision' => 'approved', 'summary' => 'The revised conclusion is approved.',
         ])->assertCreated()->assertJsonPath('data.decision', 'approved');
+        $this->approveInvestigationReport($first->complianceCase, $first->executor);
 
         $cases->record($first->executor, $first->complianceCase->refresh(), [
             'status' => ComplianceCaseStatus::Resolved->value,
@@ -286,5 +290,18 @@ class ComplianceCaseInvestigationProcedureExecutionTest extends TestCase
         $this->assertDatabaseHas('compliance_case_investigation_procedure_reviews', ['id' => $review->id, 'fingerprint' => $review->fingerprint]);
         $legacy->refresh();
         $this->assertSame($legacyFingerprint, hash('sha256', CanonicalJson::encode($service->payload($legacy))));
+    }
+
+    private function approveInvestigationReport(ComplianceCase $case, User $author): void
+    {
+        $service = app(ComplianceCaseInvestigationReportManager::class);
+        $report = $service->submit($author, $case->refresh(), [
+            'outcome' => 'substantiated', 'executive_summary' => 'The governed procedure set is complete.',
+            'analysis' => 'The approved conclusions were synthesized.', 'findings' => 'Retained test report findings.',
+            'recommendations' => 'Apply the governed resolution.',
+        ]);
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo('Manage Compliance Cases');
+        $service->review($reviewer, $report, ['decision' => 'approved', 'summary' => 'The report is approved.']);
     }
 }

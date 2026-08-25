@@ -10,6 +10,7 @@ use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmi
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InterviewsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationPlansRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationProcedureExecutionsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationReportsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\LegalHoldsRelationManager;
 use App\Models\ComplianceCase;
 use App\Support\Enterprise;
@@ -50,6 +51,7 @@ class ComplianceCaseResource extends Resource
                 TextEntry::make('number'), TextEntry::make('title')->columnSpan(2),
                 TextEntry::make('category'), TextEntry::make('priority')->badge(), TextEntry::make('status')->badge(),
                 TextEntry::make('investigation_planning_governance_status')->label('Investigation planning governance')->badge()->color(fn (string $state): string => $state === 'governed' ? 'success' : 'gray'),
+                TextEntry::make('investigation_reporting_governance_status')->label('Investigation reporting governance')->badge()->color(fn (string $state): string => $state === 'governed' ? 'success' : 'gray'),
                 TextEntry::make('opener.name')->label('Opened by'), TextEntry::make('assignee.name')->label('Investigator')->placeholder('Unassigned'),
                 TextEntry::make('due_at')->dateTime()->placeholder('Not set'),
                 TextEntry::make('allegation')->columnSpanFull(), TextEntry::make('source_channel')->placeholder('Not specified'),
@@ -85,7 +87,7 @@ class ComplianceCaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [EventsRelationManager::class, InvestigationPlansRelationManager::class, InvestigationProcedureExecutionsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class];
+        return [EventsRelationManager::class, InvestigationPlansRelationManager::class, InvestigationProcedureExecutionsRelationManager::class, InvestigationReportsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class];
     }
 
     public static function getPages(): array

@@ -26,7 +26,7 @@ class ComplianceCaseFactory extends Factory
             'confidential' => true, 'opened_by' => User::factory(), 'assigned_to' => null, 'due_at' => null,
             'triage_summary' => null, 'investigation_summary' => null, 'resolution_summary' => null, 'closure_summary' => null,
             'opened_at' => $openedAt, 'resolved_at' => null, 'closed_at' => null, 'governed_at' => $openedAt,
-            'investigation_planning_governed_at' => $openedAt,
+            'investigation_planning_governed_at' => $openedAt, 'investigation_reporting_governed_at' => $openedAt,
         ];
     }
 }

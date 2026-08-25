@@ -6,12 +6,14 @@ use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
 use App\ComplianceCases\ComplianceCaseInvestigationProcedureExecutionManager;
+use App\ComplianceCases\ComplianceCaseInvestigationReportManager;
 use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AcknowledgeComplianceCaseLegalHoldRequest;
 use App\Http\Requests\ListComplianceCaseInvestigationPlansRequest;
 use App\Http\Requests\ListComplianceCaseInvestigationProcedureExecutionsRequest;
+use App\Http\Requests\ListComplianceCaseInvestigationReportsRequest;
 use App\Http\Requests\ListComplianceCasesRequest;
 use App\Http\Requests\ListMyComplianceCaseLegalHoldsRequest;
 use App\Http\Requests\RecordComplianceCaseEventRequest;
@@ -19,17 +21,20 @@ use App\Http\Requests\RecordComplianceCaseInterviewEventRequest;
 use App\Http\Requests\ReleaseComplianceCaseLegalHoldRequest;
 use App\Http\Requests\ReviewComplianceCaseInvestigationPlanRequest;
 use App\Http\Requests\ReviewComplianceCaseInvestigationProcedureExecutionRequest;
+use App\Http\Requests\ReviewComplianceCaseInvestigationReportRequest;
 use App\Http\Requests\ShowComplianceCaseRequest;
 use App\Http\Requests\StoreComplianceCaseEvidenceRequest;
 use App\Http\Requests\StoreComplianceCaseInterviewRequest;
 use App\Http\Requests\StoreComplianceCaseInvestigationPlanRequest;
 use App\Http\Requests\StoreComplianceCaseInvestigationProcedureExecutionRequest;
+use App\Http\Requests\StoreComplianceCaseInvestigationReportRequest;
 use App\Http\Requests\StoreComplianceCaseLegalHoldRequest;
 use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseInterview;
 use App\Models\ComplianceCaseInvestigationPlan;
 use App\Models\ComplianceCaseInvestigationProcedureExecution;
+use App\Models\ComplianceCaseInvestigationReport;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldCustodian;
 use Illuminate\Http\JsonResponse;
@@ -53,7 +58,8 @@ class ComplianceCaseController extends Controller
 
     public function show(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase): JsonResponse
     {
-        return response()->json(['data' => $complianceCase->load(['opener:id,name', 'assignee:id,name'])->loadCount('events')->append('investigation_planning_governance_status')]);
+        return response()->json(['data' => $complianceCase->load(['opener:id,name', 'assignee:id,name'])->loadCount('events')
+            ->append(['investigation_planning_governance_status', 'investigation_reporting_governance_status'])]);
     }
 
     public function events(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase): JsonResponse
@@ -188,5 +194,20 @@ class ComplianceCaseController extends Controller
     public function reviewInvestigationProcedureExecution(ReviewComplianceCaseInvestigationProcedureExecutionRequest $request, ComplianceCaseInvestigationProcedureExecution $execution, ComplianceCaseInvestigationProcedureExecutionManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->review($request->user(), $execution, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function investigationReports(ListComplianceCaseInvestigationReportsRequest $request, ComplianceCase $case, ComplianceCaseInvestigationReportManager $manager): JsonResponse
+    {
+        return response()->json($manager->history($request->user(), $case, $request->integer('per_page', 50)));
+    }
+
+    public function submitInvestigationReport(StoreComplianceCaseInvestigationReportRequest $request, ComplianceCase $case, ComplianceCaseInvestigationReportManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->submit($request->user(), $case, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function reviewInvestigationReport(ReviewComplianceCaseInvestigationReportRequest $request, ComplianceCaseInvestigationReport $report, ComplianceCaseInvestigationReportManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $report, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }

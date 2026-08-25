@@ -7,6 +7,7 @@ use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
 use App\ComplianceCases\ComplianceCaseInvestigationProcedureExecutionManager;
+use App\ComplianceCases\ComplianceCaseInvestigationReportManager;
 use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
@@ -115,6 +116,7 @@ class ComplianceCaseManagementTest extends TestCase
             'investigation_summary' => 'The independent case manager added a material investigation conclusion.',
             'summary' => 'Add a material investigation decision without changing status.',
         ]);
+        $this->approveInvestigationReport($case->refresh(), $investigator);
         try {
             $service->record($investigator, $case->refresh(), [
                 'assigned_to' => $outsider->id, 'summary' => 'Investigators cannot reassign cases.',
@@ -203,6 +205,7 @@ class ComplianceCaseManagementTest extends TestCase
             'investigation_summary' => 'The retained facts require a corrective control change.',
             'summary' => 'Record the attributable action-required decision.',
         ]);
+        $this->approveInvestigationReport($case->refresh(), $investigator);
 
         $issue = ComplianceCaseActionIssue::query()->with('lifecycle.transitions')->sole();
         $this->assertSame($actionEvent->id, $issue->compliance_case_event_id);
@@ -586,6 +589,7 @@ class ComplianceCaseManagementTest extends TestCase
             'purpose' => 'Ask the witness about the deliberate allegation.', 'rationale' => 'Schedule attributable fact gathering.',
         ])->assertCreated()->assertJsonPath('data.status', ComplianceCaseInterviewStatus::Scheduled->value)->json('data.id');
         $interview = ComplianceCaseInterview::query()->findOrFail($interviewId);
+        $this->approveInvestigationReport($case->refresh(), $investigator);
         try {
             $caseManager->record($manager, $case->refresh(), [
                 'status' => ComplianceCaseStatus::Resolved->value,
@@ -806,6 +810,7 @@ class ComplianceCaseManagementTest extends TestCase
             'investigation_summary' => 'The investigator reviewed the preserved internal record set.', 'summary' => 'Begin investigation.',
         ]);
         $this->completeInvestigationPlan($case->refresh(), $investigator);
+        $this->approveInvestigationReport($case->refresh(), $investigator);
         $cases->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Resolved->value,
             'resolution_summary' => 'The deliberate investigation response is complete.', 'summary' => 'Resolve the case.',
@@ -962,5 +967,20 @@ class ComplianceCaseManagementTest extends TestCase
                 'decision' => 'approved', 'summary' => 'The retained procedure conclusion is approved.',
             ]);
         }
+    }
+
+    private function approveInvestigationReport(ComplianceCase $case, User $investigator): void
+    {
+        $service = app(ComplianceCaseInvestigationReportManager::class);
+        $report = $service->submit($investigator, $case->refresh(), [
+            'outcome' => 'substantiated', 'executive_summary' => 'The configured investigation work is complete.',
+            'analysis' => 'The retained procedure conclusions were synthesized.', 'findings' => 'Retained test report findings.',
+            'recommendations' => 'Apply the governed resolution decision.',
+        ]);
+        $reportReviewer = User::factory()->create();
+        $reportReviewer->givePermissionTo('Manage Compliance Cases');
+        $service->review($reportReviewer, $report, [
+            'decision' => 'approved', 'summary' => 'The test investigation report is approved.',
+        ]);
     }
 }
