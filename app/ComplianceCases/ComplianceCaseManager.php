@@ -4,6 +4,7 @@ namespace App\ComplianceCases;
 
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCaseInterviewStatus;
+use App\Enums\ComplianceCaseInvestigationPlanDecision;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Enums\GovernanceIssueStatus;
@@ -11,6 +12,8 @@ use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseInterview;
+use App\Models\ComplianceCaseInvestigationPlan;
+use App\Models\ComplianceCaseInvestigationPlanReview;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldRelease;
 use App\Models\GovernanceIssueLifecycle;
@@ -42,7 +45,7 @@ class ComplianceCaseManager
                 ...Arr::only($data, ['title', 'category', 'priority', 'allegation', 'source_channel', 'source_reference', 'reporter_reference', 'confidential']),
                 'number' => 'CC-'.$openedAt->format('Y').'-'.str_pad((string) $next, 6, '0', STR_PAD_LEFT),
                 'status' => ComplianceCaseStatus::New, 'opened_by' => $actor->id,
-                'opened_at' => $openedAt, 'governed_at' => $openedAt,
+                'opened_at' => $openedAt, 'governed_at' => $openedAt, 'investigation_planning_governed_at' => $openedAt,
             ]);
             $this->appendEvent($case, $actor, null, $this->snapshot($case), 'opened', $data['summary'], $openedAt, 1);
 
@@ -67,6 +70,9 @@ class ComplianceCaseManager
             $legalHoldReleases = ComplianceCaseLegalHoldRelease::query()->whereIn('compliance_case_legal_hold_id', $legalHolds->pluck('id'))
                 ->orderBy('compliance_case_legal_hold_id')->lockForUpdate()->get()->keyBy('compliance_case_legal_hold_id');
             $issues = ComplianceCaseActionIssue::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            $plans = ComplianceCaseInvestigationPlan::query()->where('compliance_case_id', $locked->id)->orderBy('version')->lockForUpdate()->get();
+            $planReviews = ComplianceCaseInvestigationPlanReview::query()->whereIn('compliance_case_investigation_plan_id', $plans->pluck('id'))->orderBy('compliance_case_investigation_plan_id')->lockForUpdate()->get()->keyBy('compliance_case_investigation_plan_id');
+            $plans->each(fn (ComplianceCaseInvestigationPlan $plan) => $plan->setRelation('review', $planReviews->get($plan->id)));
             if ($issues->isNotEmpty()) {
                 $lifecycles = GovernanceIssueLifecycle::query()->where('issue_type', ComplianceCaseActionIssue::class)
                     ->whereIn('issue_id', $issues->pluck('id'))->orderBy('issue_id')->lockForUpdate()->get()->keyBy('issue_id');
@@ -86,6 +92,15 @@ class ComplianceCaseManager
             $status = isset($data['status']) ? ComplianceCaseStatus::from($data['status']) : $locked->status;
             if ($status !== $locked->status && ! in_array($status, $locked->status->allowedNext(), true)) {
                 throw ValidationException::withMessages(['status' => 'The requested compliance case transition is not permitted.']);
+            }
+            if ($locked->investigation_planning_governed_at !== null && $locked->status === ComplianceCaseStatus::Triaged && $status === ComplianceCaseStatus::Investigating) {
+                $latestPlan = $plans->last();
+                $latestEvent = $events->last();
+                if ($latestPlan === null || $latestPlan->review?->decision !== ComplianceCaseInvestigationPlanDecision::Approved
+                    || data_get($latestPlan->case_snapshot, 'event.fingerprint') !== $latestEvent?->fingerprint
+                    || $latestPlan->target_completion_at->endOfDay()->isPast()) {
+                    throw ValidationException::withMessages(['investigation_plan' => 'Investigation requires an independently approved plan bound to the current triaged case context.']);
+                }
             }
             $changes = Arr::only($data, ['status', 'assigned_to', 'due_at', 'triage_summary', 'investigation_summary', 'resolution_summary', 'closure_summary']);
             if (array_key_exists('assigned_to', $changes)) {
@@ -155,6 +170,7 @@ class ComplianceCaseManager
             'summary' => 'required|string|max:30000',
             'number' => 'prohibited', 'status' => 'prohibited', 'opened_by' => 'prohibited', 'assigned_to' => 'prohibited',
             'opened_at' => 'prohibited', 'resolved_at' => 'prohibited', 'closed_at' => 'prohibited', 'governed_at' => 'prohibited',
+            'investigation_planning_governed_at' => 'prohibited',
         ];
     }
 
@@ -169,6 +185,7 @@ class ComplianceCaseManager
             'summary' => 'required|string|max:30000',
             'version' => 'prohibited', 'event_type' => 'prohibited', 'before_snapshot' => 'prohibited',
             'after_snapshot' => 'prohibited', 'recorded_by' => 'prohibited', 'recorded_at' => 'prohibited', 'fingerprint' => 'prohibited',
+            'investigation_planning_governed_at' => 'prohibited',
         ];
     }
 
@@ -246,7 +263,7 @@ class ComplianceCaseManager
         return $case->only([
             'id', 'number', 'title', 'category', 'priority', 'status', 'allegation', 'source_channel', 'source_reference',
             'reporter_reference', 'confidential', 'due_at', 'triage_summary', 'investigation_summary', 'resolution_summary',
-            'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at',
+            'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at', 'investigation_planning_governed_at',
         ]) + [
             'opened_by' => $case->opener?->only(['id', 'name', 'email']),
             'assigned_to' => $case->assignee?->only(['id', 'name', 'email']),

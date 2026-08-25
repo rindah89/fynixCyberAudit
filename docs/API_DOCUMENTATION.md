@@ -862,6 +862,8 @@ Authenticated active users submit internal concerns through `POST /api/complianc
 
 `POST /api/compliance-case-intake-messages/{message}/acknowledge` accepts no client-owned evidence fields. Only the exact current active intake reporter may acknowledge a reporter-visible message authored by another user, and each message permits one immutable receipt. The receipt binds the complete message, material reporter identity, time, and fingerprint. Reporter history exposes safe time/fingerprint status; manager REST/operator history exposes complete evidence. This proves only an authenticated in-product action—not reading, comprehension, agreement, truth, external delivery, or investigative action.
 
+Newly governed compliance cases require an independently approved current investigation plan before `Triaged` may advance to `Investigating`. The assigned investigator or `Manage Compliance Cases` user submits `POST /api/compliance-cases/{case}/investigation-plans` with one to 20 `objectives`, required `scope`, one to 50 `procedures`, a current/future `target_completion_at`, and `rationale`. A manager separated from the author and assigned investigator records one terminal approval/rejection through `POST /api/compliance-case-investigation-plans/{plan}/review`. `GET /api/compliance-cases/{case}/investigation-plans` exposes paginated complete evidence to the existing case-view scope. At most 20 immutable versions are retained; only the latest plan bound to the exact current case event can be approved or authorize investigation. This proves deliberate planning/approval—not plan quality, legal sufficiency, execution, evidence completeness, timeliness, truth, or effective outcome.
+
 - `GET|POST /api/compliance-case-intakes`
 - `GET /api/my-compliance-case-intakes`
 - `POST /api/compliance-case-intakes/{intake}/decision`
@@ -870,6 +872,8 @@ Authenticated active users submit internal concerns through `POST /api/complianc
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{complianceCase}`
 - `GET|POST /api/compliance-cases/{complianceCase}/events`
+- `GET|POST /api/compliance-cases/{case}/investigation-plans`
+- `POST /api/compliance-case-investigation-plans/{plan}/review`
 - `GET /api/compliance-cases/{complianceCase}/action-issues`
 - `GET|POST /api/compliance-cases/{complianceCase}/interviews`
 - `POST /api/compliance-cases/{complianceCase}/interviews/{interview}/events`

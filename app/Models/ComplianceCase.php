@@ -17,13 +17,13 @@ class ComplianceCase extends Model
     protected $fillable = [
         'number', 'title', 'category', 'priority', 'status', 'allegation', 'source_channel', 'source_reference',
         'reporter_reference', 'confidential', 'opened_by', 'assigned_to', 'due_at', 'triage_summary',
-        'investigation_summary', 'resolution_summary', 'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at',
+        'investigation_summary', 'resolution_summary', 'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at', 'investigation_planning_governed_at',
     ];
 
     protected $casts = [
         'category' => ComplianceCaseCategory::class, 'priority' => ComplianceCasePriority::class,
         'status' => ComplianceCaseStatus::class, 'confidential' => 'boolean', 'due_at' => 'datetime',
-        'opened_at' => 'datetime', 'resolved_at' => 'datetime', 'closed_at' => 'datetime', 'governed_at' => 'datetime',
+        'opened_at' => 'datetime', 'resolved_at' => 'datetime', 'closed_at' => 'datetime', 'governed_at' => 'datetime', 'investigation_planning_governed_at' => 'datetime',
     ];
 
     public function opener(): BelongsTo
@@ -59,5 +59,15 @@ class ComplianceCase extends Model
     public function legalHolds(): HasMany
     {
         return $this->hasMany(ComplianceCaseLegalHold::class)->orderBy('version');
+    }
+
+    public function investigationPlans(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseInvestigationPlan::class)->orderBy('version');
+    }
+
+    public function getInvestigationPlanningGovernanceStatusAttribute(): string
+    {
+        return $this->investigation_planning_governed_at === null ? 'legacy' : 'governed';
     }
 }

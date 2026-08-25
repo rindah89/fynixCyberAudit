@@ -5,10 +5,12 @@ namespace Tests\Feature;
 use App\Access\FileAccess;
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
+use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
 use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCaseInterviewStatus;
+use App\Enums\ComplianceCaseInvestigationPlanDecision;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource;
@@ -100,6 +102,7 @@ class ComplianceCaseManagementTest extends TestCase
             'due_at' => now()->addWeek(), 'triage_summary' => 'The allegation is within compliance scope and requires fact finding.',
             'summary' => 'Assign an investigator and preserve the triage basis.',
         ]);
+        $this->approveInvestigationPlan($case->refresh(), $investigator, $manager);
         $service->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'Interviews and procurement records are being reviewed.',
@@ -186,6 +189,7 @@ class ComplianceCaseManagementTest extends TestCase
             'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
             'triage_summary' => 'The matter requires investigation.', 'summary' => 'Triage and assign.',
         ]);
+        $this->approveInvestigationPlan($case->refresh(), $investigator, $manager);
         $service->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'The investigator is evaluating the retained facts.', 'summary' => 'Begin investigation.',
@@ -551,6 +555,7 @@ class ComplianceCaseManagementTest extends TestCase
             'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
             'triage_summary' => 'Interview fact gathering is required.', 'summary' => 'Assign the investigator.',
         ]);
+        $this->approveInvestigationPlan($case->refresh(), $investigator, $manager);
         $caseManager->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'Interview work is underway.', 'summary' => 'Begin investigation.',
@@ -790,6 +795,7 @@ class ComplianceCaseManagementTest extends TestCase
             'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
             'triage_summary' => 'The matter requires governed fact finding.', 'summary' => 'Triage and assign.',
         ]);
+        $this->approveInvestigationPlan($case->refresh(), $investigator, $issuer);
         $cases->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'The investigator reviewed the preserved internal record set.', 'summary' => 'Begin investigation.',
@@ -918,6 +924,20 @@ class ComplianceCaseManagementTest extends TestCase
             'data_request_response_id' => $response->id, 'audit_id' => $audit->id, 'file_name' => basename($path),
             'file_path' => $path, 'file_size' => strlen($contents), 'description' => 'Governed compliance-case evidence',
             'uploaded_by' => $auditManager->id,
+        ]);
+    }
+
+    private function approveInvestigationPlan(ComplianceCase $case, User $investigator, User $reviewer): void
+    {
+        $service = app(ComplianceCaseInvestigationPlanManager::class);
+        $plan = $service->submit($investigator, $case, [
+            'objectives' => ['Establish the material facts'], 'scope' => 'The allegation and directly related records.',
+            'procedures' => ['Inspect relevant records', 'Conduct required interviews'],
+            'target_completion_at' => now()->addMonth()->toDateString(), 'rationale' => 'Define the governed investigation approach.',
+        ]);
+        $service->review($reviewer, $plan, [
+            'decision' => ComplianceCaseInvestigationPlanDecision::Approved->value,
+            'summary' => 'The plan is proportionate and ready for execution.',
         ]);
     }
 }

@@ -22,7 +22,7 @@ class ComplianceCaseEventFactory extends Factory
                 return $case->only([
                     'id', 'number', 'title', 'category', 'priority', 'status', 'allegation', 'source_channel', 'source_reference',
                     'reporter_reference', 'confidential', 'due_at', 'triage_summary', 'investigation_summary', 'resolution_summary',
-                    'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at',
+                    'closure_summary', 'opened_at', 'resolved_at', 'closed_at', 'governed_at', 'investigation_planning_governed_at',
                 ]) + [
                     'opened_by' => $case->opener?->only(['id', 'name', 'email']),
                     'assigned_to' => $case->assignee?->only(['id', 'name', 'email']),

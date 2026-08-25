@@ -111,6 +111,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/compliance-cases/{complianceCase}/legal-holds', [ComplianceCaseController::class, 'legalHolds']);
     Route::post('/compliance-cases/{complianceCase}/legal-holds', [ComplianceCaseController::class, 'issueLegalHold']);
     Route::post('/compliance-cases/{complianceCase}/legal-holds/{legalHold}/release', [ComplianceCaseController::class, 'releaseLegalHold'])->scopeBindings();
+    Route::get('/compliance-cases/{case}/investigation-plans', [ComplianceCaseController::class, 'investigationPlans']);
+    Route::post('/compliance-cases/{case}/investigation-plans', [ComplianceCaseController::class, 'submitInvestigationPlan']);
+    Route::post('/compliance-case-investigation-plans/{plan}/review', [ComplianceCaseController::class, 'reviewInvestigationPlan']);
     Route::get('/my-compliance-case-legal-holds', [ComplianceCaseController::class, 'myLegalHolds']);
     Route::post('/compliance-case-legal-holds/{legalHold}/acknowledge', [ComplianceCaseController::class, 'acknowledgeLegalHold']);
     Route::get('/privacy-processing-activities', [PrivacyManagementController::class, 'index']);

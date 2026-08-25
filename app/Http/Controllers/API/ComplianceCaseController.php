@@ -4,22 +4,27 @@ namespace App\Http\Controllers\API;
 
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
+use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
 use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AcknowledgeComplianceCaseLegalHoldRequest;
+use App\Http\Requests\ListComplianceCaseInvestigationPlansRequest;
 use App\Http\Requests\ListComplianceCasesRequest;
 use App\Http\Requests\ListMyComplianceCaseLegalHoldsRequest;
 use App\Http\Requests\RecordComplianceCaseEventRequest;
 use App\Http\Requests\RecordComplianceCaseInterviewEventRequest;
 use App\Http\Requests\ReleaseComplianceCaseLegalHoldRequest;
+use App\Http\Requests\ReviewComplianceCaseInvestigationPlanRequest;
 use App\Http\Requests\ShowComplianceCaseRequest;
 use App\Http\Requests\StoreComplianceCaseEvidenceRequest;
 use App\Http\Requests\StoreComplianceCaseInterviewRequest;
+use App\Http\Requests\StoreComplianceCaseInvestigationPlanRequest;
 use App\Http\Requests\StoreComplianceCaseLegalHoldRequest;
 use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseInterview;
+use App\Models\ComplianceCaseInvestigationPlan;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldCustodian;
 use Illuminate\Http\JsonResponse;
@@ -43,7 +48,7 @@ class ComplianceCaseController extends Controller
 
     public function show(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase): JsonResponse
     {
-        return response()->json(['data' => $complianceCase->load(['opener:id,name', 'assignee:id,name'])->loadCount('events')]);
+        return response()->json(['data' => $complianceCase->load(['opener:id,name', 'assignee:id,name'])->loadCount('events')->append('investigation_planning_governance_status')]);
     }
 
     public function events(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase): JsonResponse
@@ -148,5 +153,20 @@ class ComplianceCaseController extends Controller
     public function releaseLegalHold(ReleaseComplianceCaseLegalHoldRequest $request, ComplianceCase $complianceCase, ComplianceCaseLegalHold $legalHold, ComplianceCaseLegalHoldManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->release($request->user(), $complianceCase, $legalHold, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function investigationPlans(ListComplianceCaseInvestigationPlansRequest $request, ComplianceCase $case, ComplianceCaseInvestigationPlanManager $manager): JsonResponse
+    {
+        return response()->json($manager->history($request->user(), $case, $request->integer('per_page', 50)));
+    }
+
+    public function submitInvestigationPlan(StoreComplianceCaseInvestigationPlanRequest $request, ComplianceCase $case, ComplianceCaseInvestigationPlanManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->submit($request->user(), $case, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function reviewInvestigationPlan(ReviewComplianceCaseInvestigationPlanRequest $request, ComplianceCaseInvestigationPlan $plan, ComplianceCaseInvestigationPlanManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->review($request->user(), $plan, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }
