@@ -135,15 +135,18 @@ WORKDIR /var/www/html
 # Copy application code
 COPY . .
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# Composer package discovery boots Laravel. Provide its default, disposable
+# SQLite path so a clean checkout can build without production credentials.
+RUN install -m 0664 /dev/null database/fynixcyberaudit.sqlite \
+    && composer install --no-dev --optimize-autoloader
 
 # Copy package files and install Node dependencies
 COPY package*.json ./
 RUN npm ci
 
 # Complete Composer installation with autoloader optimization
-RUN composer dump-autoload --optimize --classmap-authoritative
+RUN composer dump-autoload --optimize --classmap-authoritative \
+    && rm -f database/fynixcyberaudit.sqlite
 
 # Build frontend assets
 RUN npm run build
