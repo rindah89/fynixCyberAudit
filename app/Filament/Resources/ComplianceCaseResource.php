@@ -9,6 +9,7 @@ use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelatio
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InterviewsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationPlansRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationProcedureExecutionsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\LegalHoldsRelationManager;
 use App\Models\ComplianceCase;
 use App\Support\Enterprise;
@@ -84,7 +85,7 @@ class ComplianceCaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [EventsRelationManager::class, InvestigationPlansRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class];
+        return [EventsRelationManager::class, InvestigationPlansRelationManager::class, InvestigationProcedureExecutionsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class];
     }
 
     public static function getPages(): array

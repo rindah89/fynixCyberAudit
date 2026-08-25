@@ -66,6 +66,11 @@ class ComplianceCase extends Model
         return $this->hasMany(ComplianceCaseInvestigationPlan::class)->orderBy('version');
     }
 
+    public function investigationProcedureExecutions(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseInvestigationProcedureExecution::class)->orderBy('procedure_index');
+    }
+
     public function getInvestigationPlanningGovernanceStatusAttribute(): string
     {
         return $this->investigation_planning_governed_at === null ? 'legacy' : 'governed';

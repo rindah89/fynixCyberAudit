@@ -14,6 +14,7 @@ use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseInterview;
 use App\Models\ComplianceCaseInvestigationPlan;
 use App\Models\ComplianceCaseInvestigationPlanReview;
+use App\Models\ComplianceCaseInvestigationProcedureExecution;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldRelease;
 use App\Models\GovernanceIssueLifecycle;
@@ -73,6 +74,8 @@ class ComplianceCaseManager
             $plans = ComplianceCaseInvestigationPlan::query()->where('compliance_case_id', $locked->id)->orderBy('version')->lockForUpdate()->get();
             $planReviews = ComplianceCaseInvestigationPlanReview::query()->whereIn('compliance_case_investigation_plan_id', $plans->pluck('id'))->orderBy('compliance_case_investigation_plan_id')->lockForUpdate()->get()->keyBy('compliance_case_investigation_plan_id');
             $plans->each(fn (ComplianceCaseInvestigationPlan $plan) => $plan->setRelation('review', $planReviews->get($plan->id)));
+            $procedureExecutions = ComplianceCaseInvestigationProcedureExecution::query()->where('compliance_case_id', $locked->id)
+                ->orderBy('procedure_index')->lockForUpdate()->get();
             if ($issues->isNotEmpty()) {
                 $lifecycles = GovernanceIssueLifecycle::query()->where('issue_type', ComplianceCaseActionIssue::class)
                     ->whereIn('issue_id', $issues->pluck('id'))->orderBy('issue_id')->lockForUpdate()->get()->keyBy('issue_id');
@@ -127,6 +130,15 @@ class ComplianceCaseManager
             if ($status === ComplianceCaseStatus::Closed
                 && $legalHolds->contains(fn (ComplianceCaseLegalHold $hold): bool => ! $legalHoldReleases->has($hold->id))) {
                 throw ValidationException::withMessages(['status' => 'Every legal hold must be independently released before case closure.']);
+            }
+            if ($locked->investigation_planning_governed_at !== null && $status === ComplianceCaseStatus::Resolved && $locked->status !== $status) {
+                $latestPlan = $plans->last();
+                $completedIndexes = $procedureExecutions->where('compliance_case_investigation_plan_id', $latestPlan?->id)
+                    ->pluck('procedure_index')->map(fn ($index): int => (int) $index)->sort()->values()->all();
+                $requiredIndexes = $latestPlan === null ? [] : range(1, count($latestPlan->procedures));
+                if ($latestPlan === null || $completedIndexes !== $requiredIndexes) {
+                    throw ValidationException::withMessages(['investigation_procedures' => 'Every procedure in the approved investigation plan requires one retained conclusion before resolution.']);
+                }
             }
             $this->assertStateRequirements($status, $prospective, $actor, $locked, $events, $issues);
             if (in_array($status, [ComplianceCaseStatus::Resolved, ComplianceCaseStatus::Closed], true)

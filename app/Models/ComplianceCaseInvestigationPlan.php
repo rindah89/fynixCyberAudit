@@ -6,6 +6,7 @@ use Database\Factories\ComplianceCaseInvestigationPlanFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ComplianceCaseInvestigationPlan extends Model
@@ -40,5 +41,10 @@ class ComplianceCaseInvestigationPlan extends Model
     public function review(): HasOne
     {
         return $this->hasOne(ComplianceCaseInvestigationPlanReview::class);
+    }
+
+    public function executions(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseInvestigationProcedureExecution::class, 'compliance_case_investigation_plan_id')->orderBy('procedure_index');
     }
 }

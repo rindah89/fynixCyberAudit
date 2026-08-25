@@ -6,11 +6,13 @@ use App\Access\FileAccess;
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
+use App\ComplianceCases\ComplianceCaseInvestigationProcedureExecutionManager;
 use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCaseInterviewStatus;
 use App\Enums\ComplianceCaseInvestigationPlanDecision;
+use App\Enums\ComplianceCaseInvestigationProcedureResult;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource;
@@ -108,6 +110,7 @@ class ComplianceCaseManagementTest extends TestCase
             'investigation_summary' => 'Interviews and procurement records are being reviewed.',
             'summary' => 'Begin the assigned investigation.',
         ]);
+        $this->completeInvestigationPlan($case->refresh(), $investigator);
         $service->record($resolutionManager, $case->refresh(), [
             'investigation_summary' => 'The independent case manager added a material investigation conclusion.',
             'summary' => 'Add a material investigation decision without changing status.',
@@ -194,6 +197,7 @@ class ComplianceCaseManagementTest extends TestCase
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'The investigator is evaluating the retained facts.', 'summary' => 'Begin investigation.',
         ]);
+        $this->completeInvestigationPlan($case->refresh(), $investigator);
         $actionEvent = $service->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::ActionRequired->value,
             'investigation_summary' => 'The retained facts require a corrective control change.',
@@ -560,6 +564,7 @@ class ComplianceCaseManagementTest extends TestCase
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'Interview work is underway.', 'summary' => 'Begin investigation.',
         ]);
+        $this->completeInvestigationPlan($case->refresh(), $investigator);
 
         try {
             $interviews->schedule($outsider, $case, ['interviewer_id' => PHP_INT_MAX]);
@@ -800,6 +805,7 @@ class ComplianceCaseManagementTest extends TestCase
             'status' => ComplianceCaseStatus::Investigating->value,
             'investigation_summary' => 'The investigator reviewed the preserved internal record set.', 'summary' => 'Begin investigation.',
         ]);
+        $this->completeInvestigationPlan($case->refresh(), $investigator);
         $cases->record($investigator, $case->refresh(), [
             'status' => ComplianceCaseStatus::Resolved->value,
             'resolution_summary' => 'The deliberate investigation response is complete.', 'summary' => 'Resolve the case.',
@@ -939,5 +945,17 @@ class ComplianceCaseManagementTest extends TestCase
             'decision' => ComplianceCaseInvestigationPlanDecision::Approved->value,
             'summary' => 'The plan is proportionate and ready for execution.',
         ]);
+    }
+
+    private function completeInvestigationPlan(ComplianceCase $case, User $investigator): void
+    {
+        $plan = $case->investigationPlans()->latest('version')->firstOrFail();
+        $service = app(ComplianceCaseInvestigationProcedureExecutionManager::class);
+        foreach ($plan->procedures as $offset => $procedure) {
+            $service->record($investigator, $case->refresh(), [
+                'procedure_index' => $offset + 1, 'result' => ComplianceCaseInvestigationProcedureResult::Completed->value,
+                'summary' => "Completed: {$procedure}", 'findings' => 'Retained test conclusion.',
+            ]);
+        }
     }
 }
