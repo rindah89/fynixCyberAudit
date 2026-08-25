@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Access\FileAccess;
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
+use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCaseInterviewStatus;
@@ -16,6 +17,7 @@ use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesR
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InterviewsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\LegalHoldsRelationManager;
 use App\Models\Audit;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseActionIssue;
@@ -23,6 +25,9 @@ use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseEvidenceSubmission;
 use App\Models\ComplianceCaseInterview;
 use App\Models\ComplianceCaseInterviewEvent;
+use App\Models\ComplianceCaseLegalHold;
+use App\Models\ComplianceCaseLegalHoldAcknowledgement;
+use App\Models\ComplianceCaseLegalHoldRelease;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
@@ -81,7 +86,6 @@ class ComplianceCaseManagementTest extends TestCase
         } catch (HttpException $exception) {
             $this->assertSame(403, $exception->getStatusCode());
         }
-
         try {
             $service->record($manager, $case, [
                 'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $outsider->id,
@@ -682,6 +686,223 @@ class ComplianceCaseManagementTest extends TestCase
             $this->assertArrayHasKey('interview', $exception->errors());
         }
         $this->assertSame(20, $bounded->events()->count());
+    }
+
+    public function test_governed_legal_holds_require_exact_custodian_acknowledgement_and_independent_release_before_closure(): void
+    {
+        $issuer = User::factory()->create();
+        $issuer->assignRole('Security Admin');
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $releaser = User::factory()->create();
+        $releaser->assignRole('Security Admin');
+        $custodianOne = User::factory()->create();
+        $custodianTwo = User::factory()->create();
+        $outsider = User::factory()->create();
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Compliance Cases');
+        $cases = app(ComplianceCaseManager::class);
+        $holds = app(ComplianceCaseLegalHoldManager::class);
+        $case = $cases->open($issuer, [
+            'title' => 'Preservation-governed inquiry', 'category' => ComplianceCaseCategory::Fraud->value,
+            'priority' => ComplianceCasePriority::Critical->value,
+            'allegation' => 'A deliberate allegation requires internal preservation instructions.',
+            'summary' => 'Open the governed case without asserting the allegation is true.',
+        ]);
+
+        try {
+            $holds->issue($outsider, $case, ['custodian_ids' => [PHP_INT_MAX]]);
+            $this->fail('Expected current case authorization before legal-hold validation.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        try {
+            $holds->issue($issuer, $case, [
+                'scope' => 'Invalid empty source scope.', 'systems' => ['   '], 'data_categories' => ["\t"],
+                'preservation_start_at' => now(), 'custodian_ids' => [$custodianOne->id],
+            ]);
+            $this->fail('Expected canonical empty system/category values to be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('systems.0', $exception->errors());
+        }
+        try {
+            $holds->issue($issuer, $case, [
+                'scope' => 'Invalid empty category scope.', 'systems' => ['Email'], 'data_categories' => ['   '],
+                'preservation_start_at' => now(), 'custodian_ids' => [$custodianOne->id],
+            ]);
+            $this->fail('Expected canonical empty data categories to be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('data_categories.0', $exception->errors());
+        }
+        $this->assertDatabaseCount('compliance_case_legal_holds', 0);
+
+        $preservationStart = now()->subHour()->startOfSecond();
+        $payload = [
+            'scope' => 'Preserve correspondence, approvals, and contracting records relevant to the deliberate case scope.',
+            'systems' => ['Procurement', 'Email', 'Email'], 'data_categories' => ['Contracts', 'Correspondence'],
+            'legal_basis_reference' => 'COUNSEL-2026-85', 'preservation_start_at' => $preservationStart->toIso8601String(),
+            'custodian_ids' => [$custodianTwo->id, $custodianOne->id],
+        ];
+        $this->actingAs($issuer)->postJson("/api/compliance-cases/{$case->id}/legal-holds", $payload + ['fingerprint' => str_repeat('a', 64)])
+            ->assertUnprocessable()->assertJsonValidationErrors('fingerprint');
+        $holdId = $this->postJson("/api/compliance-cases/{$case->id}/legal-holds", $payload)
+            ->assertCreated()->assertJsonPath('data.version', 1)->assertJsonPath('data.systems.0', 'Email')
+            ->assertJsonCount(2, 'data.custodians')->json('data.id');
+        $hold = ComplianceCaseLegalHold::query()->with($holds->relations())->findOrFail($holdId);
+        $issuePayload = $hold->only([
+            'compliance_case_id', 'compliance_case_event_id', 'version', 'reference', 'scope', 'systems',
+            'data_categories', 'legal_basis_reference', 'issued_by', 'issuer_snapshot', 'case_snapshot',
+            'latest_event_snapshot', 'custodian_snapshot',
+        ]);
+        $issuePayload['preservation_start_at'] = $hold->preservation_start_at->toIso8601String();
+        $issuePayload['issued_at'] = $hold->issued_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($issuePayload)), $hold->fingerprint);
+        $this->assertSame([$custodianOne->id, $custodianTwo->id], collect($hold->custodian_snapshot)->pluck('id')->all());
+        $this->assertSame($case->allegation, data_get($hold->case_snapshot, 'allegation'));
+
+        $this->actingAs($outsider)->getJson('/api/my-compliance-case-legal-holds')->assertOk()->assertJsonCount(0, 'data');
+        $this->actingAs($custodianOne)->getJson('/api/my-compliance-case-legal-holds')->assertOk()
+            ->assertJsonPath('data.0.legal_hold.reference', $hold->reference)
+            ->assertJsonMissingPath('data.0.legal_hold.case_snapshot')->assertJsonMissingPath('data.0.legal_hold.compliance_case_id');
+        $this->actingAs($outsider)->postJson("/api/compliance-case-legal-holds/{$hold->id}/acknowledge", [
+            'statement' => 'Unauthorized acknowledgement.',
+        ])->assertForbidden();
+        $this->actingAs($custodianOne)->postJson("/api/compliance-case-legal-holds/{$hold->id}/acknowledge", [
+            'statement' => 'I acknowledge and will follow this preservation instruction.', 'comment' => 'Instruction received.',
+        ])->assertCreated()->assertJsonMissingPath('data.hold_snapshot')->assertJsonPath('data.statement', 'I acknowledge and will follow this preservation instruction.');
+        $ackOne = ComplianceCaseLegalHoldAcknowledgement::query()->where('user_id', $custodianOne->id)->firstOrFail();
+        $ackPayload = $ackOne->only([
+            'compliance_case_legal_hold_id', 'compliance_case_legal_hold_custodian_id', 'user_id',
+            'hold_snapshot', 'recipient_snapshot', 'statement', 'comment',
+        ]) + ['acknowledged_at' => $ackOne->acknowledged_at->toIso8601String()];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($ackPayload)), $ackOne->fingerprint);
+        $this->actingAs($releaser)->postJson("/api/compliance-cases/{$case->id}/legal-holds/{$hold->id}/release", [
+            'summary' => 'Premature release.',
+        ])->assertUnprocessable()->assertJsonValidationErrors('hold');
+        $this->actingAs($issuer)->postJson("/api/compliance-cases/{$case->id}/legal-holds/{$hold->id}/release", [
+            'summary' => 'Issuer self release.',
+        ])->assertForbidden();
+
+        $this->actingAs($custodianTwo)->postJson("/api/compliance-case-legal-holds/{$hold->id}/acknowledge", [
+            'statement' => 'I acknowledge and will follow this preservation instruction.',
+        ])->assertCreated();
+        $cases->record($issuer, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
+            'triage_summary' => 'The matter requires governed fact finding.', 'summary' => 'Triage and assign.',
+        ]);
+        $cases->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Investigating->value,
+            'investigation_summary' => 'The investigator reviewed the preserved internal record set.', 'summary' => 'Begin investigation.',
+        ]);
+        $cases->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Resolved->value,
+            'resolution_summary' => 'The deliberate investigation response is complete.', 'summary' => 'Resolve the case.',
+        ]);
+        try {
+            $cases->record($releaser, $case->refresh(), [
+                'status' => ComplianceCaseStatus::Closed->value, 'closure_summary' => 'Premature closure.',
+                'summary' => 'Attempt closure while the hold remains active.',
+            ]);
+            $this->fail('Expected an active legal hold to block case closure.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('status', $exception->errors());
+        }
+
+        $releaseId = $this->actingAs($releaser)->postJson("/api/compliance-cases/{$case->id}/legal-holds/{$hold->id}/release", [
+            'summary' => 'Every current custodian acknowledged the instruction; independent review supports release.',
+        ])->assertCreated()->assertJsonPath('data.released_by', $releaser->id)->json('data.id');
+        $release = ComplianceCaseLegalHoldRelease::query()->findOrFail($releaseId);
+        $releasePayload = $release->only([
+            'compliance_case_legal_hold_id', 'released_by', 'actor_snapshot', 'hold_snapshot',
+            'custodian_acknowledgement_snapshot', 'summary',
+        ]) + ['released_at' => $release->released_at->toIso8601String()];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($releasePayload)), $release->fingerprint);
+        $this->assertCount(2, $release->custodian_acknowledgement_snapshot);
+        $cases->record($releaser, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Closed->value,
+            'closure_summary' => 'The case and released preservation instruction were independently reviewed.',
+            'summary' => 'Close after legal-hold release.',
+        ]);
+        $this->assertSame(ComplianceCaseStatus::Closed, $case->fresh()->status);
+
+        $this->actingAs($reader)->getJson("/api/compliance-cases/{$case->id}/legal-holds?per_page=1")
+            ->assertOk()->assertJsonPath('total', 1)->assertJsonPath('data.0.release.fingerprint', $release->fingerprint)
+            ->assertJsonPath('data.0.case_snapshot.allegation', $case->allegation);
+        Livewire::actingAs($reader);
+        Livewire::test(LegalHoldsRelationManager::class, ['ownerRecord' => $case->refresh(), 'pageClass' => ViewComplianceCase::class])
+            ->assertCanSeeTableRecords([$hold])->assertTableActionVisible('inspect', $hold);
+        $renderedHold = view('filament.compliance-case-legal-hold', [
+            'record' => $hold->fresh()->load($holds->relations()),
+        ])->render();
+        $this->assertStringContainsString($release->fingerprint, $renderedHold);
+        $this->assertStringContainsString($custodianOne->name, $renderedHold);
+        $this->assertStringContainsString('COUNSEL-2026-85', $renderedHold);
+        $this->assertStringContainsString('Instruction received.', $renderedHold);
+        $this->assertStringContainsString($case->allegation, $renderedHold);
+        $this->assertThrows(fn () => $hold->update(['scope' => 'Rewrite']), \LogicException::class);
+        $this->assertThrows(fn () => $ackOne->delete(), \LogicException::class);
+        $this->assertThrows(fn () => $release->update(['summary' => 'Rewrite']), \LogicException::class);
+    }
+
+    public function test_legal_hold_factories_bounds_and_retained_migration_are_coherent(): void
+    {
+        $factoryHold = ComplianceCaseLegalHold::factory()->create();
+        $factoryIssuePayload = $factoryHold->only([
+            'compliance_case_id', 'compliance_case_event_id', 'version', 'reference', 'scope', 'systems',
+            'data_categories', 'legal_basis_reference', 'issued_by', 'issuer_snapshot', 'case_snapshot',
+            'latest_event_snapshot', 'custodian_snapshot',
+        ]) + [
+            'preservation_start_at' => $factoryHold->preservation_start_at->toIso8601String(),
+            'issued_at' => $factoryHold->issued_at->toIso8601String(),
+        ];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryIssuePayload)), $factoryHold->fingerprint);
+        $this->assertSame(1, $factoryHold->custodians()->count());
+        $factoryAcknowledgement = ComplianceCaseLegalHoldAcknowledgement::factory()->create();
+        $factoryAckPayload = $factoryAcknowledgement->only([
+            'compliance_case_legal_hold_id', 'compliance_case_legal_hold_custodian_id', 'user_id',
+            'hold_snapshot', 'recipient_snapshot', 'statement', 'comment',
+        ]) + ['acknowledged_at' => $factoryAcknowledgement->acknowledged_at->toIso8601String()];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryAckPayload)), $factoryAcknowledgement->fingerprint);
+        $factoryRelease = ComplianceCaseLegalHoldRelease::factory()->create();
+        $factoryReleasePayload = $factoryRelease->only([
+            'compliance_case_legal_hold_id', 'released_by', 'actor_snapshot', 'hold_snapshot',
+            'custodian_acknowledgement_snapshot', 'summary',
+        ]) + ['released_at' => $factoryRelease->released_at->toIso8601String()];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryReleasePayload)), $factoryRelease->fingerprint);
+
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $custodian = User::factory()->create();
+        $case = app(ComplianceCaseManager::class)->open($manager, [
+            'title' => 'Legal hold bound', 'category' => ComplianceCaseCategory::Other->value,
+            'priority' => ComplianceCasePriority::Medium->value, 'allegation' => 'A deliberate bound test.',
+            'summary' => 'Open bound-test case.',
+        ]);
+        foreach (range(1, 20) as $version) {
+            app(ComplianceCaseLegalHoldManager::class)->issue($manager, $case, [
+                'scope' => "Governed preservation instruction {$version}.", 'systems' => ['Email'],
+                'data_categories' => ['Correspondence'], 'preservation_start_at' => now(),
+                'custodian_ids' => [$custodian->id],
+            ]);
+        }
+        $this->assertSame(20, $case->legalHolds()->count());
+        try {
+            app(ComplianceCaseLegalHoldManager::class)->issue($manager, $case, [
+                'scope' => 'Hold 21.', 'systems' => ['Email'], 'data_categories' => ['Correspondence'],
+                'preservation_start_at' => now(), 'custodian_ids' => [$custodian->id],
+            ]);
+            $this->fail('Expected legal hold 21 to be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('case', $exception->errors());
+        }
+        $this->assertSame(20, $case->legalHolds()->count());
+
+        $migration = require database_path('migrations/2026_08_25_100000_create_compliance_case_legal_holds.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('compliance_case_legal_holds', ['id' => $factoryHold->id, 'fingerprint' => $factoryHold->fingerprint]);
+        $this->assertDatabaseHas('compliance_case_legal_hold_acknowledgements', ['id' => $factoryAcknowledgement->id]);
+        $this->assertDatabaseHas('compliance_case_legal_hold_releases', ['id' => $factoryRelease->id]);
     }
 
     private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment

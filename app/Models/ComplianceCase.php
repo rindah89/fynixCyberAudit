@@ -55,4 +55,9 @@ class ComplianceCase extends Model
     {
         return $this->hasMany(ComplianceCaseInterview::class)->orderBy('id');
     }
+
+    public function legalHolds(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseLegalHold::class)->orderBy('version');
+    }
 }

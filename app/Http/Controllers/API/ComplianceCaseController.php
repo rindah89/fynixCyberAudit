@@ -4,17 +4,24 @@ namespace App\Http\Controllers\API;
 
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
+use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AcknowledgeComplianceCaseLegalHoldRequest;
 use App\Http\Requests\ListComplianceCasesRequest;
+use App\Http\Requests\ListMyComplianceCaseLegalHoldsRequest;
 use App\Http\Requests\RecordComplianceCaseEventRequest;
 use App\Http\Requests\RecordComplianceCaseInterviewEventRequest;
+use App\Http\Requests\ReleaseComplianceCaseLegalHoldRequest;
 use App\Http\Requests\ShowComplianceCaseRequest;
 use App\Http\Requests\StoreComplianceCaseEvidenceRequest;
 use App\Http\Requests\StoreComplianceCaseInterviewRequest;
+use App\Http\Requests\StoreComplianceCaseLegalHoldRequest;
 use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseInterview;
+use App\Models\ComplianceCaseLegalHold;
+use App\Models\ComplianceCaseLegalHoldCustodian;
 use Illuminate\Http\JsonResponse;
 
 class ComplianceCaseController extends Controller
@@ -92,5 +99,54 @@ class ComplianceCaseController extends Controller
         $visible = $manager->visibleSubmissions(collect([$submission]), $request->user())->first();
 
         return response()->json(['data' => $visible], JsonResponse::HTTP_CREATED);
+    }
+
+    public function legalHolds(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase, ComplianceCaseLegalHoldManager $manager): JsonResponse
+    {
+        return response()->json($complianceCase->legalHolds()->with($manager->relations())->paginate($request->integer('per_page', 50)));
+    }
+
+    public function issueLegalHold(StoreComplianceCaseLegalHoldRequest $request, ComplianceCase $complianceCase, ComplianceCaseLegalHoldManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->issue($request->user(), $complianceCase, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function acknowledgeLegalHold(AcknowledgeComplianceCaseLegalHoldRequest $request, ComplianceCaseLegalHold $legalHold, ComplianceCaseLegalHoldManager $manager): JsonResponse
+    {
+        $acknowledgement = $manager->acknowledge($request->user(), $legalHold, $request->validated());
+
+        return response()->json(['data' => [
+            'id' => $acknowledgement->id, 'acknowledged_at' => $acknowledgement->acknowledged_at,
+            'statement' => $acknowledgement->statement, 'comment' => $acknowledgement->comment,
+            'fingerprint' => $acknowledgement->fingerprint,
+        ]], JsonResponse::HTTP_CREATED);
+    }
+
+    public function myLegalHolds(ListMyComplianceCaseLegalHoldsRequest $request): JsonResponse
+    {
+        $history = ComplianceCaseLegalHoldCustodian::query()->where('user_id', $request->user()->id)
+            ->with(['legalHold.release:id,compliance_case_legal_hold_id,released_at,fingerprint', 'acknowledgement:id,compliance_case_legal_hold_custodian_id,acknowledged_at,fingerprint'])
+            ->latest('id')->paginate($request->integer('per_page', 50));
+        $history->setCollection($history->getCollection()->map(fn (ComplianceCaseLegalHoldCustodian $custodian): array => [
+            'id' => $custodian->id,
+            'legal_hold' => [
+                'id' => $custodian->legalHold->id, 'reference' => $custodian->legalHold->reference,
+                'scope' => $custodian->legalHold->scope, 'systems' => $custodian->legalHold->systems,
+                'data_categories' => $custodian->legalHold->data_categories,
+                'legal_basis_reference' => $custodian->legalHold->legal_basis_reference,
+                'preservation_start_at' => $custodian->legalHold->preservation_start_at,
+                'issued_at' => $custodian->legalHold->issued_at, 'fingerprint' => $custodian->legalHold->fingerprint,
+                'released_at' => $custodian->legalHold->release?->released_at,
+                'release_fingerprint' => $custodian->legalHold->release?->fingerprint,
+            ],
+            'acknowledgement' => $custodian->acknowledgement?->only(['id', 'acknowledged_at', 'fingerprint']),
+        ]));
+
+        return response()->json($history);
+    }
+
+    public function releaseLegalHold(ReleaseComplianceCaseLegalHoldRequest $request, ComplianceCase $complianceCase, ComplianceCaseLegalHold $legalHold, ComplianceCaseLegalHoldManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->release($request->user(), $complianceCase, $legalHold, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }

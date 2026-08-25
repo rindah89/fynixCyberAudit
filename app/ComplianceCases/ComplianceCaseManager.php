@@ -11,6 +11,8 @@ use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseInterview;
+use App\Models\ComplianceCaseLegalHold;
+use App\Models\ComplianceCaseLegalHoldRelease;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\User;
 use App\Services\GovernanceIssueLifecycleManager;
@@ -61,6 +63,9 @@ class ComplianceCaseManager
             $data = Validator::make($data, self::eventRules())->validate();
             $events = ComplianceCaseEvent::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
             $interviews = ComplianceCaseInterview::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            $legalHolds = ComplianceCaseLegalHold::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            $legalHoldReleases = ComplianceCaseLegalHoldRelease::query()->whereIn('compliance_case_legal_hold_id', $legalHolds->pluck('id'))
+                ->orderBy('compliance_case_legal_hold_id')->lockForUpdate()->get()->keyBy('compliance_case_legal_hold_id');
             $issues = ComplianceCaseActionIssue::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
             if ($issues->isNotEmpty()) {
                 $lifecycles = GovernanceIssueLifecycle::query()->where('issue_type', ComplianceCaseActionIssue::class)
@@ -103,6 +108,10 @@ class ComplianceCaseManager
             if ($status === ComplianceCaseStatus::Closed
                 && array_intersect(array_keys($changes), ['assigned_to', 'due_at', 'triage_summary', 'investigation_summary', 'resolution_summary']) !== []) {
                 throw ValidationException::withMessages(['status' => 'Final closure may add only the closure decision and summary.']);
+            }
+            if ($status === ComplianceCaseStatus::Closed
+                && $legalHolds->contains(fn (ComplianceCaseLegalHold $hold): bool => ! $legalHoldReleases->has($hold->id))) {
+                throw ValidationException::withMessages(['status' => 'Every legal hold must be independently released before case closure.']);
             }
             $this->assertStateRequirements($status, $prospective, $actor, $locked, $events, $issues);
             if (in_array($status, [ComplianceCaseStatus::Resolved, ComplianceCaseStatus::Closed], true)

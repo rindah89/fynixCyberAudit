@@ -8,6 +8,7 @@ use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesR
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InterviewsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\LegalHoldsRelationManager;
 use App\Models\ComplianceCase;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -81,7 +82,7 @@ class ComplianceCaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [EventsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class];
+        return [EventsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class];
     }
 
     public static function getPages(): array

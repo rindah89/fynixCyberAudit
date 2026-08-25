@@ -100,6 +100,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/compliance-cases/{complianceCase}/interviews', [ComplianceCaseController::class, 'interviews']);
     Route::post('/compliance-cases/{complianceCase}/interviews', [ComplianceCaseController::class, 'scheduleInterview']);
     Route::post('/compliance-cases/{complianceCase}/interviews/{interview}/events', [ComplianceCaseController::class, 'recordInterview'])->scopeBindings();
+    Route::get('/compliance-cases/{complianceCase}/legal-holds', [ComplianceCaseController::class, 'legalHolds']);
+    Route::post('/compliance-cases/{complianceCase}/legal-holds', [ComplianceCaseController::class, 'issueLegalHold']);
+    Route::post('/compliance-cases/{complianceCase}/legal-holds/{legalHold}/release', [ComplianceCaseController::class, 'releaseLegalHold'])->scopeBindings();
+    Route::get('/my-compliance-case-legal-holds', [ComplianceCaseController::class, 'myLegalHolds']);
+    Route::post('/compliance-case-legal-holds/{legalHold}/acknowledge', [ComplianceCaseController::class, 'acknowledgeLegalHold']);
     Route::get('/privacy-processing-activities', [PrivacyManagementController::class, 'index']);
     Route::post('/privacy-processing-activities', [PrivacyManagementController::class, 'store']);
     Route::get('/privacy-processing-activities/{activity}', [PrivacyManagementController::class, 'show']);
