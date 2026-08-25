@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API;
 
+use App\ComplianceCases\ComplianceCaseClosureReportManager;
 use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseInterviewManager;
 use App\ComplianceCases\ComplianceCaseInvestigationPlanManager;
@@ -11,6 +12,8 @@ use App\ComplianceCases\ComplianceCaseLegalHoldManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AcknowledgeComplianceCaseLegalHoldRequest;
+use App\Http\Requests\GenerateComplianceCaseClosureReportRequest;
+use App\Http\Requests\ListComplianceCaseClosureReportsRequest;
 use App\Http\Requests\ListComplianceCaseInvestigationPlansRequest;
 use App\Http\Requests\ListComplianceCaseInvestigationProcedureExecutionsRequest;
 use App\Http\Requests\ListComplianceCaseInvestigationReportsRequest;
@@ -209,5 +212,15 @@ class ComplianceCaseController extends Controller
     public function reviewInvestigationReport(ReviewComplianceCaseInvestigationReportRequest $request, ComplianceCaseInvestigationReport $report, ComplianceCaseInvestigationReportManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->review($request->user(), $report, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function closureReports(ListComplianceCaseClosureReportsRequest $request, ComplianceCase $case, ComplianceCaseClosureReportManager $manager): JsonResponse
+    {
+        return response()->json($manager->history($request->user(), $case, $request->integer('per_page', 50)));
+    }
+
+    public function generateClosureReport(GenerateComplianceCaseClosureReportRequest $request, ComplianceCase $case, ComplianceCaseClosureReportManager $manager): JsonResponse
+    {
+        return response()->json(['data' => $manager->generate($request->user(), $case, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 }

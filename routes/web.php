@@ -7,6 +7,7 @@ use App\Http\Controllers\AuditCloseoutReportController;
 use App\Http\Controllers\AuditFindingFollowUpEvidenceController;
 use App\Http\Controllers\AuditProcedureExecutionEvidenceController;
 use App\Http\Controllers\Auth\SsoController;
+use App\Http\Controllers\ComplianceCaseClosureReportController;
 use App\Http\Controllers\ComplianceCaseEvidenceController;
 use App\Http\Controllers\ControlTestExecutionEvidenceController;
 use App\Http\Controllers\GovernanceIssueClosureEvidenceController;
@@ -60,6 +61,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('control-test-execution-evidence.download');
     Route::get('/app/compliance-case-evidence/{evidence}/download', [ComplianceCaseEvidenceController::class, 'download'])
         ->name('compliance-case-evidence.download');
+    Route::get('/app/compliance-case-closure-reports/{report}/download', [ComplianceCaseClosureReportController::class, 'download'])
+        ->name('compliance-case-closure-reports.download');
     Route::get('/app/ai-monitoring-review-evidence/{evidence}/download', [AiMonitoringReviewEvidenceController::class, 'download'])
         ->name('ai-monitoring-review-evidence.download');
     Route::get('/app/vendor-risk-review-evidence/{evidence}/download', [VendorRiskReviewEvidenceController::class, 'download'])

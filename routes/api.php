@@ -120,6 +120,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/compliance-cases/{case}/investigation-reports', [ComplianceCaseController::class, 'investigationReports']);
     Route::post('/compliance-cases/{case}/investigation-reports', [ComplianceCaseController::class, 'submitInvestigationReport']);
     Route::post('/compliance-case-investigation-reports/{report}/review', [ComplianceCaseController::class, 'reviewInvestigationReport']);
+    Route::get('/compliance-cases/{case}/closure-reports', [ComplianceCaseController::class, 'closureReports']);
+    Route::post('/compliance-cases/{case}/closure-reports', [ComplianceCaseController::class, 'generateClosureReport']);
     Route::get('/my-compliance-case-legal-holds', [ComplianceCaseController::class, 'myLegalHolds']);
     Route::post('/compliance-case-legal-holds/{legalHold}/acknowledge', [ComplianceCaseController::class, 'acknowledgeLegalHold']);
     Route::get('/privacy-processing-activities', [PrivacyManagementController::class, 'index']);
