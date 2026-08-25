@@ -4,6 +4,12 @@
 
 Enable the module with `MODULE_COMPLIANCE_CASES_ENABLED=true`. This is an application feature flag and does not create infrastructure. Fynix provides a deliberately operated, permission-scoped compliance case workspace for intake, triage, investigation, resolution, and independent closure.
 
+## Governed authenticated intake
+
+An active authenticated internal user may submit an immutable concern with title, category, priority, allegation, declared source channel, optional source reference/message, confidentiality flag, exact reporter identity, time, reference, and recursively canonicalized SHA-256 fingerprint. Only that reporter can inspect the safe status of their own submission; the reporter view omits the allegation, reporter snapshot, internal disposition snapshots, and created-case evidence.
+
+`Manage Compliance Cases` users inspect the complete intake register. A manager other than the reporter records one terminal accepted or rejected disposition with rationale, actor/time, the exact intake snapshot, and fingerprint. Acceptance atomically opens and binds a governed compliance case whose source reference is the intake reference and whose opening event is retained in the disposition. Rejection retains the concern without creating a case. This authenticated product workflow is not an anonymous/public hotline, external mailbox, identity-proofing service, emergency channel, or anti-retaliation program.
+
 ## Governed lifecycle
 
 1. A user with `Manage Compliance Cases` opens a case with a category, priority, allegation, intake rationale, and optional source/reporter references. The server owns the case number, opener, opening time, initial `New` state, initial complete snapshot, event version, and SHA-256 fingerprint.
@@ -29,6 +35,9 @@ Each case is bounded to 200 events. Case and event mutation is serialized under 
 
 ## Interfaces
 
+- `GET|POST /api/compliance-case-intakes`
+- `GET /api/my-compliance-case-intakes`
+- `POST /api/compliance-case-intakes/{intake}/decision`
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{case}`
 - `GET|POST /api/compliance-cases/{case}/events`
@@ -52,6 +61,6 @@ List and event pages accept one to 100 rows. Callers cannot supply server-owned 
 - Selected evidence remains a deliberate input. Retained-byte hashes prove identity, not truth, authenticity, relevance, sufficiency, legal admissibility, or investigative quality. Exact downloads independently require current case-workspace and source-attachment access; database rollback invokes compensating retained-copy cleanup, while storage-adapter/administrator failures remain outside that guarantee.
 - Interview subjects, purpose, notes, summaries, and cancellation decisions are deliberate authorized-user inputs. Fynix does not record audio/video, transcribe, authenticate participants, compel attendance, determine credibility, infer findings, provide privilege/legal advice, or prove interview quality.
 - Legal-hold scope, systems, data categories, legal-basis references, acknowledgement statements, and release judgments are deliberate internal instructions and assertions. Fynix does not discover, collect, suspend deletion in, or verify preservation within source systems; it does not provide litigation hold delivery, custodian surveys, eDiscovery processing, legal advice, or proof of legal sufficiency/compliance.
-- This slice does not provide anonymous/public hotline intake, email ingestion, automated source-system preservation or eDiscovery, automatic remediation execution, external notification, regulatory reporting, qualified signatures, or investigation analytics. Remediation tasks, their completion state, and verification judgments remain deliberate governed inputs.
+- Authenticated concern submission is delivered, but anonymous/public hotline intake, email ingestion, emergency response, identity proofing, anti-retaliation administration, automated source-system preservation or eDiscovery, automatic remediation execution, external notification, regulatory reporting, qualified signatures, and investigation analytics remain absent. Remediation tasks, their completion state, and verification judgments remain deliberate governed inputs.
 - SHA-256 fingerprints identify the persisted event payload; they do not authenticate the underlying allegation, source reference, or conclusion.
 - Database administrators remain outside product-interface immutability guarantees.

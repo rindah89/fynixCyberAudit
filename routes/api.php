@@ -13,6 +13,7 @@ use App\Http\Controllers\API\AuditUniverseController;
 use App\Http\Controllers\API\ChecklistController;
 use App\Http\Controllers\API\ChecklistTemplateController;
 use App\Http\Controllers\API\ComplianceCaseController;
+use App\Http\Controllers\API\ComplianceCaseIntakeController;
 use App\Http\Controllers\API\ContinuousControlTestingController;
 use App\Http\Controllers\API\ControlController;
 use App\Http\Controllers\API\DataRequestController;
@@ -89,6 +90,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/controls/{control}/test-definitions', [ContinuousControlTestingController::class, 'store']);
     Route::post('/control-test-definitions/{definition}/execute', [ContinuousControlTestingController::class, 'execute']);
     Route::apiResource('implementations', ImplementationController::class);
+    Route::get('/compliance-case-intakes', [ComplianceCaseIntakeController::class, 'index']);
+    Route::post('/compliance-case-intakes', [ComplianceCaseIntakeController::class, 'store']);
+    Route::get('/my-compliance-case-intakes', [ComplianceCaseIntakeController::class, 'mine']);
+    Route::post('/compliance-case-intakes/{intake}/decision', [ComplianceCaseIntakeController::class, 'decide']);
     Route::get('/compliance-cases', [ComplianceCaseController::class, 'index']);
     Route::post('/compliance-cases', [ComplianceCaseController::class, 'store']);
     Route::get('/compliance-cases/{complianceCase}', [ComplianceCaseController::class, 'show']);

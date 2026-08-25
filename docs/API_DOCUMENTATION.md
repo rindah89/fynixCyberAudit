@@ -856,6 +856,11 @@ Final-report generation requires the incident to be in `Lessons Learned`, curren
 
 The compliance-case module requires `MODULE_COMPLIANCE_CASES_ENABLED=true`. `Manage Compliance Cases` users open and govern cases; `Read Compliance Cases` users inspect all cases; `Investigate Compliance Cases` users inspect and update only their current assignments.
 
+Authenticated active users submit internal concerns through `POST /api/compliance-case-intakes` with `title`, `category`, `priority`, `allegation`, `source_channel`, optional `source_reference`/`reporter_message`, and optional `confidential`. The server retains the exact reporter snapshot, time, reference, and fingerprint. `GET /api/my-compliance-case-intakes` returns only the caller's safe reference/title/category/priority/channel/status/times/fingerprints and omits allegation plus internal reporter, disposition, and case snapshots. `Manage Compliance Cases` users inspect the complete paginated register through `GET /api/compliance-case-intakes`; a different manager records one terminal accepted/rejected disposition through `POST /api/compliance-case-intakes/{intake}/decision`. Acceptance creates and binds the governed case and opening event atomically. This interface does not provide anonymous/public hotline or external-email intake, emergency response, identity proofing, legal advice, or anti-retaliation administration.
+
+- `GET|POST /api/compliance-case-intakes`
+- `GET /api/my-compliance-case-intakes`
+- `POST /api/compliance-case-intakes/{intake}/decision`
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{complianceCase}`
 - `GET|POST /api/compliance-cases/{complianceCase}/events`
