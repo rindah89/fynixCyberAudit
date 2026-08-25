@@ -40,4 +40,9 @@ class ComplianceCase extends Model
     {
         return $this->hasMany(ComplianceCaseEvent::class)->orderBy('version');
     }
+
+    public function evidenceSubmissions(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseEvidenceSubmission::class)->orderBy('version');
+    }
 }

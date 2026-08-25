@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\API;
 
+use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ListComplianceCasesRequest;
 use App\Http\Requests\RecordComplianceCaseEventRequest;
 use App\Http\Requests\ShowComplianceCaseRequest;
+use App\Http\Requests\StoreComplianceCaseEvidenceRequest;
 use App\Http\Requests\StoreComplianceCaseRequest;
 use App\Models\ComplianceCase;
 use Illuminate\Http\JsonResponse;
@@ -43,5 +45,22 @@ class ComplianceCaseController extends Controller
         $event = $manager->record($request->user(), $complianceCase, $request->validated());
 
         return response()->json(['data' => $event, 'case' => $complianceCase->refresh()->load(['opener:id,name', 'assignee:id,name'])]);
+    }
+
+    public function evidence(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase, ComplianceCaseEvidenceManager $manager): JsonResponse
+    {
+        $history = $complianceCase->evidenceSubmissions()->with(['actor:id,name,email', 'evidence.attachment.audit.members', 'evidence.attachment.dataRequestResponse.dataRequest.audit.members'])
+            ->paginate($request->integer('per_page', 50));
+        $history->setCollection($manager->visibleSubmissions($history->getCollection(), $request->user()));
+
+        return response()->json($history);
+    }
+
+    public function storeEvidence(StoreComplianceCaseEvidenceRequest $request, ComplianceCase $complianceCase, ComplianceCaseEvidenceManager $manager): JsonResponse
+    {
+        $submission = $manager->submit($request->user(), $complianceCase, $request->validated());
+        $visible = $manager->visibleSubmissions(collect([$submission]), $request->user())->first();
+
+        return response()->json(['data' => $visible], JsonResponse::HTTP_CREATED);
     }
 }

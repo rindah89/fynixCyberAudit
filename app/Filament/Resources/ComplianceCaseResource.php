@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ListComplianceCases;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Models\ComplianceCase;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -78,7 +79,7 @@ class ComplianceCaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [EventsRelationManager::class];
+        return [EventsRelationManager::class, EvidenceSubmissionsRelationManager::class];
     }
 
     public static function getPages(): array

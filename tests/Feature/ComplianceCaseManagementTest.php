@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Access\FileAccess;
+use App\ComplianceCases\ComplianceCaseEvidenceManager;
 use App\ComplianceCases\ComplianceCaseManager;
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCasePriority;
@@ -9,12 +11,21 @@ use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
+use App\Models\Audit;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseEvent;
+use App\Models\ComplianceCaseEvidenceSubmission;
+use App\Models\DataRequest;
+use App\Models\DataRequestResponse;
+use App\Models\FileAttachment;
 use App\Models\User;
+use App\Support\CanonicalJson;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -243,5 +254,159 @@ class ComplianceCaseManagementTest extends TestCase
             'priority' => ComplianceCasePriority::Low->value, 'allegation' => 'Disabled.', 'summary' => 'Disabled.',
         ])->assertForbidden();
         $this->assertFalse(ComplianceCaseResource::shouldRegisterNavigation());
+    }
+
+    public function test_investigator_retains_bounded_case_evidence_with_exact_workspace_and_source_acl(): void
+    {
+        Storage::fake('private');
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $reader = User::factory()->create();
+        $reader->givePermissionTo('Read Compliance Cases');
+        $case = app(ComplianceCaseManager::class)->open($manager, [
+            'title' => 'Evidence-backed investigation', 'category' => ComplianceCaseCategory::Fraud->value,
+            'priority' => ComplianceCasePriority::High->value, 'allegation' => 'A deliberate allegation.',
+            'summary' => 'Open the governed case.',
+        ]);
+        app(ComplianceCaseManager::class)->record($manager, $case, [
+            'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
+            'triage_summary' => 'Evidence collection is required.', 'summary' => 'Assign the investigator.',
+        ]);
+        $attachment = $this->acceptedEvidence($investigator, 'compliance/source.txt', 'original compliance evidence');
+        $foreign = $this->acceptedEvidence(User::factory()->create(), 'compliance/foreign.txt', 'foreign evidence');
+
+        $this->actingAs($investigator)->postJson("/api/compliance-cases/{$case->id}/evidence", [
+            'summary' => 'Retain the authorized investigation record.',
+            'evidence_attachment_ids' => [$attachment->id, $foreign->id],
+        ])->assertUnprocessable()->assertJsonValidationErrors('evidence_attachment_ids.1');
+        $this->assertDatabaseCount('compliance_case_evidence_submissions', 0);
+        $this->assertSame([], Storage::disk('private')->allFiles('governed-evidence/compliance-cases'));
+
+        $submissionId = $this->actingAs($investigator)->postJson("/api/compliance-cases/{$case->id}/evidence", [
+            'summary' => 'Retain the authorized investigation record.', 'evidence_attachment_ids' => [$attachment->id],
+            'fingerprint' => str_repeat('a', 64),
+        ])->assertUnprocessable()->json('data.id');
+        $this->assertNull($submissionId);
+        $storeResponse = $this->postJson("/api/compliance-cases/{$case->id}/evidence", [
+            'summary' => 'Retain the authorized investigation record.', 'evidence_attachment_ids' => [$attachment->id],
+        ])->assertCreated()->assertJsonPath('data.version', 1)
+            ->assertJsonMissingPath('data.evidence.0.attachment')
+            ->assertJsonMissingPath('data.evidence.0.data_request_response');
+        $submissionId = $storeResponse->json('data.id');
+        $submission = ComplianceCaseEvidenceSubmission::query()->findOrFail($submissionId);
+        $payload = $submission->only(['compliance_case_id', 'version', 'summary', 'case_snapshot', 'latest_event_snapshot', 'evidence_manifest', 'recorded_by', 'actor_snapshot']);
+        $payload['recorded_at'] = $submission->recorded_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $submission->fingerprint);
+        $evidence = $submission->evidence()->firstOrFail();
+        $this->assertSame(hash('sha256', 'original compliance evidence'), $evidence->sha256);
+        $this->assertSame($case->events()->reorder()->latest('version')->value('fingerprint'), data_get($submission->latest_event_snapshot, 'fingerprint'));
+
+        $outsider = User::factory()->create();
+        try {
+            app(ComplianceCaseEvidenceManager::class)->submit($outsider, $case, [
+                'summary' => '', 'evidence_attachment_ids' => [PHP_INT_MAX],
+            ]);
+            $this->fail('Expected current case authorization before source validation.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $this->assertDatabaseCount('compliance_case_evidence_submissions', 1);
+
+        $this->actingAs($reader)->getJson("/api/compliance-cases/{$case->id}/evidence")
+            ->assertOk()->assertJsonCount(0, 'data.0.evidence')->assertJsonMissingPath('data.0.evidence_manifest');
+        $this->actingAs($reader)->get(route('compliance-case-evidence.download', $evidence))->assertForbidden();
+        $this->actingAs($investigator)->getJson("/api/compliance-cases/{$case->id}/evidence")
+            ->assertOk()->assertJsonPath('data.0.evidence.0.sha256', $evidence->sha256)
+            ->assertJsonMissingPath('data.0.evidence.0.attachment')
+            ->assertJsonMissingPath('data.0.evidence.0.data_request_response');
+        $this->get(route('compliance-case-evidence.download', $evidence))->assertOk();
+        Storage::disk('private')->put($attachment->file_path, 'later changed source');
+        $this->get(route('compliance-case-evidence.download', $evidence))->assertOk()->assertStreamedContent('original compliance evidence');
+        $this->assertThrows(fn () => $attachment->delete(), \LogicException::class);
+        $this->assertThrows(fn () => $submission->update(['summary' => 'Rewrite']), \LogicException::class);
+
+        $closed = ComplianceCase::factory()->create([
+            'opened_by' => $manager->id, 'assigned_to' => $investigator->id, 'status' => ComplianceCaseStatus::Closed,
+        ]);
+        try {
+            app(ComplianceCaseEvidenceManager::class)->submit($investigator, $closed, [
+                'summary' => 'Closed case evidence.', 'evidence_attachment_ids' => [$attachment->id],
+            ]);
+            $this->fail('Expected closed cases to reject new evidence.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('case', $exception->errors());
+        }
+
+        $factorySubmission = ComplianceCaseEvidenceSubmission::factory()->create();
+        $factoryPayload = $factorySubmission->only([
+            'compliance_case_id', 'version', 'summary', 'case_snapshot', 'latest_event_snapshot',
+            'evidence_manifest', 'recorded_by', 'actor_snapshot',
+        ]);
+        $factoryPayload['recorded_at'] = $factorySubmission->recorded_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryPayload)), $factorySubmission->fingerprint);
+        $this->assertSame(data_get($factorySubmission->evidence_manifest, '0.sha256'), $factorySubmission->evidence()->value('sha256'));
+        $factoryEvidence = $factorySubmission->evidence()->firstOrFail();
+        TestResponse::fromBaseResponse(app(FileAccess::class)->streamComplianceCaseEvidence($factorySubmission->actor, $factoryEvidence))
+            ->assertOk()->assertStreamedContent('factory compliance evidence');
+
+        $now = now()->startOfSecond();
+        foreach (range(2, 100) as $version) {
+            $boundPayload = [
+                'compliance_case_id' => $case->id, 'version' => $version,
+                'summary' => "Bound evidence submission {$version}.", 'case_snapshot' => $submission->case_snapshot,
+                'latest_event_snapshot' => $submission->latest_event_snapshot, 'evidence_manifest' => $submission->evidence_manifest,
+                'recorded_by' => $investigator->id, 'actor_snapshot' => $investigator->only(['id', 'name', 'email']),
+                'recorded_at' => $now->toIso8601String(),
+            ];
+            ComplianceCaseEvidenceSubmission::factory()->create($boundPayload + [
+                'fingerprint' => hash('sha256', CanonicalJson::encode($boundPayload)),
+            ]);
+        }
+        $this->assertSame(100, $case->evidenceSubmissions()->count());
+        try {
+            app(ComplianceCaseEvidenceManager::class)->submit($investigator, $case, [
+                'summary' => 'Evidence submission 101.', 'evidence_attachment_ids' => [$attachment->id],
+            ]);
+            $this->fail('Expected the exact 100-submission bound to reject submission 101.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('case', $exception->errors());
+        }
+        $this->assertSame(100, $case->evidenceSubmissions()->count());
+
+        $operatorSubmission = $submission;
+        $investigator->givePermissionTo('Manage Compliance Cases');
+        $operatorSubmission->load(['evidence.attachment.audit.members', 'evidence.attachment.dataRequestResponse.dataRequest.audit.members']);
+        $eligibleProjection = app(ComplianceCaseEvidenceManager::class)->visibleSubmissions(collect([$operatorSubmission]), $investigator)->first();
+        $ineligibleProjection = app(ComplianceCaseEvidenceManager::class)->visibleSubmissions(collect([$operatorSubmission]), $reader)->first();
+        $this->assertCount(1, $eligibleProjection->evidence);
+        $this->assertCount(0, $ineligibleProjection->evidence);
+        $this->assertStringContainsString($evidence->sha256, view('filament.compliance-case-evidence', ['record' => $eligibleProjection])->render());
+        $this->assertStringNotContainsString($evidence->sha256, view('filament.compliance-case-evidence', ['record' => $ineligibleProjection])->render());
+        Livewire::actingAs($reader);
+        Livewire::test(EvidenceSubmissionsRelationManager::class, ['ownerRecord' => $case, 'pageClass' => ViewComplianceCase::class])
+            ->assertCanSeeTableRecords([$operatorSubmission])->assertTableActionVisible('inspect', $operatorSubmission)
+            ->mountTableAction('inspect', $operatorSubmission)->assertDontSee($evidence->file_name_snapshot)->assertDontSee($evidence->sha256);
+        $migration = require database_path('migrations/2026_08_25_070000_create_compliance_case_evidence_submissions.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('compliance_case_evidence_submissions', ['id' => $submission->id, 'fingerprint' => $submission->fingerprint]);
+    }
+
+    private function acceptedEvidence(User $auditManager, string $path, string $contents): FileAttachment
+    {
+        Storage::disk('private')->put($path, $contents);
+        $audit = Audit::factory()->create(['manager_id' => $auditManager->id]);
+        $request = DataRequest::factory()->create(['audit_id' => $audit->id, 'created_by_id' => $auditManager->id, 'assigned_to_id' => $auditManager->id]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $auditManager->id, 'requestee_id' => $auditManager->id,
+        ]);
+
+        return FileAttachment::factory()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id, 'file_name' => basename($path),
+            'file_path' => $path, 'file_size' => strlen($contents), 'description' => 'Governed compliance-case evidence',
+            'uploaded_by' => $auditManager->id,
+        ]);
     }
 }

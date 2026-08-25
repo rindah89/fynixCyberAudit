@@ -12,6 +12,7 @@ Enable the module with `MODULE_COMPLIANCE_CASES_ENABLED=true`. This is an applic
 4. An investigation may move to `Action Required`, return to `Investigating`, or move to `Resolved`. Action-required and resolved states require an investigation summary; resolution additionally requires a resolution summary.
 5. `Resolved` moves to terminal `Closed` only through a user with `Manage Compliance Cases` who is neither the opener nor any current/prior assigned investigator or investigation/resolution decision actor. The closer must author a separate closure summary in that event.
 6. Every material change appends a server-versioned complete material before/after snapshot, rationale, actor/time, and SHA-256 fingerprint. Current state remains operational; append-only events retain the evidence history.
+7. While a case remains open, its current assigned investigator or a manager may append up to 100 governed evidence submissions. Each submission selects one to 20 accepted audit attachments currently accessible to that actor, retains bounded private copies, and binds the exact current case/latest-event, actor, summary, manifest, time, version, and SHA-256 fingerprint without rewriting case decisions.
 
 Each case is bounded to 200 events. Case and event mutation is serialized under the case row lock; number allocation is serialized by a singleton mutex. Routine migration rollback retains governed case history.
 
@@ -28,6 +29,8 @@ Each case is bounded to 200 events. Case and event mutation is serialized under 
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{case}`
 - `GET|POST /api/compliance-cases/{case}/events`
+- `GET|POST /api/compliance-cases/{case}/evidence`
+- `GET /app/compliance-case-evidence/{evidence}/download`
 - The operator workspace provides the same scoped register, full case detail, governed actions, paginated history, and immutable event inspection.
 
 List and event pages accept one to 100 rows. Callers cannot supply server-owned numbers, lifecycle timestamps, versions, snapshots, attribution, or fingerprints.
@@ -35,6 +38,7 @@ List and event pages accept one to 100 rows. Callers cannot supply server-owned 
 ## Explicit limitations
 
 - Allegations, investigation facts, conclusions, resolutions, and closure judgments are deliberate authorized-user inputs. Fynix does not determine their truth, legal sufficiency, or investigative quality.
-- This slice does not provide anonymous/public hotline intake, email ingestion, evidence-file collection, legal-hold/eDiscovery, interview management, remediation-task automation, external notification, regulatory reporting, qualified signatures, or investigation analytics.
+- Selected evidence remains a deliberate input. Retained-byte hashes prove identity, not truth, authenticity, relevance, sufficiency, legal admissibility, or investigative quality. Exact downloads independently require current case-workspace and source-attachment access; database rollback invokes compensating retained-copy cleanup, while storage-adapter/administrator failures remain outside that guarantee.
+- This slice does not provide anonymous/public hotline intake, email ingestion, legal-hold/eDiscovery, interview management, remediation-task automation, external notification, regulatory reporting, qualified signatures, or investigation analytics.
 - SHA-256 fingerprints identify the persisted event payload; they do not authenticate the underlying allegation, source reference, or conclusion.
 - Database administrators remain outside product-interface immutability guarantees.

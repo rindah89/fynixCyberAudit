@@ -6,6 +6,7 @@ use App\Models\AiJob;
 use App\Models\AiMonitoringReviewEvidence;
 use App\Models\AuditFindingFollowUpEvidence;
 use App\Models\AuditProcedureExecutionEvidence;
+use App\Models\ComplianceCaseEvidenceFile;
 use App\Models\ControlTestExecutionEvidence;
 use App\Models\FileAttachment;
 use App\Models\GovernanceIssueClosureEvidence;
@@ -134,6 +135,20 @@ class FileAccess
             $evidence->file_path_snapshot,
             $evidence->file_name_snapshot,
         );
+    }
+
+    public function streamComplianceCaseEvidence(User $actor, ComplianceCaseEvidenceFile $evidence): StreamedResponse
+    {
+        $evidence->loadMissing(['submission.complianceCase', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
+        $case = $evidence->submission?->complianceCase;
+        $canViewCase = Enterprise::enabled('compliance_cases') && $case
+            && ($actor->can('Manage Compliance Cases') || $actor->can('Read Compliance Cases')
+                || ($actor->can('Investigate Compliance Cases') && $case->assigned_to === $actor->id));
+        if (! $canViewCase || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
+            abort(403, 'You do not have access to this governed compliance-case evidence.');
+        }
+
+        return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
     }
 
     public function streamControlTestExecutionEvidence(User $actor, ControlTestExecutionEvidence $evidence): StreamedResponse

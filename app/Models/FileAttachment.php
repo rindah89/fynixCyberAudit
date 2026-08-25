@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Eloquent;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -39,7 +40,7 @@ use Spatie\Activitylog\Support\LogOptions;
  */
 class FileAttachment extends Model
 {
-    use LogsActivity;
+    use HasFactory, LogsActivity;
 
     protected static function booted(): void
     {
@@ -132,6 +133,11 @@ class FileAttachment extends Model
         return $this->hasMany(IncidentTaskEventEvidence::class);
     }
 
+    public function complianceCaseEvidence(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseEvidenceFile::class);
+    }
+
     public function incidentPhaseTransitionEvidence(): HasMany
     {
         return $this->hasMany(IncidentPhaseTransitionEvidence::class);
@@ -150,7 +156,8 @@ class FileAttachment extends Model
             || $this->auditFindingFollowUpEvidence()->exists()
             || $this->auditProcedureExecutionEvidence()->exists()
             || $this->incidentPhaseTransitionEvidence()->exists()
-            || $this->incidentTaskEventEvidence()->exists();
+            || $this->incidentTaskEventEvidence()->exists()
+            || $this->complianceCaseEvidence()->exists();
     }
 
     public function auditItem(): BelongsTo
