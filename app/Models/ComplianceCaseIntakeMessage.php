@@ -7,6 +7,7 @@ use Database\Factories\ComplianceCaseIntakeMessageFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ComplianceCaseIntakeMessage extends Model
 {
@@ -35,5 +36,10 @@ class ComplianceCaseIntakeMessage extends Model
     public function actor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'actor_id')->withTrashed();
+    }
+
+    public function acknowledgement(): HasOne
+    {
+        return $this->hasOne(ComplianceCaseIntakeMessageAcknowledgement::class);
     }
 }

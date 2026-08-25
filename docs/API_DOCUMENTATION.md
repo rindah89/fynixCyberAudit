@@ -860,10 +860,13 @@ Authenticated active users submit internal concerns through `POST /api/complianc
 
 `GET|POST /api/compliance-case-intakes/{intake}/messages` provides bounded authenticated correspondence. The exact active reporter may append only `Reporter` messages and sees only reporter-visible history; a `Manage Compliance Cases` user may append `Reporter` or `Internal` messages and inspect complete evidence. Internal rows are filtered before reporter pagination/counting. Each intake retains at most 100 immutable messages with exact intake/current-disposition, actor, audience, version/time, and fingerprint evidence. It does not prove external delivery, reading, comprehension, response, or investigative action.
 
+`POST /api/compliance-case-intake-messages/{message}/acknowledge` accepts no client-owned evidence fields. Only the exact current active intake reporter may acknowledge a reporter-visible message authored by another user, and each message permits one immutable receipt. The receipt binds the complete message, material reporter identity, time, and fingerprint. Reporter history exposes safe time/fingerprint status; manager REST/operator history exposes complete evidence. This proves only an authenticated in-product action—not reading, comprehension, agreement, truth, external delivery, or investigative action.
+
 - `GET|POST /api/compliance-case-intakes`
 - `GET /api/my-compliance-case-intakes`
 - `POST /api/compliance-case-intakes/{intake}/decision`
 - `GET|POST /api/compliance-case-intakes/{intake}/messages`
+- `POST /api/compliance-case-intake-messages/{message}/acknowledge`
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{complianceCase}`
 - `GET|POST /api/compliance-cases/{complianceCase}/events`

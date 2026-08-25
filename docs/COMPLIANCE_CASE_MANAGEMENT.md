@@ -41,6 +41,9 @@ Each case is bounded to 200 events. Case and event mutation is serialized under 
 - `GET|POST /api/compliance-case-intakes/{intake}/messages`
 
 An exact authenticated reporter and compliance-case managers may exchange at most 100 immutable intake messages. Reporters may create and paginate only reporter-visible correspondence on their own intake; managers may also retain internal messages. Each message binds the complete intake, current disposition when present, actor, audience, version, time, and recursively canonicalized SHA-256 fingerprint. Internal messages are filtered before reporter pagination and counting. This is an authenticated in-product correspondence ledger, not anonymous/public messaging, external delivery, a read receipt, emergency response, or evidence that a message was understood or acted upon.
+- `POST /api/compliance-case-intake-messages/{message}/acknowledge`
+
+Only the exact current active reporter may acknowledge a reporter-visible message authored by another user, once. The immutable receipt retains the complete message evidence, material reporter identity, acknowledgement time, and recursively canonicalized SHA-256 fingerprint. Reporter history exposes only acknowledgement time/fingerprint; manager REST and operator inspection expose complete evidence. This proves an authenticated in-product acknowledgement action, not reading, comprehension, agreement, truth, external delivery, or investigative action.
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{case}`
 - `GET|POST /api/compliance-cases/{case}/events`

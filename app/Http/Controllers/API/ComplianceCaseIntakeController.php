@@ -4,7 +4,9 @@ namespace App\Http\Controllers\API;
 
 use App\ComplianceCases\ComplianceCaseIntakeCorrespondenceManager;
 use App\ComplianceCases\ComplianceCaseIntakeManager;
+use App\ComplianceCases\ComplianceCaseIntakeMessageAcknowledgementManager;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AcknowledgeComplianceCaseIntakeMessageRequest;
 use App\Http\Requests\DecideComplianceCaseIntakeRequest;
 use App\Http\Requests\ListComplianceCaseIntakeMessagesRequest;
 use App\Http\Requests\ListComplianceCaseIntakesRequest;
@@ -12,6 +14,7 @@ use App\Http\Requests\ListMyComplianceCaseIntakesRequest;
 use App\Http\Requests\StoreComplianceCaseIntakeMessageRequest;
 use App\Http\Requests\StoreComplianceCaseIntakeRequest;
 use App\Models\ComplianceCaseIntake;
+use App\Models\ComplianceCaseIntakeMessage;
 use Illuminate\Http\JsonResponse;
 
 class ComplianceCaseIntakeController extends Controller
@@ -49,5 +52,12 @@ class ComplianceCaseIntakeController extends Controller
         $data = $request->user()->can('Manage Compliance Cases') ? $message : $manager->reporterProjection($message);
 
         return response()->json(['data' => $data], JsonResponse::HTTP_CREATED);
+    }
+
+    public function acknowledgeMessage(AcknowledgeComplianceCaseIntakeMessageRequest $request, ComplianceCaseIntakeMessage $message, ComplianceCaseIntakeMessageAcknowledgementManager $manager): JsonResponse
+    {
+        $acknowledgement = $manager->acknowledge($request->user(), $message);
+
+        return response()->json(['data' => $acknowledgement->only(['acknowledged_at', 'fingerprint'])], JsonResponse::HTTP_CREATED);
     }
 }

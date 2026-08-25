@@ -57,7 +57,7 @@ class ComplianceCaseIntakeCorrespondenceManager
         $manager = $actor->can('Manage Compliance Cases');
         $activeActor = User::query()->whereNull('deleted_at')->find($actor->id);
         abort_unless($activeActor !== null && ($manager || $actor->id === $intake->submitted_by), 403);
-        $query = $intake->messages()->with('actor:id,name,email');
+        $query = $intake->messages()->with(['actor:id,name,email', 'acknowledgement.recipient:id,name,email']);
         if (! $manager) {
             $query->where('audience', ComplianceCaseIntakeAudience::Reporter->value);
         }
@@ -72,7 +72,8 @@ class ComplianceCaseIntakeCorrespondenceManager
     public function reporterProjection(ComplianceCaseIntakeMessage $message): array
     {
         return ['id' => $message->id, 'version' => $message->version, 'audience' => $message->audience, 'message' => $message->message,
-            'actor' => $message->actor?->only(['id', 'name']), 'recorded_at' => $message->recorded_at, 'fingerprint' => $message->fingerprint];
+            'actor' => $message->actor?->only(['id', 'name']), 'recorded_at' => $message->recorded_at, 'fingerprint' => $message->fingerprint,
+            'acknowledgement' => $message->acknowledgement?->only(['acknowledged_at', 'fingerprint'])];
     }
 
     public function intakeSnapshot(ComplianceCaseIntake $intake): array
