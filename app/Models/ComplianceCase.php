@@ -45,4 +45,9 @@ class ComplianceCase extends Model
     {
         return $this->hasMany(ComplianceCaseEvidenceSubmission::class)->orderBy('version');
     }
+
+    public function actionIssues(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseActionIssue::class)->orderBy('id');
+    }
 }

@@ -55,6 +55,7 @@ class GovernanceIssueLifecycle extends Model
                 ControlTestFinding::class => ['owner'],
                 PolicyExceptionMonitoringIssue::class => ['owner'],
                 ThirdPartyCollaborationEscalationIssue::class => ['owner'],
+                ComplianceCaseActionIssue::class => ['owner'],
             ]),
             'remediationTask.project', 'verifier:id,name', 'closer:id,name',
             'closureEvidence.linkedBy:id,name',

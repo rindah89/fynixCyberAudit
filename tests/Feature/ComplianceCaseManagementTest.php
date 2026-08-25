@@ -10,16 +10,20 @@ use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
 use App\Filament\Resources\ComplianceCaseResource;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Models\Audit;
 use App\Models\ComplianceCase;
+use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseEvent;
 use App\Models\ComplianceCaseEvidenceSubmission;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
 use App\Models\User;
+use App\Remediation\Remediation;
+use App\Services\GovernanceIssueLifecycleManager;
 use App\Support\CanonicalJson;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,6 +44,7 @@ class ComplianceCaseManagementTest extends TestCase
         parent::setUp();
         $this->seed(RolePermissionSeeder::class);
         Config::set('enterprise.modules.compliance_cases', true);
+        Config::set('enterprise.modules.remediation', true);
     }
 
     public function test_manager_opens_investigates_resolves_and_independently_closes_governed_case(): void
@@ -148,6 +153,128 @@ class ComplianceCaseManagementTest extends TestCase
         ];
         $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $closed->fingerprint);
         $this->assertSame($investigator->email, data_get($closed->after_snapshot, 'assigned_to.email'));
+    }
+
+    public function test_action_required_case_is_bound_to_independently_closed_remediation_evidence(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        $manager->givePermissionTo(['Manage Issue Lifecycle', 'Manage Remediation']);
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $verifier = User::factory()->create();
+        $verifier->givePermissionTo(['Verify Issue Closure', 'Read Compliance Cases']);
+        $lifecycleOutsider = User::factory()->create();
+        $lifecycleOutsider->givePermissionTo('Manage Issue Lifecycle');
+        $service = app(ComplianceCaseManager::class);
+
+        $case = $service->open($manager, [
+            'title' => 'Corrective action case', 'category' => ComplianceCaseCategory::PolicyViolation->value,
+            'priority' => ComplianceCasePriority::High->value, 'allegation' => 'A deliberate allegation requires investigation.',
+            'summary' => 'Open the governed case.',
+        ]);
+        $service->record($manager, $case, [
+            'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
+            'triage_summary' => 'The matter requires investigation.', 'summary' => 'Triage and assign.',
+        ]);
+        $service->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Investigating->value,
+            'investigation_summary' => 'The investigator is evaluating the retained facts.', 'summary' => 'Begin investigation.',
+        ]);
+        $actionEvent = $service->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::ActionRequired->value,
+            'investigation_summary' => 'The retained facts require a corrective control change.',
+            'summary' => 'Record the attributable action-required decision.',
+        ]);
+
+        $issue = ComplianceCaseActionIssue::query()->with('lifecycle.transitions')->sole();
+        $this->assertSame($actionEvent->id, $issue->compliance_case_event_id);
+        $this->assertSame($actionEvent->fingerprint, data_get($issue->source_snapshot, 'event.fingerprint'));
+        $this->assertSame('open', $issue->lifecycle->status->value);
+        $payload = $issue->only([
+            'compliance_case_id', 'compliance_case_event_id', 'owner_id', 'opened_by', 'title', 'description', 'severity',
+        ]) + ['source_snapshot' => $issue->source_snapshot, 'opened_at' => $issue->opened_at->toIso8601String()];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $issue->fingerprint);
+        try {
+            app(GovernanceIssueLifecycleManager::class)->show($issue, $lifecycleOutsider);
+            $this->fail('Expected generic lifecycle permission not to bypass compliance-case privacy.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+
+        try {
+            $service->record($manager, $case->refresh(), [
+                'status' => ComplianceCaseStatus::Resolved->value,
+                'resolution_summary' => 'Attempted resolution before independent verification.',
+                'summary' => 'This must remain blocked.',
+            ]);
+            $this->fail('Expected unresolved action remediation to block case resolution.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('status', $exception->errors());
+        }
+
+        $project = app(Remediation::class)->createProject($manager, ['name' => 'Compliance corrective action']);
+        $lifecycle = app(GovernanceIssueLifecycleManager::class);
+        $lifecycle->handoff($issue, $manager, [
+            'remediation_project_id' => $project->id, 'priority' => 'High',
+            'due_date' => now()->addWeek()->toDateString(), 'rationale' => 'Implement the required corrective control.',
+        ]);
+        $task = $issue->fresh()->remediationTask;
+        app(Remediation::class)->updateTaskStatus($manager, $task, 'Completed');
+        $lifecycle->requestVerification($issue, $manager, 'Corrective work is ready for independent verification.');
+
+        $audit = Audit::factory()->create(['manager_id' => $verifier->id]);
+        $request = DataRequest::factory()->create(['audit_id' => $audit->id, 'created_by_id' => $verifier->id, 'assigned_to_id' => $verifier->id]);
+        $response = DataRequestResponse::factory()->accepted()->create([
+            'data_request_id' => $request->id, 'requester_id' => $verifier->id, 'requestee_id' => $verifier->id,
+        ]);
+        $bytes = 'independently verified compliance corrective action';
+        $path = 'closures/compliance-case-action.txt';
+        Storage::disk('private')->put($path, $bytes);
+        $attachment = FileAttachment::factory()->create([
+            'data_request_response_id' => $response->id, 'audit_id' => $audit->id,
+            'file_name' => 'compliance-case-action.txt', 'file_path' => $path,
+            'file_size' => strlen($bytes), 'uploaded_by' => $verifier->id,
+        ]);
+        $lifecycle->close($issue, $verifier, [
+            'verification_summary' => 'The corrective control is independently verified.',
+            'evidence_attachment_ids' => [$attachment->id],
+        ]);
+        $resolved = $service->record($manager, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Resolved->value,
+            'resolution_summary' => 'The independently verified corrective action resolves the case.',
+            'summary' => 'Resolve only after governed issue closure.',
+        ]);
+
+        $this->assertSame(ComplianceCaseStatus::Resolved, $case->fresh()->status);
+        $this->assertSame('closed', $issue->fresh()->lifecycle->status->value);
+        $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $issue->fresh()->fingerprint);
+        $this->assertSame('resolved', $resolved->event_type);
+        try {
+            $lifecycle->reopen($issue, $manager, 'Attempt to reopen after case resolution.');
+            $this->fail('Expected post-resolution issue reopening to fail.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('status', $exception->errors());
+        }
+        $this->actingAs($investigator)->getJson("/api/compliance-cases/{$case->id}/action-issues")
+            ->assertOk()->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.source_snapshot.event.fingerprint', $actionEvent->fingerprint)
+            ->assertJsonPath('data.0.lifecycle.status', 'closed');
+        Livewire::actingAs($investigator);
+        Livewire::test(ActionIssuesRelationManager::class, ['ownerRecord' => $case->refresh(), 'pageClass' => ViewComplianceCase::class])
+            ->assertCanSeeTableRecords([$issue])->assertTableActionVisible('inspect', $issue);
+
+        $factoryIssue = ComplianceCaseActionIssue::factory()->create();
+        $this->assertSame('open', $factoryIssue->lifecycle->status->value);
+        $factoryPayload = $factoryIssue->only([
+            'compliance_case_id', 'compliance_case_event_id', 'owner_id', 'opened_by', 'title', 'description', 'severity',
+        ]) + ['source_snapshot' => $factoryIssue->source_snapshot, 'opened_at' => $factoryIssue->opened_at->toIso8601String()];
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryPayload)), $factoryIssue->fingerprint);
+
+        $migration = require database_path('migrations/2026_08_25_080000_create_compliance_case_action_issues.php');
+        $migration->up();
+        $migration->down();
+        $this->assertDatabaseHas('compliance_case_action_issues', ['id' => $issue->id, 'fingerprint' => $issue->fingerprint]);
     }
 
     public function test_rest_and_operator_interfaces_are_scoped_server_owned_and_paginated(): void

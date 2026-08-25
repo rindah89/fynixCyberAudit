@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ComplianceCaseResource\Pages\ListComplianceCases;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Models\ComplianceCase;
@@ -79,7 +80,7 @@ class ComplianceCaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [EventsRelationManager::class, EvidenceSubmissionsRelationManager::class];
+        return [EventsRelationManager::class, EvidenceSubmissionsRelationManager::class, ActionIssuesRelationManager::class];
     }
 
     public static function getPages(): array

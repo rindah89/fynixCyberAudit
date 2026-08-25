@@ -5,9 +5,14 @@ namespace App\ComplianceCases;
 use App\Enums\ComplianceCaseCategory;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
+use App\Enums\GovernanceIssueStatus;
 use App\Models\ComplianceCase;
+use App\Models\ComplianceCaseActionIssue;
 use App\Models\ComplianceCaseEvent;
+use App\Models\GovernanceIssueLifecycle;
 use App\Models\User;
+use App\Services\GovernanceIssueLifecycleManager;
+use App\Support\CanonicalJson;
 use App\Support\Enterprise;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -53,6 +58,12 @@ class ComplianceCaseManager
             abort_unless($isManager || $isInvestigator, 403);
             $data = Validator::make($data, self::eventRules())->validate();
             $events = ComplianceCaseEvent::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            $issues = ComplianceCaseActionIssue::query()->where('compliance_case_id', $locked->id)->orderBy('id')->lockForUpdate()->get();
+            if ($issues->isNotEmpty()) {
+                $lifecycles = GovernanceIssueLifecycle::query()->where('issue_type', ComplianceCaseActionIssue::class)
+                    ->whereIn('issue_id', $issues->pluck('id'))->orderBy('issue_id')->lockForUpdate()->get()->keyBy('issue_id');
+                $issues->each(fn (ComplianceCaseActionIssue $issue) => $issue->setRelation('lifecycle', $lifecycles->get($issue->id)));
+            }
             if ($events->count() >= 200) {
                 throw ValidationException::withMessages(['case' => 'A governed compliance case is limited to 200 events.']);
             }
@@ -90,7 +101,7 @@ class ComplianceCaseManager
                 && array_intersect(array_keys($changes), ['assigned_to', 'due_at', 'triage_summary', 'investigation_summary', 'resolution_summary']) !== []) {
                 throw ValidationException::withMessages(['status' => 'Final closure may add only the closure decision and summary.']);
             }
-            $this->assertStateRequirements($status, $prospective, $actor, $locked, $events);
+            $this->assertStateRequirements($status, $prospective, $actor, $locked, $events, $issues);
 
             if ($status === ComplianceCaseStatus::Resolved && $locked->status !== $status) {
                 $changes['resolved_at'] = now();
@@ -108,8 +119,12 @@ class ComplianceCaseManager
                 ? $before['status'] : ComplianceCaseStatus::from($before['status']);
             $eventType = $status !== $beforeStatus ? Str::snake($status->value) : 'updated';
 
-            return $this->appendEvent($locked, $actor, $before, $after, $eventType, $data['summary'], $recordedAt, $events->count() + 1)
-                ->load('actor:id,name');
+            $event = $this->appendEvent($locked, $actor, $before, $after, $eventType, $data['summary'], $recordedAt, $events->count() + 1);
+            if ($status === ComplianceCaseStatus::ActionRequired && $beforeStatus !== $status) {
+                $this->openActionIssue($locked, $event, $actor);
+            }
+
+            return $event->load('actor:id,name');
         }, 3);
     }
 
@@ -142,7 +157,7 @@ class ComplianceCaseManager
     }
 
     /** @param array<string,mixed> $prospective */
-    private function assertStateRequirements(ComplianceCaseStatus $status, array $prospective, User $actor, ComplianceCase $case, $events): void
+    private function assertStateRequirements(ComplianceCaseStatus $status, array $prospective, User $actor, ComplianceCase $case, $events, $issues): void
     {
         if ($status === ComplianceCaseStatus::Triaged && (blank($prospective['assigned_to'] ?? null) || blank($prospective['triage_summary'] ?? null))) {
             throw ValidationException::withMessages(['status' => 'Triage requires an active investigator and triage summary.']);
@@ -172,6 +187,39 @@ class ComplianceCaseManager
             abort_if($actor->id === $case->opened_by || $investigatorIds->contains($actor->id) || $decisionActors->contains($actor->id), 403,
                 'The opener and every investigation or resolution actor are excluded from final closure.');
         }
+        if ($case->status === ComplianceCaseStatus::ActionRequired && $status !== ComplianceCaseStatus::ActionRequired
+            && $issues->contains(fn (ComplianceCaseActionIssue $issue): bool => $issue->lifecycle?->status !== GovernanceIssueStatus::Closed)) {
+            throw ValidationException::withMessages(['status' => 'Every action-required issue must be independently verified and closed before the case can leave Action Required.']);
+        }
+    }
+
+    private function openActionIssue(ComplianceCase $case, ComplianceCaseEvent $event, User $actor): ComplianceCaseActionIssue
+    {
+        $sourceSnapshot = [
+            'case' => $event->after_snapshot,
+            'event' => [
+                'id' => $event->id, 'compliance_case_id' => $event->compliance_case_id, 'version' => $event->version,
+                'event_type' => $event->event_type, 'before_snapshot' => $event->before_snapshot,
+                'after_snapshot' => $event->after_snapshot, 'summary' => $event->summary,
+                'recorded_by' => $event->recorded_by, 'recorded_at' => $event->recorded_at->toIso8601String(),
+                'fingerprint' => $event->fingerprint,
+            ],
+        ];
+        $openedAt = now();
+        $payload = [
+            'compliance_case_id' => $case->id, 'compliance_case_event_id' => $event->id,
+            'owner_id' => $case->assigned_to, 'opened_by' => $actor->id,
+            'title' => "{$case->number}: action required", 'description' => $case->investigation_summary ?: $event->summary,
+            'severity' => strtolower($case->priority->value),
+            'source_snapshot' => $sourceSnapshot, 'opened_at' => $openedAt->toIso8601String(),
+        ];
+        $issue = ComplianceCaseActionIssue::query()->create($payload + [
+            'status' => GovernanceIssueStatus::Open->value,
+            'fingerprint' => hash('sha256', CanonicalJson::encode($payload)),
+        ]);
+        app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
+
+        return $issue;
     }
 
     /** @return array<string,mixed> */

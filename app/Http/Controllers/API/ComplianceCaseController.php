@@ -56,6 +56,15 @@ class ComplianceCaseController extends Controller
         return response()->json($history);
     }
 
+    public function actionIssues(ShowComplianceCaseRequest $request, ComplianceCase $complianceCase): JsonResponse
+    {
+        return response()->json($complianceCase->actionIssues()->with([
+            'owner:id,name,email', 'opener:id,name,email', 'event.actor:id,name,email',
+            'lifecycle.remediationTask', 'lifecycle.verifier:id,name,email', 'lifecycle.closer:id,name,email',
+            'lifecycle.transitions.actor:id,name,email', 'lifecycle.closureEvidence.linkedBy:id,name,email',
+        ])->paginate($request->integer('per_page', 50)));
+    }
+
     public function storeEvidence(StoreComplianceCaseEvidenceRequest $request, ComplianceCase $complianceCase, ComplianceCaseEvidenceManager $manager): JsonResponse
     {
         $submission = $manager->submit($request->user(), $complianceCase, $request->validated());

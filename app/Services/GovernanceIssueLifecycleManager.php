@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\ComplianceCaseStatus;
 use App\Enums\GovernanceIssueStatus;
 use App\Enums\GovernanceIssueType;
+use App\Models\ComplianceCase;
+use App\Models\ComplianceCaseActionIssue;
 use App\Models\GovernanceIssueLifecycle;
 use App\Models\GovernanceIssueTransition;
 use App\Models\RemediationProject;
@@ -39,6 +42,7 @@ class GovernanceIssueLifecycleManager
 
         return DB::transaction(function () use ($issue, $actor, $data): GovernanceIssueLifecycle {
             [$issue, $lifecycle] = $this->lock($issue);
+            $this->assertSourceAccess($issue, $actor, true);
             $this->assertStatus($lifecycle, GovernanceIssueStatus::Open);
             $project = RemediationProject::query()->lockForUpdate()->findOrFail($data['remediation_project_id']);
             if (! $project->isMember($actor)) {
@@ -65,6 +69,7 @@ class GovernanceIssueLifecycleManager
 
         return DB::transaction(function () use ($issue, $actor, $rationale): GovernanceIssueLifecycle {
             [$issue, $lifecycle] = $this->lock($issue);
+            $this->assertSourceAccess($issue, $actor, true);
             $this->assertStatus($lifecycle, GovernanceIssueStatus::InRemediation);
             $task = RemediationTask::query()->lockForUpdate()->findOrFail($lifecycle->remediation_task_id);
             if (! $this->taskIsComplete($task)) {
@@ -91,6 +96,7 @@ class GovernanceIssueLifecycleManager
         try {
             return DB::transaction(function () use ($issue, $actor, $data, $snapshotBatch, &$retainedCopies): GovernanceIssueLifecycle {
                 [$issue, $lifecycle] = $this->lock($issue);
+                $this->assertSourceAccess($issue, $actor, false);
                 $this->assertStatus($lifecycle, GovernanceIssueStatus::Verification);
                 $task = RemediationTask::query()->lockForUpdate()->findOrFail($lifecycle->remediation_task_id);
                 if (in_array($actor->id, array_filter([$issue->owner_id, $task->owner_id, $task->assignee_id]), true)) {
@@ -138,7 +144,14 @@ class GovernanceIssueLifecycleManager
 
         return DB::transaction(function () use ($issue, $actor, $rationale): GovernanceIssueLifecycle {
             [$issue, $lifecycle] = $this->lock($issue);
+            $this->assertSourceAccess($issue, $actor, true);
             $this->assertStatus($lifecycle, GovernanceIssueStatus::Closed);
+            if ($issue instanceof ComplianceCaseActionIssue) {
+                $case = $issue->complianceCase()->lockForUpdate()->firstOrFail();
+                if ($case->status !== ComplianceCaseStatus::ActionRequired) {
+                    throw ValidationException::withMessages(['status' => 'A compliance case action issue can be reopened only while its case remains Action Required.']);
+                }
+            }
             $task = $lifecycle->remediation_task_id ? RemediationTask::query()->lockForUpdate()->find($lifecycle->remediation_task_id) : null;
             $from = $lifecycle->status;
             $lifecycle->update([
@@ -169,9 +182,20 @@ class GovernanceIssueLifecycleManager
 
     private function assertCanView(Model $issue, User $actor): void
     {
+        $this->assertSourceAccess($issue, $actor, false);
         if ((int) $issue->owner_id !== $actor->id && ! $actor->can('Manage Issue Lifecycle') && ! $actor->can('Verify Issue Closure')) {
             abort(403, 'You cannot view this governance issue lifecycle.');
         }
+    }
+
+    private function assertSourceAccess(Model $issue, User $actor, bool $mutating): void
+    {
+        if (! $issue instanceof ComplianceCaseActionIssue) {
+            return;
+        }
+
+        $case = $issue->complianceCase()->firstOrFail();
+        abort_unless($actor->can($mutating ? 'update' : 'view', $case), 403);
     }
 
     private function assertSupported(Model $issue): void
@@ -196,6 +220,10 @@ class GovernanceIssueLifecycleManager
     private function lock(Model $issue): array
     {
         $class = $issue::class;
+        if ($issue instanceof ComplianceCaseActionIssue) {
+            $caseId = $class::query()->whereKey($issue->id)->value('compliance_case_id');
+            ComplianceCase::query()->lockForUpdate()->findOrFail($caseId);
+        }
         $lockedIssue = $class::query()->lockForUpdate()->findOrFail($issue->id);
         $lifecycle = $lockedIssue->lifecycle()->lockForUpdate()->firstOrFail();
 

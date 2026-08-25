@@ -3,6 +3,7 @@
 namespace App\Enums;
 
 use App\Models\AiGovernanceIssue;
+use App\Models\ComplianceCaseActionIssue;
 use App\Models\ControlTestFinding;
 use App\Models\PolicyExceptionMonitoringIssue;
 use App\Models\ResilienceIssue;
@@ -21,6 +22,7 @@ enum GovernanceIssueType: string implements HasLabel
     case ControlTest = 'control_test';
     case PolicyException = 'policy_exception';
     case ThirdPartyCollaboration = 'third_party_collaboration';
+    case ComplianceCaseAction = 'compliance_case_action';
 
     public function modelClass(): string
     {
@@ -32,6 +34,7 @@ enum GovernanceIssueType: string implements HasLabel
             self::ControlTest => ControlTestFinding::class,
             self::PolicyException => PolicyExceptionMonitoringIssue::class,
             self::ThirdPartyCollaboration => ThirdPartyCollaborationEscalationIssue::class,
+            self::ComplianceCaseAction => ComplianceCaseActionIssue::class,
         };
     }
 
@@ -50,6 +53,7 @@ enum GovernanceIssueType: string implements HasLabel
             self::ControlTest => __('Control test'),
             self::PolicyException => __('Policy exception monitoring'),
             self::ThirdPartyCollaboration => __('Third-party collaboration escalation'),
+            self::ComplianceCaseAction => __('Compliance case action'),
         };
     }
 
