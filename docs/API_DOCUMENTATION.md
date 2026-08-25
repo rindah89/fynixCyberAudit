@@ -858,9 +858,12 @@ The compliance-case module requires `MODULE_COMPLIANCE_CASES_ENABLED=true`. `Man
 
 Authenticated active users submit internal concerns through `POST /api/compliance-case-intakes` with `title`, `category`, `priority`, `allegation`, `source_channel`, optional `source_reference`/`reporter_message`, and optional `confidential`. The server retains the exact reporter snapshot, time, reference, and fingerprint. `GET /api/my-compliance-case-intakes` returns only the caller's safe reference/title/category/priority/channel/status/times/fingerprints and omits allegation plus internal reporter, disposition, and case snapshots. `Manage Compliance Cases` users inspect the complete paginated register through `GET /api/compliance-case-intakes`; a different manager records one terminal accepted/rejected disposition through `POST /api/compliance-case-intakes/{intake}/decision`. Acceptance creates and binds the governed case and opening event atomically. This interface does not provide anonymous/public hotline or external-email intake, emergency response, identity proofing, legal advice, or anti-retaliation administration.
 
+`GET|POST /api/compliance-case-intakes/{intake}/messages` provides bounded authenticated correspondence. The exact active reporter may append only `Reporter` messages and sees only reporter-visible history; a `Manage Compliance Cases` user may append `Reporter` or `Internal` messages and inspect complete evidence. Internal rows are filtered before reporter pagination/counting. Each intake retains at most 100 immutable messages with exact intake/current-disposition, actor, audience, version/time, and fingerprint evidence. It does not prove external delivery, reading, comprehension, response, or investigative action.
+
 - `GET|POST /api/compliance-case-intakes`
 - `GET /api/my-compliance-case-intakes`
 - `POST /api/compliance-case-intakes/{intake}/decision`
+- `GET|POST /api/compliance-case-intakes/{intake}/messages`
 - `GET|POST /api/compliance-cases`
 - `GET /api/compliance-cases/{complianceCase}`
 - `GET|POST /api/compliance-cases/{complianceCase}/events`

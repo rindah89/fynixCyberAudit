@@ -119,7 +119,7 @@ class ComplianceCaseIntakeManager
     public function reporterProjection(ComplianceCaseIntake $intake): array
     {
         return [
-            'reference' => $intake->reference, 'title' => $intake->title,
+            'id' => $intake->id, 'reference' => $intake->reference, 'title' => $intake->title,
             'category' => $intake->category, 'priority' => $intake->priority, 'source_channel' => $intake->source_channel,
             'submitted_at' => $intake->submitted_at, 'fingerprint' => $intake->fingerprint,
             'decision' => $intake->decision?->only(['decision', 'summary', 'decided_at', 'fingerprint']),

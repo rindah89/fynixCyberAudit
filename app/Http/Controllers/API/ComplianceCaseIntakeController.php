@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\API;
 
+use App\ComplianceCases\ComplianceCaseIntakeCorrespondenceManager;
 use App\ComplianceCases\ComplianceCaseIntakeManager;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DecideComplianceCaseIntakeRequest;
+use App\Http\Requests\ListComplianceCaseIntakeMessagesRequest;
 use App\Http\Requests\ListComplianceCaseIntakesRequest;
 use App\Http\Requests\ListMyComplianceCaseIntakesRequest;
+use App\Http\Requests\StoreComplianceCaseIntakeMessageRequest;
 use App\Http\Requests\StoreComplianceCaseIntakeRequest;
 use App\Models\ComplianceCaseIntake;
 use Illuminate\Http\JsonResponse;
@@ -33,5 +36,18 @@ class ComplianceCaseIntakeController extends Controller
     public function decide(DecideComplianceCaseIntakeRequest $request, ComplianceCaseIntake $intake, ComplianceCaseIntakeManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->decide($request->user(), $intake, $request->validated())], JsonResponse::HTTP_CREATED);
+    }
+
+    public function messages(ListComplianceCaseIntakeMessagesRequest $request, ComplianceCaseIntake $intake, ComplianceCaseIntakeCorrespondenceManager $manager): JsonResponse
+    {
+        return response()->json($manager->history($request->user(), $intake, $request->integer('per_page', 50)));
+    }
+
+    public function recordMessage(StoreComplianceCaseIntakeMessageRequest $request, ComplianceCaseIntake $intake, ComplianceCaseIntakeCorrespondenceManager $manager): JsonResponse
+    {
+        $message = $manager->record($request->user(), $intake, $request->validated());
+        $data = $request->user()->can('Manage Compliance Cases') ? $message : $manager->reporterProjection($message);
+
+        return response()->json(['data' => $data], JsonResponse::HTTP_CREATED);
     }
 }

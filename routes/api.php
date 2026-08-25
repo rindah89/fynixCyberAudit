@@ -94,6 +94,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/compliance-case-intakes', [ComplianceCaseIntakeController::class, 'store']);
     Route::get('/my-compliance-case-intakes', [ComplianceCaseIntakeController::class, 'mine']);
     Route::post('/compliance-case-intakes/{intake}/decision', [ComplianceCaseIntakeController::class, 'decide']);
+    Route::get('/compliance-case-intakes/{intake}/messages', [ComplianceCaseIntakeController::class, 'messages']);
+    Route::post('/compliance-case-intakes/{intake}/messages', [ComplianceCaseIntakeController::class, 'recordMessage']);
     Route::get('/compliance-cases', [ComplianceCaseController::class, 'index']);
     Route::post('/compliance-cases', [ComplianceCaseController::class, 'store']);
     Route::get('/compliance-cases/{complianceCase}', [ComplianceCaseController::class, 'show']);

@@ -8,6 +8,7 @@ use Database\Factories\ComplianceCaseIntakeFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ComplianceCaseIntake extends Model
@@ -37,5 +38,10 @@ class ComplianceCaseIntake extends Model
     public function decision(): HasOne
     {
         return $this->hasOne(ComplianceCaseIntakeDisposition::class);
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseIntakeMessage::class)->orderBy('version');
     }
 }

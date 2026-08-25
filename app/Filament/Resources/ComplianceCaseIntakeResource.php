@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ComplianceCaseIntakeResource\Pages\ListComplianceCaseIntakes;
 use App\Filament\Resources\ComplianceCaseIntakeResource\Pages\ViewComplianceCaseIntake;
+use App\Filament\Resources\ComplianceCaseIntakeResource\RelationManagers\MessagesRelationManager;
 use App\Models\ComplianceCaseIntake;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -85,5 +86,10 @@ class ComplianceCaseIntakeResource extends Resource
     public static function getPages(): array
     {
         return ['index' => ListComplianceCaseIntakes::route('/'), 'view' => ViewComplianceCaseIntake::route('/{record}')];
+    }
+
+    public static function getRelations(): array
+    {
+        return [MessagesRelationManager::class];
     }
 }
