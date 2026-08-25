@@ -6,10 +6,13 @@ use App\Models\ThirdPartyCollaborationClosureAcknowledgement;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementCollaborationEvent;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
+use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorUser;
+use App\Notifications\ThirdPartyCollaborationClosureAcknowledgedNotification;
 use App\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ThirdPartyEngagementCollaborationClosureAcknowledgementManager
@@ -55,9 +58,48 @@ class ThirdPartyEngagementCollaborationClosureAcknowledgementManager
                 'acknowledged_at' => $at->toIso8601String(),
             ];
 
-            return $closure->acknowledgement()->create($payload + [
+            $acknowledgement = $closure->acknowledgement()->create($payload + [
                 'fingerprint' => hash('sha256', CanonicalJson::encode($payload)),
             ]);
+            $rolesByUser = [];
+            foreach (['business_owner' => $engagement->business_owner_id, 'vendor_relationship_manager' => $vendor->vendor_manager_id] as $role => $userId) {
+                $rolesByUser[$userId][] = $role;
+            }
+            $internalRecipients = User::query()->whereNull('deleted_at')->whereKey(array_keys($rolesByUser))->orderBy('id')->lockForUpdate()->get();
+            if ($internalRecipients->isEmpty()) {
+                throw ValidationException::withMessages(['request' => 'Closure acknowledgement requires a current active accountable internal recipient.']);
+            }
+            $acknowledgementSnapshot = (clone $acknowledgement)
+                ->makeVisible(['id', 'third_party_collaboration_request_closure_id', 'third_party_collaboration_closure_delivery_id', 'third_party_engagement_collaboration_request_id', 'vendor_user_id', 'recipient_snapshot', 'closure_snapshot', 'delivery_snapshot'])
+                ->attributesToArray();
+            foreach ($internalRecipients as $internalRecipient) {
+                $notificationId = Str::uuid()->toString();
+                $attemptedAt = now()->startOfSecond();
+                $internalRecipient->notifyNow(new ThirdPartyCollaborationClosureAcknowledgedNotification($notificationId, $engagement->code, $locked->subject, $locked->id));
+                if (! DB::table('notifications')->where('id', $notificationId)
+                    ->where('notifiable_type', User::class)->where('notifiable_id', $internalRecipient->id)->exists()) {
+                    throw new \LogicException('The collaboration closure acknowledgement notification was not accepted by the database delivery channel.');
+                }
+                $deliveredAt = now()->startOfSecond();
+                $deliveryPayload = [
+                    'third_party_collaboration_closure_acknowledgement_id' => $acknowledgement->id,
+                    'third_party_collaboration_request_closure_id' => $closure->id,
+                    'third_party_engagement_collaboration_request_id' => $locked->id,
+                    'user_id' => $internalRecipient->id,
+                    'accountability_roles' => $rolesByUser[$internalRecipient->id],
+                    'recipient_snapshot' => $internalRecipient->only(['id', 'name', 'email']) + ['deleted_at' => null],
+                    'acknowledgement_snapshot' => $acknowledgementSnapshot,
+                    'channel' => 'database',
+                    'notification_id' => $notificationId,
+                    'attempted_at' => $attemptedAt->toIso8601String(),
+                    'delivered_at' => $deliveredAt->toIso8601String(),
+                ];
+                $acknowledgement->internalDeliveries()->create($deliveryPayload + [
+                    'fingerprint' => hash('sha256', CanonicalJson::encode($deliveryPayload)),
+                ]);
+            }
+
+            return $acknowledgement->load('internalDeliveries.recipient:id,name,email');
         }, 3);
     }
 }
