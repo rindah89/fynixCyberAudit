@@ -176,6 +176,16 @@ class ThirdPartyEngagementCollaborationManager
                             $snapshot['delivery_snapshot']['closure_snapshot']['accepted_event_snapshot']['response']['evidence_manifest'] = collect(data_get($snapshot, 'delivery_snapshot.closure_snapshot.accepted_event_snapshot.response.evidence_manifest', []))
                                 ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
                             $copy->acknowledgement_snapshot = $snapshot;
+                            if ($internalDelivery->relationLoaded('receipt') && $internalDelivery->receipt !== null) {
+                                $receipt = clone $internalDelivery->receipt;
+                                $receiptDelivery = $receipt->delivery_snapshot;
+                                $receiptDelivery['acknowledgement_snapshot']['closure_snapshot']['accepted_event_snapshot']['response']['evidence_manifest'] = collect(data_get($receiptDelivery, 'acknowledgement_snapshot.closure_snapshot.accepted_event_snapshot.response.evidence_manifest', []))
+                                    ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
+                                $receiptDelivery['acknowledgement_snapshot']['delivery_snapshot']['closure_snapshot']['accepted_event_snapshot']['response']['evidence_manifest'] = collect(data_get($receiptDelivery, 'acknowledgement_snapshot.delivery_snapshot.closure_snapshot.accepted_event_snapshot.response.evidence_manifest', []))
+                                    ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
+                                $receipt->delivery_snapshot = $receiptDelivery;
+                                $copy->setRelation('receipt', $receipt);
+                            }
 
                             return $copy;
                         }));

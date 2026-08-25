@@ -208,6 +208,11 @@
                             <div>Internal acknowledgement notification: {{ $internalDelivery->recipient?->name ?? data_get($internalDelivery->recipient_snapshot, 'name') }} · {{ implode(', ', $internalDelivery->accountability_roles) }} · {{ $internalDelivery->channel }} · {{ $internalDelivery->notification_id }} · delivered {{ $internalDelivery->delivered_at?->toDayDateTimeString() }}</div>
                             <details class="mt-1"><summary class="font-medium">Retained internal delivery evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['roles' => $internalDelivery->accountability_roles, 'recipient' => $internalDelivery->recipient_snapshot, 'acknowledgement' => $internalDelivery->acknowledgement_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
                             <div class="break-all font-mono text-xs">Internal delivery fingerprint: {{ $internalDelivery->fingerprint }}</div>
+                            @if ($internalDelivery->receipt)
+                                <div>Internal recipient acknowledged · {{ $internalDelivery->receipt->recipient?->name ?? data_get($internalDelivery->receipt->recipient_snapshot, 'name') }} · {{ $internalDelivery->receipt->acknowledged_at?->toDayDateTimeString() }}</div>
+                                <details class="mt-1"><summary class="font-medium">Retained internal receipt evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipient' => $internalDelivery->receipt->recipient_snapshot, 'delivery' => $internalDelivery->receipt->delivery_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                                <div class="break-all font-mono text-xs">Internal receipt fingerprint: {{ $internalDelivery->receipt->fingerprint }}</div>
+                            @endif
                         @endforeach
                     @endif
                     <div class="whitespace-pre-wrap">{{ $request->closure->summary }}</div>

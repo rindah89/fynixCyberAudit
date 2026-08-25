@@ -6,6 +6,7 @@ use Database\Factories\ThirdPartyCollaborationClosureAcknowledgementDeliveryFact
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 class ThirdPartyCollaborationClosureAcknowledgementDelivery extends Model
@@ -45,5 +46,10 @@ class ThirdPartyCollaborationClosureAcknowledgementDelivery extends Model
     public function recipient(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id')->withTrashed();
+    }
+
+    public function receipt(): HasOne
+    {
+        return $this->hasOne(ThirdPartyCollaborationClosureAcknowledgementReceipt::class, 'third_party_collaboration_closure_acknowledgement_delivery_id');
     }
 }

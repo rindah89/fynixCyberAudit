@@ -16,6 +16,7 @@ use App\Enums\ThirdPartyOffboardingDecision;
 use App\Enums\ThirdPartyOnboardingCategory;
 use App\Enums\ThirdPartyOnboardingDecision;
 use App\Models\Survey;
+use App\Models\ThirdPartyCollaborationClosureAcknowledgementDelivery;
 use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
@@ -28,6 +29,7 @@ use App\Models\VendorDocument;
 use App\Models\VendorUser;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureAcknowledgementReceiptManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationIssueManager;
@@ -58,7 +60,7 @@ class EngagementsRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.reassignments.actor:id,name,email', 'collaborationRequests.acknowledgements.recipient:id,vendor_id,name,email', 'collaborationRequests.cancellation.actor:id,name,email', 'collaborationRequests.closure.actor:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent', 'collaborationRequests.extensions.decision.decider:id,name,email', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor:id,name,email', 'collaborationRequests.escalation.latestAction', 'collaborationRequests.escalation.issue.owner:id,name', 'collaborationRequests.escalation.issue.lifecycle'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
+        return $table->modifyQueryUsing(fn ($query) => $query->with(['businessOwner:id,name', 'proposer:id,name', 'approver:id,name', 'events.actor:id,name', 'contractRiskReviews.reviewer:id,name', 'dueDiligenceReviews.reviewer:id,name', 'onboardingRequirements.owner:id,name', 'onboardingRequirements.definer:id,name', 'onboardingRequirements.completions.completer:id,name', 'onboardingReadinessReviews.reviewer:id,name', 'offboardingRequirements.owner:id,name', 'offboardingRequirements.definer:id,name', 'offboardingRequirements.completions.completer:id,name', 'offboardingReadinessReviews.reviewer:id,name', 'monitoringIndicators.owner:id,name', 'monitoringIndicators.definer:id,name', 'monitoringIndicators.latestObservation.observer:id,name', 'monitoringIndicators.latestObservations.observer:id,name', 'collaborationRequests.recipient:id,vendor_id,name,email', 'collaborationRequests.opener:id,name,email', 'collaborationRequests.reassignments.actor:id,name,email', 'collaborationRequests.acknowledgements.recipient:id,vendor_id,name,email', 'collaborationRequests.cancellation.actor:id,name,email', 'collaborationRequests.closure.actor:id,name,email', 'collaborationRequests.closure.acknowledgement.internalDeliveries.receipt.recipient:id,name,email', 'collaborationRequests.events.evidence.document', 'collaborationRequests.latestEvent', 'collaborationRequests.extensions.decision.decider:id,name,email', 'collaborationRequests.reminders', 'collaborationRequests.escalation.actions.actor:id,name,email', 'collaborationRequests.escalation.latestAction', 'collaborationRequests.escalation.issue.owner:id,name', 'collaborationRequests.escalation.issue.lifecycle'])->withCount(['contractRiskReviews', 'dueDiligenceReviews', 'onboardingRequirements', 'onboardingReadinessReviews', 'offboardingRequirements', 'offboardingReadinessReviews', 'collaborationRequests']))
             ->defaultSort('id', 'desc')
             ->columns([
                 TextColumn::make('code')->searchable(),
@@ -96,7 +98,7 @@ class EngagementsRelationManager extends RelationManager
                         $manager = app(ThirdPartyEngagementDueDiligenceManager::class);
                         $visible = clone $record;
                         $visible->setRelation('dueDiligenceReviews', $manager->visibleReviews($record->dueDiligenceReviews, auth()->user()));
-                        $record->collaborationRequests->loadMissing(['closure.delivery.recipient:id,vendor_id,name,email', 'closure.acknowledgement.recipient:id,vendor_id,name,email', 'closure.acknowledgement.internalDeliveries.recipient:id,name,email']);
+                        $record->collaborationRequests->loadMissing(['closure.delivery.recipient:id,vendor_id,name,email', 'closure.acknowledgement.recipient:id,vendor_id,name,email', 'closure.acknowledgement.internalDeliveries.recipient:id,name,email', 'closure.acknowledgement.internalDeliveries.receipt.recipient:id,name,email']);
                         $visible->setRelation('collaborationRequests', app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($record->collaborationRequests, auth()->user()));
 
                         return view('filament.third-party-engagement', ['engagement' => $visible]);
@@ -172,6 +174,19 @@ class EngagementsRelationManager extends RelationManager
                     ])->requiresConfirmation()->action(function (array $data): void {
                         $request = ThirdPartyEngagementCollaborationRequest::query()->findOrFail($data['collaboration_request_id']);
                         app(ThirdPartyEngagementCollaborationClosureManager::class)->close(auth()->user(), $request, ['summary' => $data['summary']]);
+                    }),
+                Action::make('acknowledge_provider_closure_acknowledgement')->label('Acknowledge provider closure response')->icon('heroicon-o-check-badge')
+                    ->visible(fn (ThirdPartyEngagement $record): bool => $record->collaborationRequests
+                        ->flatMap(fn (ThirdPartyEngagementCollaborationRequest $request) => $request->closure?->acknowledgement?->internalDeliveries ?? collect())
+                        ->contains(fn (ThirdPartyCollaborationClosureAcknowledgementDelivery $delivery): bool => $delivery->user_id === auth()->id() && $delivery->receipt === null))
+                    ->schema(fn (ThirdPartyEngagement $record): array => [
+                        Select::make('delivery_id')->label('Delivered provider acknowledgement')->options($record->collaborationRequests
+                            ->flatMap(fn (ThirdPartyEngagementCollaborationRequest $request) => $request->closure?->acknowledgement?->internalDeliveries ?? collect())
+                            ->filter(fn (ThirdPartyCollaborationClosureAcknowledgementDelivery $delivery): bool => $delivery->user_id === auth()->id() && $delivery->receipt === null)
+                            ->mapWithKeys(fn (ThirdPartyCollaborationClosureAcknowledgementDelivery $delivery): array => [$delivery->id => "Request #{$delivery->third_party_engagement_collaboration_request_id} · delivered {$delivery->delivered_at?->toDayDateTimeString()}"]))->required(),
+                    ])->requiresConfirmation()->action(function (array $data): void {
+                        $delivery = ThirdPartyCollaborationClosureAcknowledgementDelivery::query()->findOrFail($data['delivery_id']);
+                        app(ThirdPartyEngagementCollaborationClosureAcknowledgementReceiptManager::class)->acknowledge(auth()->user(), $delivery);
                     }),
                 Action::make('decide_collaboration_extension')->label('Review due-date extension')->icon('heroicon-o-calendar-days')
                     ->visible(fn (ThirdPartyEngagement $record): bool => (auth()->user()?->can('Manage Third Party Risk') ?? false)

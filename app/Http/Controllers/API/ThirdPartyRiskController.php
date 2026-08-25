@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API;
 use App\Enums\ThirdPartyRiskDecisionType;
 use App\Enums\ThirdPartyRiskReviewOutcome;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AcknowledgeThirdPartyCollaborationClosureDeliveryRequest;
 use App\Http\Requests\AcknowledgeThirdPartyCollaborationEscalationRequest;
 use App\Http\Requests\CancelThirdPartyCollaborationRequest;
 use App\Http\Requests\CloseThirdPartyCollaborationRequest;
@@ -38,6 +39,7 @@ use App\Http\Requests\StoreVendorRiskDecisionRequest;
 use App\Http\Requests\StoreVendorRiskReviewRequest;
 use App\Http\Requests\TransitionThirdPartyEngagementRequest;
 use App\Models\Risk;
+use App\Models\ThirdPartyCollaborationClosureAcknowledgementDelivery;
 use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyEngagement;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
@@ -49,6 +51,7 @@ use App\Models\Vendor;
 use App\Services\FourthPartyDependencyManager;
 use App\ThirdPartyRisk\ThirdPartyContractRiskManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureAcknowledgementReceiptManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationIssueManager;
@@ -215,6 +218,13 @@ class ThirdPartyRiskController extends Controller
         return response()->json(['data' => $manager->close($request->user(), $collaborationRequest, $request->validated())], JsonResponse::HTTP_CREATED);
     }
 
+    public function acknowledgeCollaborationClosureDelivery(AcknowledgeThirdPartyCollaborationClosureDeliveryRequest $request, ThirdPartyCollaborationClosureAcknowledgementDelivery $delivery, ThirdPartyEngagementCollaborationClosureAcknowledgementReceiptManager $manager): JsonResponse
+    {
+        $receipt = $manager->acknowledge($request->user(), $delivery);
+
+        return response()->json(['data' => $receipt->only(['id', 'acknowledged_at', 'fingerprint'])], JsonResponse::HTTP_CREATED);
+    }
+
     public function decideCollaborationExtension(DecideThirdPartyCollaborationExtensionRequest $request, ThirdPartyCollaborationExtension $extension, ThirdPartyEngagementCollaborationExtensionManager $manager): JsonResponse
     {
         return response()->json(['data' => $manager->decide($request->user(), $extension, $request->validated())], JsonResponse::HTTP_CREATED);
@@ -222,7 +232,7 @@ class ThirdPartyRiskController extends Controller
 
     public function collaborationRequests(ListThirdPartyCollaborationRequestsRequest $request, ThirdPartyEngagement $engagement): JsonResponse
     {
-        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'reassignments.actor:id,name,email', 'acknowledgements.recipient:id,vendor_id,name,email', 'cancellation.actor:id,name,email', 'closure.actor:id,name,email', 'closure.delivery.recipient:id,vendor_id,name,email', 'closure.acknowledgement.recipient:id,vendor_id,name,email', 'closure.acknowledgement.internalDeliveries.recipient:id,name,email', 'events.evidence.document', 'extensions.decision.decider:id,name,email', 'reminders', 'escalation.actions.actor:id,name,email', 'escalation.issue.owner:id,name', 'escalation.issue.lifecycle'])->latest('version')->paginate($request->integer('per_page', 50));
+        $history = $engagement->collaborationRequests()->with(['recipient:id,vendor_id,name,email', 'opener:id,name,email', 'reassignments.actor:id,name,email', 'acknowledgements.recipient:id,vendor_id,name,email', 'cancellation.actor:id,name,email', 'closure.actor:id,name,email', 'closure.delivery.recipient:id,vendor_id,name,email', 'closure.acknowledgement.recipient:id,vendor_id,name,email', 'closure.acknowledgement.internalDeliveries.recipient:id,name,email', 'closure.acknowledgement.internalDeliveries.receipt.recipient:id,name,email', 'events.evidence.document', 'extensions.decision.decider:id,name,email', 'reminders', 'escalation.actions.actor:id,name,email', 'escalation.issue.owner:id,name', 'escalation.issue.lifecycle'])->latest('version')->paginate($request->integer('per_page', 50));
         $history->setCollection(app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($history->getCollection(), $request->user()));
 
         return response()->json($history);
