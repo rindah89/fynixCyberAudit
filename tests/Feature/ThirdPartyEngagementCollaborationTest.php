@@ -11,6 +11,7 @@ use App\Models\ThirdPartyCollaborationEscalationIssue;
 use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyCollaborationExtensionDecision;
 use App\Models\ThirdPartyCollaborationRecipientReassignment;
+use App\Models\ThirdPartyCollaborationRequestAcknowledgement;
 use App\Models\ThirdPartyCollaborationRequestCancellation;
 use App\Models\ThirdPartyEngagementCollaborationEscalation;
 use App\Models\ThirdPartyEngagementCollaborationEscalationAction;
@@ -21,6 +22,7 @@ use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationAcknowledgementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationEscalationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
@@ -904,6 +906,12 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             $this->assertArrayHasKey('request', $exception->errors());
         }
         try {
+            app(ThirdPartyEngagementCollaborationAcknowledgementManager::class)->acknowledge($recipient, $request);
+            $this->fail('A cancelled request must not accept a later receipt acknowledgement.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        try {
             app(ThirdPartyEngagementCollaborationCancellationManager::class)->cancel($manager, $request, ['reason' => 'Duplicate cancellation.']);
             $this->fail('A collaboration request can be cancelled only once.');
         } catch (ValidationException $exception) {
@@ -936,5 +944,107 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $this->assertDatabaseHas('third_party_collaboration_request_cancellations', ['id' => $record->id]);
         $this->assertDatabaseHas('third_party_collaboration_request_cancellations', ['id' => $factory->id]);
         Carbon::setTestNow();
+    }
+
+    public function test_exact_current_recipient_acknowledges_each_assignment_context_once(): void
+    {
+        Carbon::setTestNow('2026-08-25 11:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo(['Manage Third Party Risk', 'Read Vendors']));
+        $original = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $replacement = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($manager, $engagement, [
+            'category' => 'assurance', 'subject' => 'Acknowledge current request', 'request_text' => 'Confirm that this request reached the assigned portal account.',
+            'recipient_vendor_user_id' => $original->id, 'due_at' => '2026-09-05',
+        ]);
+        $acknowledgements = app(ThirdPartyEngagementCollaborationAcknowledgementManager::class);
+        try {
+            $acknowledgements->acknowledge(VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]), $request);
+            $this->fail('Only the exact current recipient may acknowledge the request.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $first = $acknowledgements->acknowledge($original, $request);
+        $this->assertSame($request->fingerprint, $first->recipient_context['fingerprint']);
+        try {
+            $acknowledgements->acknowledge($original, $request);
+            $this->fail('A recipient context can be acknowledged only once.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+
+        $reassignment = app(ThirdPartyEngagementCollaborationRecipientManager::class)->reassign($manager, $request, [
+            'recipient_vendor_user_id' => $replacement->id, 'reason' => 'The replacement now owns the response.',
+        ]);
+        try {
+            $acknowledgements->acknowledge($original, $request);
+            $this->fail('The former recipient must lose acknowledgement authority.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        Carbon::setTestNow('2026-08-25 12:00:00');
+        $second = $acknowledgements->acknowledge($replacement, $request);
+        $this->assertSame($reassignment->fingerprint, $second->recipient_context['fingerprint']);
+        $this->assertDatabaseCount('third_party_collaboration_request_acknowledgements', 2);
+
+        Filament::setCurrentPanel(Filament::getPanel('vendor'));
+        $this->actingAs($replacement, 'vendor');
+        Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
+            ->assertSee('Receipt acknowledgement history')
+            ->assertSee($first->fingerprint)
+            ->assertSee($second->fingerprint);
+        app(ThirdPartyEngagementCollaborationManager::class)->respond($replacement, $request, ['response_text' => 'The request is now answered.']);
+        try {
+            $acknowledgements->acknowledge($replacement, $request);
+            $this->fail('A responded request must not accept a later receipt acknowledgement.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        $payload = $second->only(['third_party_engagement_collaboration_request_id', 'latest_event_id', 'recipient_context_fingerprint', 'request_snapshot', 'latest_event_snapshot', 'recipient_context', 'due_context', 'vendor_user_id', 'recipient_snapshot']);
+        $payload['acknowledged_at'] = $second->acknowledged_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $second->fingerprint);
+        $this->assertThrows(fn () => $second->update(['recipient_snapshot' => []]), \LogicException::class);
+        Sanctum::actingAs($manager);
+        $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
+            ->assertOk()->assertJsonCount(2, 'data.0.acknowledgements')
+            ->assertJsonPath('data.0.acknowledgements.1.recipient_context_fingerprint', $reassignment->fingerprint);
+        $factory = ThirdPartyCollaborationRequestAcknowledgement::factory()->create();
+        $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'latest_event_id', 'recipient_context_fingerprint', 'request_snapshot', 'latest_event_snapshot', 'recipient_context', 'due_context', 'vendor_user_id', 'recipient_snapshot']);
+        $factoryPayload['acknowledged_at'] = $factory->acknowledged_at->toIso8601String();
+        $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
+        $migration = require database_path('migrations/2026_08_24_900000_create_third_party_collaboration_request_acknowledgements.php');
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_request_acknowledgements', ['id' => $first->id]);
+        $this->assertDatabaseHas('third_party_collaboration_request_acknowledgements', ['id' => $factory->id]);
+        Carbon::setTestNow();
+    }
+
+    public function test_recipient_acknowledgement_context_bound_is_exact(): void
+    {
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $manager = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $first = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $second = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $request = app(ThirdPartyEngagementCollaborationManager::class)->open($manager, $engagement, [
+            'category' => 'assurance', 'subject' => 'Bounded receipt contexts', 'request_text' => 'Acknowledge every governed recipient context.',
+            'recipient_vendor_user_id' => $first->id, 'due_at' => today()->addDays(14)->toDateString(),
+        ]);
+        $acknowledgements = app(ThirdPartyEngagementCollaborationAcknowledgementManager::class);
+        $recipients = app(ThirdPartyEngagementCollaborationRecipientManager::class);
+        $acknowledgements->acknowledge($first, $request);
+        for ($version = 1; $version <= 20; $version++) {
+            $recipient = $version % 2 === 1 ? $second : $first;
+            $recipients->reassign($manager, $request, ['recipient_vendor_user_id' => $recipient->id, 'reason' => "Governed assignment {$version}."]);
+            $acknowledgements->acknowledge($recipient, $request);
+        }
+        $this->assertDatabaseCount('third_party_collaboration_recipient_reassignments', 20);
+        $this->assertDatabaseCount('third_party_collaboration_request_acknowledgements', 21);
+        try {
+            $recipients->reassign($manager, $request, ['recipient_vendor_user_id' => $second->id, 'reason' => 'A 22nd acknowledgement context.']);
+            $this->fail('The 22nd recipient acknowledgement context must be unreachable.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('request', $exception->errors());
+        }
+        $this->assertDatabaseCount('third_party_collaboration_request_acknowledgements', 21);
     }
 }

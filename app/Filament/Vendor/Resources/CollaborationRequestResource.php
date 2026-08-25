@@ -12,6 +12,7 @@ use App\Models\ThirdPartyEngagementCollaborationReminder;
 use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
+use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationAcknowledgementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationExtensionManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationManager;
 use Filament\Actions\Action;
@@ -57,6 +58,7 @@ class CollaborationRequestResource extends Resource
                         ->whereNull('deleted_at'))
                     ->with('document'),
                 'latestEvent',
+                'acknowledgements:id,third_party_engagement_collaboration_request_id,recipient_context_fingerprint,vendor_user_id,recipient_snapshot,acknowledged_at,fingerprint',
                 'cancellation:id,third_party_engagement_collaboration_request_id,reason,cancelled_at,fingerprint',
                 'reassignments' => fn ($query) => $query->select(['id', 'third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'reason', 'reassigned_at', 'fingerprint']),
                 'extensions.decision' => fn ($query) => $query->select(['id', 'third_party_collaboration_extension_id', 'decision', 'summary', 'decided_at', 'fingerprint']),
@@ -83,6 +85,12 @@ class CollaborationRequestResource extends Resource
             TextColumn::make('due_at')->date()->sortable(),
         ])->recordActions([
             ViewAction::make(),
+            Action::make('acknowledge_receipt')->label('Acknowledge receipt')->icon('heroicon-o-check-circle')->color('info')
+                ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => ! $record->isCancelled()
+                    && in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
+                    && in_array($record->latestStatus(), [ThirdPartyCollaborationStatus::Requested, ThirdPartyCollaborationStatus::FollowUp], true)
+                    && ! $record->acknowledgements->contains(fn ($acknowledgement): bool => $acknowledgement->recipient_context_fingerprint === $record->currentRecipientContext()['fingerprint']))
+                ->requiresConfirmation()->action(fn (ThirdPartyEngagementCollaborationRequest $record) => app(ThirdPartyEngagementCollaborationAcknowledgementManager::class)->acknowledge(self::vendorActor(), $record)),
             Action::make('respond')->label('Respond')->icon('heroicon-o-paper-airplane')
                 ->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => in_array($record->engagementStatus(), [ThirdPartyEngagementStatus::DueDiligence, ThirdPartyEngagementStatus::Approved, ThirdPartyEngagementStatus::Active, ThirdPartyEngagementStatus::RenewalReview], true)
                     && ! $record->isCancelled()
@@ -134,6 +142,12 @@ class CollaborationRequestResource extends Resource
                     TextEntry::make('version'), TextEntry::make('from_recipient_snapshot.name')->label('From'), TextEntry::make('to_recipient_snapshot.name')->label('To'),
                     TextEntry::make('reason')->columnSpanFull(), TextEntry::make('reassigned_at')->dateTime(), TextEntry::make('fingerprint')->columnSpanFull(),
                 ])->columns(3),
+            ]),
+            Section::make('Receipt acknowledgement history')->schema([
+                RepeatableEntry::make('acknowledgements')->hiddenLabel()->schema([
+                    TextEntry::make('recipient_snapshot.name')->label('Recipient'), TextEntry::make('acknowledged_at')->dateTime(),
+                    TextEntry::make('fingerprint')->columnSpanFull(),
+                ])->columns(2),
             ]),
             Section::make('Cancellation')->schema([
                 TextEntry::make('cancellation.reason')->label('Reason')->columnSpanFull(),

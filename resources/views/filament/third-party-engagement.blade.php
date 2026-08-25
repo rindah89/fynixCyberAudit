@@ -174,6 +174,13 @@
                     <div class="break-all font-mono text-xs">{{ $reassignment->fingerprint }}</div>
                 </div>
             @endforeach
+            @foreach ($request->acknowledgements->sortBy('acknowledged_at') as $acknowledgement)
+                <div class="mt-2 rounded-lg border p-2">
+                    <div class="font-medium">Provider receipt acknowledged · {{ data_get($acknowledgement->recipient_snapshot, 'name') }} · {{ $acknowledgement->acknowledged_at?->toDayDateTimeString() }}</div>
+                    <details class="mt-1"><summary class="font-medium">Retained request, event, recipient, and due context</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['request' => $acknowledgement->request_snapshot, 'latest_event' => $acknowledgement->latest_event_snapshot, 'recipient' => $acknowledgement->recipient_context, 'due' => $acknowledgement->due_context], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                    <div class="break-all font-mono text-xs">{{ $acknowledgement->fingerprint }}</div>
+                </div>
+            @endforeach
             @if ($request->cancellation)
                 <div class="mt-2 rounded-lg border p-2">
                     <div class="font-medium">Cancelled · {{ $request->cancellation->cancelled_at?->toDayDateTimeString() }} · {{ $request->cancellation->actor?->name }}</div>

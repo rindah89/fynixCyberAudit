@@ -58,6 +58,11 @@ class ThirdPartyEngagementCollaborationRequest extends Model
         return $this->hasMany(ThirdPartyEngagementCollaborationReminder::class)->orderBy('delivered_at');
     }
 
+    public function acknowledgements(): HasMany
+    {
+        return $this->hasMany(ThirdPartyCollaborationRequestAcknowledgement::class, 'third_party_engagement_collaboration_request_id')->orderBy('acknowledged_at');
+    }
+
     public function extensions(): HasMany
     {
         return $this->hasMany(ThirdPartyCollaborationExtension::class, 'third_party_engagement_collaboration_request_id')->orderBy('version');
