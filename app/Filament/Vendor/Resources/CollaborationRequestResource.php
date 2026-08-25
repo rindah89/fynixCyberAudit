@@ -60,7 +60,7 @@ class CollaborationRequestResource extends Resource
                 'latestEvent',
                 'acknowledgements:id,third_party_engagement_collaboration_request_id,recipient_context_fingerprint,vendor_user_id,recipient_snapshot,acknowledged_at,fingerprint',
                 'cancellation:id,third_party_engagement_collaboration_request_id,reason,cancelled_at,fingerprint',
-                'closure:id,third_party_engagement_collaboration_request_id,summary,closed_at,fingerprint',
+                'closure:id,third_party_engagement_collaboration_request_id,response_recorded_at,timeliness_status,days_late,calendar_timezone,timeliness_fingerprint,fingerprint_version,summary,closed_at,fingerprint',
                 'reassignments' => fn ($query) => $query->select(['id', 'third_party_engagement_collaboration_request_id', 'version', 'from_vendor_user_id', 'to_vendor_user_id', 'from_recipient_snapshot', 'to_recipient_snapshot', 'prior_recipient_context', 'reason', 'reassigned_at', 'fingerprint']),
                 'extensions.decision' => fn ($query) => $query->select(['id', 'third_party_collaboration_extension_id', 'decision', 'summary', 'decided_at', 'fingerprint']),
                 'reminders',
@@ -157,9 +157,15 @@ class CollaborationRequestResource extends Resource
             ])->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->isCancelled()),
             Section::make('Staff closure')->schema([
                 TextEntry::make('closure.summary')->label('Summary')->columnSpanFull(),
+                TextEntry::make('closure.timeliness_status')->label('Response timeliness')->badge(),
+                TextEntry::make('closure.days_late')->label('Calendar days late')->numeric(),
+                TextEntry::make('closure.calendar_timezone')->label('Governing calendar'),
+                TextEntry::make('closure.response_recorded_at')->label('Response recorded at')->dateTime(),
+                TextEntry::make('closure.timeliness_fingerprint')->label('Timeliness fingerprint')->columnSpanFull(),
+                TextEntry::make('closure.fingerprint_version')->label('Closure fingerprint version'),
                 TextEntry::make('closure.closed_at')->label('Closed at')->dateTime(),
                 TextEntry::make('closure.fingerprint')->label('Fingerprint')->columnSpanFull(),
-            ])->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->isClosed()),
+            ])->columns(2)->visible(fn (ThirdPartyEngagementCollaborationRequest $record): bool => $record->isClosed()),
             Section::make('Due-date extension history')->schema([
                 TextEntry::make('effective_due_at')->label('Current effective due date')->date(),
                 RepeatableEntry::make('extensions')->hiddenLabel()->schema([

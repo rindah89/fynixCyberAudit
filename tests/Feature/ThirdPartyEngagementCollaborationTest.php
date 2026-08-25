@@ -1111,9 +1111,18 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             'summary' => 'A separate manager administratively closes the accepted in-product request.',
         ])->assertCreated()->assertJsonPath('data.accepted_event_id', $accepted->id)->json('data.id');
         $closure = ThirdPartyCollaborationRequestClosure::query()->findOrFail($closureId);
-        $payload = $closure->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
+        $payload = $closure->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot']);
+        $payload['response_recorded_at'] = $closure->response_recorded_at->toIso8601String();
+        $payload['timeliness_status'] = $closure->timeliness_status->value;
+        $payload['days_late'] = $closure->days_late;
+        $payload['calendar_timezone'] = $closure->calendar_timezone;
+        $payload['timeliness_fingerprint'] = $closure->timeliness_fingerprint;
+        $payload['fingerprint_version'] = $closure->fingerprint_version;
+        $payload += $closure->only(['summary', 'closed_by', 'actor_snapshot']);
         $payload['closed_at'] = $closure->closed_at->toIso8601String();
         $this->assertSame(hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $closure->fingerprint);
+        $this->assertSame('on_time', $closure->timeliness_status->value);
+        $this->assertSame(0, $closure->days_late);
         $this->assertCount(1, $closure->accepted_event_snapshot['response']['evidence_manifest']);
         $this->assertSame('closure.txt', $closure->accepted_event_snapshot['response']['evidence_manifest'][0]['file_name_snapshot']);
         $this->assertSame($accepted->fingerprint, $closure->accepted_event_snapshot['acceptance']['fingerprint']);
@@ -1121,7 +1130,25 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
             ->assertOk()->assertJsonPath('data.0.closure.id', $closure->id)
             ->assertJsonPath('data.0.closure.accepted_event_snapshot.acceptance.fingerprint', $accepted->fingerprint)
-            ->assertJsonPath('data.0.closure.accepted_event_snapshot.response.evidence_manifest.0.file_name_snapshot', 'closure.txt');
+            ->assertJsonPath('data.0.closure.accepted_event_snapshot.response.evidence_manifest.0.file_name_snapshot', 'closure.txt')
+            ->assertJsonPath('data.0.closure.timeliness_status', 'on_time')
+            ->assertJsonPath('data.0.closure.days_late', 0)
+            ->assertJsonPath('data.0.closure.calendar_timezone', 'UTC')
+            ->assertJsonPath('data.0.closure.timeliness_fingerprint', $closure->timeliness_fingerprint)
+            ->assertJsonPath('data.0.closure.fingerprint_version', 'closure/v2');
+        Filament::setCurrentPanel(Filament::getPanel('app'));
+        $this->actingAs($closer, 'web');
+        $operatorEvidence = view('filament.third-party-engagement', [
+            'engagement' => $engagement->fresh()->load([
+                'collaborationRequests.closure.actor', 'collaborationRequests.recipient', 'collaborationRequests.opener',
+                'collaborationRequests.reassignments', 'collaborationRequests.extensions.decision',
+                'collaborationRequests.events.evidence', 'collaborationRequests.reminders', 'collaborationRequests.escalation',
+            ]),
+        ])->render();
+        $this->assertStringContainsString('Response timeliness: On time', $operatorEvidence);
+        $this->assertStringContainsString('UTC calendar', $operatorEvidence);
+        $this->assertStringContainsString($closure->timeliness_fingerprint, $operatorEvidence);
+        $this->assertStringContainsString('closure/v2', $operatorEvidence);
         $document->delete();
         $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
             ->assertOk()->assertJsonCount(0, 'data.0.closure.accepted_event_snapshot.response.evidence_manifest');
@@ -1132,20 +1159,153 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         Livewire::test(ListCollaborationRequests::class)->assertCanNotSeeTableRecords([$request]);
         $this->actingAs($replacement, 'vendor');
         Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
-            ->assertSee('Staff closure')->assertSee($closure->fingerprint)->assertDontSee($closer->email);
+            ->assertSee('Staff closure')->assertSee($closure->fingerprint)
+            ->assertSee('On time')->assertSee('UTC')->assertSee($closure->timeliness_fingerprint)
+            ->assertSee('closure/v2')->assertDontSee($closer->email);
         $portalRequest = CollaborationRequestResource::getEloquentQuery()->findOrFail($request->id);
         $this->assertEqualsCanonicalizing(
-            ['id', 'third_party_engagement_collaboration_request_id', 'summary', 'closed_at', 'fingerprint'],
+            ['id', 'third_party_engagement_collaboration_request_id', 'response_recorded_at', 'timeliness_status', 'days_late', 'calendar_timezone', 'timeliness_fingerprint', 'fingerprint_version', 'summary', 'closed_at', 'fingerprint'],
             array_keys($portalRequest->closure->getAttributes()),
         );
         $this->assertThrows(fn () => $closure->update(['summary' => 'Rewritten.']), \LogicException::class);
         $factory = ThirdPartyCollaborationRequestClosure::factory()->create();
-        $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
+        $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot']);
+        $factoryPayload['response_recorded_at'] = $factory->response_recorded_at->toIso8601String();
+        $factoryPayload['timeliness_status'] = $factory->timeliness_status->value;
+        $factoryPayload['days_late'] = $factory->days_late;
+        $factoryPayload['calendar_timezone'] = $factory->calendar_timezone;
+        $factoryPayload['timeliness_fingerprint'] = $factory->timeliness_fingerprint;
+        $factoryPayload['fingerprint_version'] = $factory->fingerprint_version;
+        $factoryPayload += $factory->only(['summary', 'closed_by', 'actor_snapshot']);
         $factoryPayload['closed_at'] = $factory->closed_at->toIso8601String();
         $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
         $this->assertSame('responded', data_get($factory->accepted_event_snapshot, 'response.status'));
         $migration = require database_path('migrations/2026_08_25_010000_create_third_party_collaboration_request_closures.php');
         $migration->down();
         $this->assertDatabaseHas('third_party_collaboration_request_closures', ['id' => $closure->id]);
+    }
+
+    public function test_closure_timeliness_uses_exact_effective_due_date_and_retained_backfill(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00');
+        $engagement = ThirdPartyEngagementMonitoringIndicator::factory()->create()->engagement;
+        $engagement->update(['term_end_at' => '2026-12-31']);
+        $opener = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $acceptor = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $closer = tap(User::factory()->create(), fn (User $user) => $user->givePermissionTo('Manage Third Party Risk'));
+        $contact = VendorUser::factory()->create(['vendor_id' => $engagement->vendor_id]);
+        $collaboration = app(ThirdPartyEngagementCollaborationManager::class);
+        $closures = app(ThirdPartyEngagementCollaborationClosureManager::class);
+
+        $onTimeRequest = $collaboration->open($opener, $engagement, [
+            'category' => 'assurance', 'subject' => 'Exact due-day response', 'request_text' => 'Respond on the due date.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-24',
+        ]);
+        Carbon::setTestNow('2026-08-24 23:59:59');
+        $collaboration->respond($contact, $onTimeRequest, ['response_text' => 'Recorded at the end of the due date.']);
+        $collaboration->decide($acceptor, $onTimeRequest, ['decision' => 'accepted', 'summary' => 'Accepted.']);
+        $onTime = $closures->close($closer, $onTimeRequest, ['summary' => 'Closed with an on-time response.']);
+        $this->assertSame('on_time', $onTime->timeliness_status->value);
+        $this->assertSame(0, $onTime->days_late);
+        $this->assertSame('2026-08-24 23:59:59', $onTime->response_recorded_at->format('Y-m-d H:i:s'));
+
+        Carbon::setTestNow('2026-08-24 10:00:00+00:00');
+        $offsetRequest = $collaboration->open($opener, $engagement, [
+            'category' => 'evidence', 'subject' => 'UTC calendar response', 'request_text' => 'Use the retained UTC calendar boundary.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-24',
+        ]);
+        Carbon::setTestNow('2026-08-25 00:30:00+01:00');
+        $collaboration->respond($contact, $offsetRequest, ['response_text' => 'Local next day but UTC due date.']);
+        $collaboration->decide($acceptor, $offsetRequest, ['decision' => 'accepted', 'summary' => 'Accepted in UTC.']);
+        $offsetClosure = $closures->close($closer, $offsetRequest, ['summary' => 'Closed against UTC.']);
+        $this->assertSame('on_time', $offsetClosure->timeliness_status->value);
+        $this->assertSame('UTC', $offsetClosure->calendar_timezone);
+        $this->assertSame('2026-08-24T23:30:00+00:00', $offsetClosure->response_recorded_at->toIso8601String());
+
+        Carbon::setTestNow('2026-08-24 09:00:00');
+        $lateRequest = $collaboration->open($opener, $engagement, [
+            'category' => 'resilience', 'subject' => 'Extension-aware late response', 'request_text' => 'Respond against the approved extension.',
+            'recipient_vendor_user_id' => $contact->id, 'due_at' => '2026-08-24',
+        ]);
+        $extension = app(ThirdPartyEngagementCollaborationExtensionManager::class)->request($contact, $lateRequest, [
+            'proposed_due_at' => '2026-08-26', 'reason' => 'A governed extension is needed.',
+        ]);
+        $decision = app(ThirdPartyEngagementCollaborationExtensionManager::class)->decide($acceptor, $extension, [
+            'decision' => 'approved', 'summary' => 'Extension approved.',
+        ]);
+        Carbon::setTestNow('2026-08-27 00:00:01');
+        $collaboration->respond($contact, $lateRequest, ['response_text' => 'Recorded on the next calendar day.']);
+        $collaboration->decide($acceptor, $lateRequest, ['decision' => 'accepted', 'summary' => 'Accepted after the extension date.']);
+        $late = $closures->close($closer, $lateRequest, ['summary' => 'Closed with a one-day-late response.']);
+        $this->assertSame('late', $late->timeliness_status->value);
+        $this->assertSame(1, $late->days_late);
+        $this->assertSame('2026-08-26', $late->due_context['due_at']);
+        $this->assertSame($decision->fingerprint, $late->due_context['fingerprint']);
+        $timelinessPayload = [
+            'accepted_event_id' => $late->accepted_event_id,
+            'response_recorded_at' => $late->response_recorded_at->toIso8601String(),
+            'due_context' => [
+                'due_at' => $late->due_context['due_at'], 'fingerprint' => $late->due_context['fingerprint'],
+                'extension_id' => $late->due_context['extension_id'], 'decision_id' => $late->due_context['decision_id'],
+            ],
+            'calendar_timezone' => 'UTC',
+            'timeliness_status' => $late->timeliness_status->value,
+            'days_late' => $late->days_late,
+        ];
+        $this->assertSame(hash('sha256', json_encode($timelinessPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $late->timeliness_fingerprint);
+
+        DB::table('third_party_collaboration_request_closures')->where('id', $late->id)->update([
+            'response_recorded_at' => null, 'timeliness_status' => null, 'days_late' => null,
+            'calendar_timezone' => null, 'timeliness_fingerprint' => null,
+        ]);
+        $migration = require database_path('migrations/2026_08_25_020000_add_timeliness_to_third_party_collaboration_request_closures.php');
+        $migration->up();
+        $this->assertDatabaseHas('third_party_collaboration_request_closures', [
+            'id' => $late->id, 'response_recorded_at' => '2026-08-27 00:00:01', 'timeliness_status' => 'late',
+            'days_late' => 1, 'calendar_timezone' => 'UTC', 'timeliness_fingerprint' => $late->timeliness_fingerprint,
+        ]);
+        $recovered = $late->fresh();
+        $recoveredTimelinessPayload = [
+            'accepted_event_id' => $recovered->accepted_event_id,
+            'response_recorded_at' => $recovered->response_recorded_at->toIso8601String(),
+            'due_context' => [
+                'due_at' => $recovered->due_context['due_at'], 'fingerprint' => $recovered->due_context['fingerprint'],
+                'extension_id' => $recovered->due_context['extension_id'], 'decision_id' => $recovered->due_context['decision_id'],
+            ],
+            'calendar_timezone' => $recovered->calendar_timezone,
+            'timeliness_status' => $recovered->timeliness_status->value,
+            'days_late' => $recovered->days_late,
+        ];
+        $this->assertSame(hash('sha256', json_encode($recoveredTimelinessPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $recovered->timeliness_fingerprint);
+
+        $legacyPayload = $onTime->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
+        $legacyPayload['closed_at'] = $onTime->closed_at->toIso8601String();
+        $legacyFingerprint = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        DB::table('third_party_collaboration_request_closures')->where('id', $onTime->id)->update([
+            'fingerprint' => $legacyFingerprint, 'fingerprint_version' => null,
+            'response_recorded_at' => null, 'timeliness_status' => null, 'days_late' => null,
+            'calendar_timezone' => null, 'timeliness_fingerprint' => null,
+        ]);
+        $migration->up();
+        $legacy = $onTime->fresh();
+        $this->assertSame('closure/v1', $legacy->fingerprint_version);
+        $this->assertSame($legacyFingerprint, $legacy->fingerprint);
+        $reconstructedLegacy = $legacy->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot', 'summary', 'closed_by', 'actor_snapshot']);
+        $reconstructedLegacy['closed_at'] = $legacy->closed_at->toIso8601String();
+        $this->assertSame($legacy->fingerprint, hash('sha256', json_encode($reconstructedLegacy, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)));
+        $beforeRerun = [
+            'response_recorded_at' => $legacy->response_recorded_at->toIso8601String(),
+            'timeliness_status' => $legacy->timeliness_status->value,
+        ] + $legacy->only(['days_late', 'calendar_timezone', 'timeliness_fingerprint', 'fingerprint_version', 'fingerprint']);
+        $migration->up();
+        $rerun = $legacy->fresh();
+        $afterRerun = [
+            'response_recorded_at' => $rerun->response_recorded_at->toIso8601String(),
+            'timeliness_status' => $rerun->timeliness_status->value,
+        ] + $rerun->only(['days_late', 'calendar_timezone', 'timeliness_fingerprint', 'fingerprint_version', 'fingerprint']);
+        $this->assertSame($beforeRerun, $afterRerun);
+        $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_request_closures', ['id' => $late->id, 'timeliness_status' => 'late']);
+        Carbon::setTestNow();
     }
 }

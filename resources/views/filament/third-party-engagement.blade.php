@@ -192,6 +192,9 @@
             @if ($request->closure)
                 <div class="mt-2 rounded-lg border p-2">
                     <div class="font-medium">Closed · {{ $request->closure->closed_at?->toDayDateTimeString() }} · {{ $request->closure->actor?->name }}</div>
+                    <div>Response timeliness: {{ $request->closure->timeliness_status?->getLabel() ?? 'Unavailable' }} · {{ $request->closure->days_late ?? 'Unavailable' }} calendar days late · {{ $request->closure->calendar_timezone ?? 'Unavailable' }} calendar · response recorded {{ $request->closure->response_recorded_at?->toDayDateTimeString() ?? 'Unavailable' }}</div>
+                    <div class="break-all font-mono text-xs">Timeliness fingerprint: {{ $request->closure->timeliness_fingerprint }}</div>
+                    <div>Closure fingerprint version: {{ $request->closure->fingerprint_version ?? 'closure/v1' }}</div>
                     <div class="whitespace-pre-wrap">{{ $request->closure->summary }}</div>
                     <details class="mt-1"><summary class="font-medium">Retained closure evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['request' => $request->closure->request_snapshot, 'accepted_event' => $request->closure->accepted_event_snapshot, 'recipient' => $request->closure->recipient_context, 'due' => $request->closure->due_context, 'escalation' => $request->closure->escalation_snapshot, 'actor' => $request->closure->actor_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
                     <div class="break-all font-mono text-xs">{{ $request->closure->fingerprint }}</div>
