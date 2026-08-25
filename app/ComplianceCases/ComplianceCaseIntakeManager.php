@@ -34,7 +34,7 @@ class ComplianceCaseIntakeManager
         $data = Validator::make($data, self::submissionRules())->validate();
 
         return DB::transaction(function () use ($actor, $data): ComplianceCaseIntake {
-            ComplianceCaseIntakeMutex::query()->whereKey(1)->lockForUpdate()->first();
+            ComplianceCaseIntakeMutex::query()->lockForUpdate()->findOrFail(1);
             $lockedActor = User::query()->whereNull('deleted_at')->lockForUpdate()->findOrFail($actor->id);
             $submittedAt = now()->startOfSecond();
             $next = ((int) ComplianceCaseIntake::query()->max('id')) + 1;

@@ -45,7 +45,7 @@ class ComplianceCaseManager
         $data = Validator::make($data, self::openRules())->validate();
 
         return DB::transaction(function () use ($actor, $data): ComplianceCase {
-            ComplianceCaseMutex::query()->whereKey(1)->lockForUpdate()->first();
+            ComplianceCaseMutex::query()->lockForUpdate()->findOrFail(1);
             $openedAt = now();
             $next = ((int) ComplianceCase::query()->max('id')) + 1;
             $case = ComplianceCase::query()->create([
@@ -260,7 +260,16 @@ class ComplianceCaseManager
             }
             $investigatorIds = $events->pluck('after_snapshot')->map(fn ($snapshot) => data_get($snapshot, 'assigned_to.id'))->filter()->push($case->assigned_to)->unique();
             $decisionActors = $events->filter(function (ComplianceCaseEvent $event): bool {
-                return data_get($event->before_snapshot, 'investigation_summary') !== data_get($event->after_snapshot, 'investigation_summary')
+                $beforeStatus = $this->snapshotStatus(data_get($event->before_snapshot, 'status'));
+                $afterStatus = $this->snapshotStatus(data_get($event->after_snapshot, 'status'));
+                $statusDecision = $afterStatus !== $beforeStatus && in_array($afterStatus, [
+                    ComplianceCaseStatus::Investigating->value,
+                    ComplianceCaseStatus::ActionRequired->value,
+                    ComplianceCaseStatus::Resolved->value,
+                ], true);
+
+                return $statusDecision
+                    || data_get($event->before_snapshot, 'investigation_summary') !== data_get($event->after_snapshot, 'investigation_summary')
                     || data_get($event->before_snapshot, 'resolution_summary') !== data_get($event->after_snapshot, 'resolution_summary');
             })->pluck('recorded_by');
             $procedureActors = $procedureExecutions->pluck('executed_by')->merge($procedureReviews->pluck('reviewed_by'))->unique();
@@ -302,6 +311,15 @@ class ComplianceCaseManager
         app(GovernanceIssueLifecycleManager::class)->register($issue, $actor);
 
         return $issue;
+    }
+
+    private function snapshotStatus(mixed $status): ?string
+    {
+        if ($status instanceof ComplianceCaseStatus) {
+            return $status->value;
+        }
+
+        return is_string($status) ? $status : null;
     }
 
     /** @return array<string,mixed> */

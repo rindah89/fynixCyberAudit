@@ -10,9 +10,11 @@ use App\Filament\Resources\ComplianceCaseIntakeResource\Pages\ViewComplianceCase
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseIntake;
 use App\Models\ComplianceCaseIntakeDisposition;
+use App\Models\ComplianceCaseIntakeMutex;
 use App\Models\User;
 use App\Support\CanonicalJson;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Schema;
@@ -91,6 +93,22 @@ class ComplianceCaseIntakeTest extends TestCase
         $this->actingAs($manager)->postJson("/api/compliance-case-intakes/{$intake->id}/decision", [
             'decision' => ComplianceCaseIntakeDecision::Rejected->value, 'summary' => 'Duplicate.',
         ])->assertUnprocessable();
+    }
+
+    public function test_intake_submission_fails_closed_when_the_mutex_row_is_missing(): void
+    {
+        $reporter = User::factory()->create();
+        ComplianceCaseIntakeMutex::query()->whereKey(1)->delete();
+        try {
+            app(ComplianceCaseIntakeManager::class)->submit($reporter, [
+                'title' => 'Mutex missing', 'category' => ComplianceCaseCategory::Other->value,
+                'priority' => ComplianceCasePriority::Low->value,
+                'allegation' => 'A governed allegation.', 'source_channel' => 'Authenticated employee portal',
+            ]);
+            $this->fail('Expected intake submission to fail closed without the mutex row.');
+        } catch (ModelNotFoundException) {
+            $this->assertDatabaseCount('compliance_case_intakes', 0);
+        }
     }
 
     public function test_intake_rejection_is_terminal_private_and_factory_evidence_reconstructs(): void

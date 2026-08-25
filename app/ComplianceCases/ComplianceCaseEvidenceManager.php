@@ -2,7 +2,6 @@
 
 namespace App\ComplianceCases;
 
-use App\Access\FileAccess;
 use App\Enums\ComplianceCaseStatus;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseEvent;
@@ -78,16 +77,17 @@ class ComplianceCaseEvidenceManager
     public function visibleSubmissions(Collection $submissions, User $actor): Collection
     {
         return $submissions->map(function (ComplianceCaseEvidenceSubmission $submission) use ($actor): ComplianceCaseEvidenceSubmission {
+            $submission->loadMissing('complianceCase');
             $visible = clone $submission;
-            $visible->setRelation('evidence', $submission->evidence
-                ->filter(fn (ComplianceCaseEvidenceFile $evidence): bool => $evidence->attachment !== null
-                    && app(FileAccess::class)->canDownloadFileAttachment($actor, $evidence->attachment))
-                ->map(function (ComplianceCaseEvidenceFile $evidence): ComplianceCaseEvidenceFile {
+            $canViewCase = $submission->complianceCase !== null && $actor->can('view', $submission->complianceCase);
+            $visible->setRelation('evidence', $canViewCase
+                ? $submission->evidence->map(function (ComplianceCaseEvidenceFile $evidence): ComplianceCaseEvidenceFile {
                     $projected = clone $evidence;
                     $projected->unsetRelation('attachment');
 
                     return $projected;
-                })->values());
+                })->values()
+                : collect());
 
             return $visible;
         });

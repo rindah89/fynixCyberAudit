@@ -98,6 +98,14 @@ class FileAccess
             abort(403, 'You do not have access to this file.');
         }
 
+        if ($evidence = ComplianceCaseEvidenceFile::query()->where('file_path_snapshot', $path)->first()) {
+            if ($actor instanceof User && $this->canStreamComplianceCaseEvidence($actor, $evidence)) {
+                return;
+            }
+
+            abort(403, 'You do not have access to this file.');
+        }
+
         abort(403, 'You do not have access to this file.');
     }
 
@@ -122,7 +130,15 @@ class FileAccess
 
     public function streamAuthorized(Authenticatable $actor, string $disk, string $path, ?string $downloadName = null): StreamedResponse
     {
+        $path = $this->normalizePath($path);
         $this->authorizePath($actor, $path);
+
+        if ($actor instanceof User && ($report = ComplianceCaseClosureReport::query()->where('report_path', $path)->first())) {
+            return $this->streamComplianceCaseClosureReport($actor, $report);
+        }
+        if ($actor instanceof User && ($evidence = ComplianceCaseEvidenceFile::query()->where('file_path_snapshot', $path)->first())) {
+            return $this->streamComplianceCaseEvidence($actor, $evidence);
+        }
 
         return $this->stream($disk, $path, $downloadName);
     }
@@ -148,14 +164,7 @@ class FileAccess
 
     public function streamComplianceCaseEvidence(User $actor, ComplianceCaseEvidenceFile $evidence): StreamedResponse
     {
-        $evidence->loadMissing(['submission.complianceCase', 'attachment.audit.members', 'attachment.dataRequestResponse.dataRequest.audit.members']);
-        $case = $evidence->submission?->complianceCase;
-        $canViewCase = Enterprise::enabled('compliance_cases') && $case
-            && ($actor->can('Manage Compliance Cases') || $actor->can('Read Compliance Cases')
-                || ($actor->can('Investigate Compliance Cases') && $case->assigned_to === $actor->id));
-        if (! $canViewCase || ! $evidence->attachment || ! $this->canDownloadFileAttachment($actor, $evidence->attachment)) {
-            abort(403, 'You do not have access to this governed compliance-case evidence.');
-        }
+        abort_unless($this->canStreamComplianceCaseEvidence($actor, $evidence), 403, 'You do not have access to this governed compliance-case evidence.');
 
         return $this->stream($evidence->disk_snapshot, $evidence->file_path_snapshot, $evidence->file_name_snapshot);
     }
@@ -442,8 +451,11 @@ class FileAccess
                 ->orWhereHas('auditFindingFollowUpEvidence')
                 ->orWhereHas('auditProcedureExecutionEvidence')
                 ->orWhereHas('incidentPhaseTransitionEvidence')
-                ->orWhereHas('incidentTaskEventEvidence'))
-            ->exists()) {
+                ->orWhereHas('incidentTaskEventEvidence')
+                ->orWhereHas('complianceCaseEvidence'))
+            ->exists()
+            || ComplianceCaseEvidenceFile::query()->where('file_path_snapshot', $path)->exists()
+            || ComplianceCaseClosureReport::query()->where('report_path', $path)->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',
             ]);
@@ -457,6 +469,14 @@ class FileAccess
         $report->loadMissing('complianceCase');
 
         return Enterprise::enabled('compliance_cases') && $report->complianceCase !== null && $actor->can('view', $report);
+    }
+
+    private function canStreamComplianceCaseEvidence(User $actor, ComplianceCaseEvidenceFile $evidence): bool
+    {
+        $evidence->loadMissing('submission.complianceCase');
+        $case = $evidence->submission?->complianceCase;
+
+        return Enterprise::enabled('compliance_cases') && $case !== null && $actor->can('view', $case);
     }
 
     public function canDownloadFileAttachment(Authenticatable $actor, FileAttachment $attachment): bool

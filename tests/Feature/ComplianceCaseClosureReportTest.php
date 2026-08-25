@@ -96,6 +96,9 @@ class ComplianceCaseClosureReportTest extends TestCase
         $this->assertFalse($outsider->can('view', $report));
         $this->actingAs($outsider)->get('/app/priv-storage/'.$report->report_path)->assertForbidden();
         $this->actingAs($reader)->get('/app/priv-storage/'.$report->report_path)->assertOk();
+        Storage::disk($report->report_disk)->put($report->report_path, 'tampered closure report');
+        $this->actingAs($reader)->get('/app/priv-storage/'.$report->report_path)->assertStatus(409);
+        Storage::disk($report->report_disk)->put($report->report_path, 'x');
         try {
             app(FileAccess::class)->streamComplianceCaseClosureReport($outsider, $report);
             $this->fail('Expected unauthorized FileAccess closure-report streaming to fail closed.');

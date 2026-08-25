@@ -34,7 +34,7 @@ class ComplianceCaseIntakeResource extends Resource
 
     public static function canAccess(): bool
     {
-        return auth()->user()?->can('Manage Compliance Cases') === true;
+        return Enterprise::enabled('compliance_cases') && auth()->user()?->can('Manage Compliance Cases') === true;
     }
 
     public static function canCreate(): bool

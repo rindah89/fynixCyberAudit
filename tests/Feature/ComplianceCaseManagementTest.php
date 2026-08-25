@@ -16,6 +16,7 @@ use App\Enums\ComplianceCaseInvestigationPlanDecision;
 use App\Enums\ComplianceCaseInvestigationProcedureResult;
 use App\Enums\ComplianceCasePriority;
 use App\Enums\ComplianceCaseStatus;
+use App\Filament\Resources\ComplianceCaseIntakeResource;
 use App\Filament\Resources\ComplianceCaseResource;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesRelationManager;
@@ -33,6 +34,7 @@ use App\Models\ComplianceCaseInterviewEvent;
 use App\Models\ComplianceCaseLegalHold;
 use App\Models\ComplianceCaseLegalHoldAcknowledgement;
 use App\Models\ComplianceCaseLegalHoldRelease;
+use App\Models\ComplianceCaseMutex;
 use App\Models\DataRequest;
 use App\Models\DataRequestResponse;
 use App\Models\FileAttachment;
@@ -41,6 +43,7 @@ use App\Remediation\Remediation;
 use App\Services\GovernanceIssueLifecycleManager;
 use App\Support\CanonicalJson;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
@@ -170,6 +173,78 @@ class ComplianceCaseManagementTest extends TestCase
         ];
         $this->assertSame(hash('sha256', CanonicalJson::encode($payload)), $closed->fingerprint);
         $this->assertSame($investigator->email, data_get($closed->after_snapshot, 'assigned_to.email'));
+    }
+
+    public function test_status_only_investigation_actor_cannot_close_the_case(): void
+    {
+        $opener = User::factory()->create();
+        $opener->assignRole('Security Admin');
+        $investigator = User::factory()->create();
+        $investigator->givePermissionTo('Investigate Compliance Cases');
+        $statusActor = User::factory()->create();
+        $statusActor->assignRole('Security Admin');
+        $closer = User::factory()->create();
+        $closer->assignRole('Security Admin');
+        $service = app(ComplianceCaseManager::class);
+
+        $case = $service->open($opener, [
+            'title' => 'Status-only investigation actor', 'category' => ComplianceCaseCategory::Other->value,
+            'priority' => ComplianceCasePriority::High->value, 'allegation' => 'A governed allegation.',
+            'summary' => 'Open the case.',
+        ]);
+        $service->record($opener, $case, [
+            'status' => ComplianceCaseStatus::Triaged->value, 'assigned_to' => $investigator->id,
+            'triage_summary' => 'Fact finding is required.', 'summary' => 'Assign the investigator.',
+        ]);
+        $service->record($investigator, $case->refresh(), [
+            'investigation_summary' => 'Records are being assembled before the investigation status change.',
+            'summary' => 'Record investigation work without changing status.',
+        ]);
+        $this->approveInvestigationPlan($case->refresh(), $investigator, $opener);
+        $service->record($statusActor, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Investigating->value,
+            'summary' => 'Advance investigation status without rewriting the summary.',
+        ]);
+        $this->completeInvestigationPlan($case->refresh(), $investigator);
+        $this->approveInvestigationReport($case->refresh(), $investigator);
+        $service->record($investigator, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Resolved->value,
+            'resolution_summary' => 'The retained investigation work is complete.',
+            'summary' => 'Resolve the case.',
+        ]);
+        try {
+            $service->record($statusActor, $case->refresh(), [
+                'status' => ComplianceCaseStatus::Closed->value,
+                'closure_summary' => 'Status actor self closure.',
+                'summary' => 'The investigation status actor cannot close.',
+            ]);
+            $this->fail('Expected the status-only investigation actor to be excluded from final closure.');
+        } catch (HttpException $exception) {
+            $this->assertSame(403, $exception->getStatusCode());
+        }
+        $service->record($closer, $case->refresh(), [
+            'status' => ComplianceCaseStatus::Closed->value,
+            'closure_summary' => 'Independent closure after a status-only investigation transition.',
+            'summary' => 'Close independently.',
+        ]);
+        $this->assertSame(ComplianceCaseStatus::Closed, $case->fresh()->status);
+    }
+
+    public function test_opening_fails_closed_when_the_case_mutex_row_is_missing(): void
+    {
+        $manager = User::factory()->create();
+        $manager->assignRole('Security Admin');
+        ComplianceCaseMutex::query()->whereKey(1)->delete();
+        try {
+            app(ComplianceCaseManager::class)->open($manager, [
+                'title' => 'Mutex missing', 'category' => ComplianceCaseCategory::Other->value,
+                'priority' => ComplianceCasePriority::Low->value, 'allegation' => 'A governed allegation.',
+                'summary' => 'Open without the mutex.',
+            ]);
+            $this->fail('Expected case opening to fail closed without the mutex row.');
+        } catch (ModelNotFoundException) {
+            $this->assertDatabaseCount('compliance_cases', 0);
+        }
     }
 
     public function test_action_required_case_is_bound_to_independently_closed_remediation_evidence(): void
@@ -401,6 +476,9 @@ class ComplianceCaseManagementTest extends TestCase
             'priority' => ComplianceCasePriority::Low->value, 'allegation' => 'Disabled.', 'summary' => 'Disabled.',
         ])->assertForbidden();
         $this->assertFalse(ComplianceCaseResource::shouldRegisterNavigation());
+        $this->assertFalse(ComplianceCaseResource::canAccess());
+        $this->assertFalse(ComplianceCaseIntakeResource::canAccess());
+        $this->assertFalse(ComplianceCaseIntakeResource::shouldRegisterNavigation());
     }
 
     public function test_investigator_retains_bounded_case_evidence_with_exact_workspace_and_source_acl(): void
@@ -461,9 +539,16 @@ class ComplianceCaseManagementTest extends TestCase
         }
         $this->assertDatabaseCount('compliance_case_evidence_submissions', 1);
 
+        $this->actingAs($outsider)->get(route('compliance-case-evidence.download', $evidence))->assertForbidden();
+        $this->actingAs($outsider)->get('/app/priv-storage/'.$evidence->file_path_snapshot)->assertForbidden();
         $this->actingAs($reader)->getJson("/api/compliance-cases/{$case->id}/evidence")
-            ->assertOk()->assertJsonCount(0, 'data.0.evidence')->assertJsonMissingPath('data.0.evidence_manifest');
-        $this->actingAs($reader)->get(route('compliance-case-evidence.download', $evidence))->assertForbidden();
+            ->assertOk()->assertJsonPath('data.0.evidence.0.sha256', $evidence->sha256)
+            ->assertJsonMissingPath('data.0.evidence_manifest')
+            ->assertJsonMissingPath('data.0.evidence.0.attachment');
+        $this->actingAs($reader)->get(route('compliance-case-evidence.download', $evidence))
+            ->assertOk()->assertStreamedContent('original compliance evidence');
+        $this->actingAs($reader)->get('/app/priv-storage/'.$evidence->file_path_snapshot)
+            ->assertOk()->assertStreamedContent('original compliance evidence');
         $this->actingAs($investigator)->getJson("/api/compliance-cases/{$case->id}/evidence")
             ->assertOk()->assertJsonPath('data.0.evidence.0.sha256', $evidence->sha256)
             ->assertJsonMissingPath('data.0.evidence.0.attachment')
@@ -472,6 +557,11 @@ class ComplianceCaseManagementTest extends TestCase
         Storage::disk('private')->put($attachment->file_path, 'later changed source');
         $this->get(route('compliance-case-evidence.download', $evidence))->assertOk()->assertStreamedContent('original compliance evidence');
         $this->assertThrows(fn () => $attachment->delete(), \LogicException::class);
+        $this->assertThrows(
+            fn () => app(FileAccess::class)->deleteUnreferencedFileAttachmentPath('private', $evidence->file_path_snapshot),
+            ValidationException::class,
+        );
+        Storage::disk('private')->assertExists($evidence->file_path_snapshot);
         $this->assertThrows(fn () => $submission->update(['summary' => 'Rewrite']), \LogicException::class);
 
         $closed = ComplianceCase::factory()->create([
@@ -528,13 +618,12 @@ class ComplianceCaseManagementTest extends TestCase
         $eligibleProjection = app(ComplianceCaseEvidenceManager::class)->visibleSubmissions(collect([$operatorSubmission]), $investigator)->first();
         $ineligibleProjection = app(ComplianceCaseEvidenceManager::class)->visibleSubmissions(collect([$operatorSubmission]), $reader)->first();
         $this->assertCount(1, $eligibleProjection->evidence);
-        $this->assertCount(0, $ineligibleProjection->evidence);
+        $this->assertCount(1, $ineligibleProjection->evidence);
         $this->assertStringContainsString($evidence->sha256, view('filament.compliance-case-evidence', ['record' => $eligibleProjection])->render());
-        $this->assertStringNotContainsString($evidence->sha256, view('filament.compliance-case-evidence', ['record' => $ineligibleProjection])->render());
+        $this->assertStringContainsString($evidence->sha256, view('filament.compliance-case-evidence', ['record' => $ineligibleProjection])->render());
         Livewire::actingAs($reader);
         Livewire::test(EvidenceSubmissionsRelationManager::class, ['ownerRecord' => $case, 'pageClass' => ViewComplianceCase::class])
-            ->assertCanSeeTableRecords([$operatorSubmission])->assertTableActionVisible('inspect', $operatorSubmission)
-            ->mountTableAction('inspect', $operatorSubmission)->assertDontSee($evidence->file_name_snapshot)->assertDontSee($evidence->sha256);
+            ->assertCanSeeTableRecords([$operatorSubmission])->assertTableActionVisible('inspect', $operatorSubmission);
         $migration = require database_path('migrations/2026_08_25_070000_create_compliance_case_evidence_submissions.php');
         $migration->up();
         $migration->down();
