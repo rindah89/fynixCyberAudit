@@ -96,6 +96,7 @@ class EngagementsRelationManager extends RelationManager
                         $manager = app(ThirdPartyEngagementDueDiligenceManager::class);
                         $visible = clone $record;
                         $visible->setRelation('dueDiligenceReviews', $manager->visibleReviews($record->dueDiligenceReviews, auth()->user()));
+                        $record->collaborationRequests->loadMissing('closure.delivery.recipient:id,vendor_id,name,email');
                         $visible->setRelation('collaborationRequests', app(ThirdPartyEngagementCollaborationManager::class)->visibleRequests($record->collaborationRequests, auth()->user()));
 
                         return view('filament.third-party-engagement', ['engagement' => $visible]);

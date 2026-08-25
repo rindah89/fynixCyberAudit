@@ -7,6 +7,7 @@ use Database\Factories\ThirdPartyCollaborationRequestClosureFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 class ThirdPartyCollaborationRequestClosure extends Model
@@ -41,5 +42,10 @@ class ThirdPartyCollaborationRequestClosure extends Model
     public function actor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by')->withTrashed();
+    }
+
+    public function delivery(): HasOne
+    {
+        return $this->hasOne(ThirdPartyCollaborationClosureDelivery::class, 'third_party_collaboration_request_closure_id');
     }
 }

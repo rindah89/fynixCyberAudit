@@ -7,6 +7,7 @@ use App\Filament\Resources\ThirdPartyRiskResource\RelationManagers\EngagementsRe
 use App\Filament\Vendor\Resources\CollaborationRequestResource;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ListCollaborationRequests;
 use App\Filament\Vendor\Resources\CollaborationRequestResource\Pages\ViewCollaborationRequest;
+use App\Models\ThirdPartyCollaborationClosureDelivery;
 use App\Models\ThirdPartyCollaborationEscalationIssue;
 use App\Models\ThirdPartyCollaborationExtension;
 use App\Models\ThirdPartyCollaborationExtensionDecision;
@@ -23,6 +24,7 @@ use App\Models\ThirdPartyEngagementMonitoringIndicator;
 use App\Models\User;
 use App\Models\VendorDocument;
 use App\Models\VendorUser;
+use App\Support\CanonicalJson;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationAcknowledgementManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationCancellationManager;
 use App\ThirdPartyRisk\ThirdPartyEngagementCollaborationClosureManager;
@@ -1101,6 +1103,16 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
                 $this->assertSame(403, $exception->getStatusCode());
             }
         }
+        Event::listen(NotificationSending::class, fn (): bool => false);
+        try {
+            $closures->close($closer, $request, ['summary' => 'A cancelled delivery must roll back closure.']);
+            $this->fail('A cancelled in-app delivery must roll back closure evidence.');
+        } catch (\LogicException $exception) {
+            $this->assertStringContainsString('not accepted', $exception->getMessage());
+        }
+        Event::forget(NotificationSending::class);
+        $this->assertDatabaseMissing('third_party_collaboration_request_closures', ['third_party_engagement_collaboration_request_id' => $request->id]);
+        $this->assertDatabaseCount('third_party_collaboration_closure_deliveries', 0);
         Sanctum::actingAs($closer);
         $closureId = $this->postJson("/api/third-party-engagement-collaboration-requests/{$request->id}/close", [
             'summary' => 'A separate manager administratively closes the accepted in-product request.',
@@ -1111,6 +1123,23 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             'summary' => 'A separate manager administratively closes the accepted in-product request.',
         ])->assertCreated()->assertJsonPath('data.accepted_event_id', $accepted->id)->json('data.id');
         $closure = ThirdPartyCollaborationRequestClosure::query()->findOrFail($closureId);
+        $delivery = $closure->delivery()->firstOrFail();
+        $deliveryPayload = $delivery->only([
+            'third_party_collaboration_request_closure_id', 'third_party_engagement_collaboration_request_id',
+            'vendor_user_id', 'channel', 'notification_id', 'recipient_snapshot', 'closure_snapshot',
+        ]);
+        $deliveryPayload['attempted_at'] = $delivery->attempted_at->toIso8601String();
+        $deliveryPayload['delivered_at'] = $delivery->delivered_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($deliveryPayload)), $delivery->fingerprint);
+        $databaseOrderedPayload = json_decode(json_encode($deliveryPayload, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+        $databaseOrderedPayload['closure_snapshot'] = array_reverse($databaseOrderedPayload['closure_snapshot'], true);
+        $databaseOrderedPayload['recipient_snapshot'] = array_reverse($databaseOrderedPayload['recipient_snapshot'], true);
+        $this->assertSame($delivery->fingerprint, hash('sha256', CanonicalJson::encode($databaseOrderedPayload)));
+        $this->assertSame($replacement->id, $delivery->vendor_user_id);
+        $this->assertTrue($delivery->recipient_snapshot['activated']);
+        $this->assertNull($delivery->recipient_snapshot['deleted_at']);
+        $this->assertSame($closure->fingerprint, $delivery->closure_snapshot['fingerprint']);
+        $this->assertDatabaseHas('notifications', ['id' => $delivery->notification_id, 'notifiable_id' => $replacement->id]);
         $payload = $closure->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot']);
         $payload['response_recorded_at'] = $closure->response_recorded_at->toIso8601String();
         $payload['timeliness_status'] = $closure->timeliness_status->value;
@@ -1135,12 +1164,15 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
             ->assertJsonPath('data.0.closure.days_late', 0)
             ->assertJsonPath('data.0.closure.calendar_timezone', 'UTC')
             ->assertJsonPath('data.0.closure.timeliness_fingerprint', $closure->timeliness_fingerprint)
-            ->assertJsonPath('data.0.closure.fingerprint_version', 'closure/v2');
+            ->assertJsonPath('data.0.closure.fingerprint_version', 'closure/v2')
+            ->assertJsonPath('data.0.closure.delivery.notification_id', $delivery->notification_id)
+            ->assertJsonPath('data.0.closure.delivery.recipient.email', $replacement->email)
+            ->assertJsonPath('data.0.closure.delivery.fingerprint', $delivery->fingerprint);
         Filament::setCurrentPanel(Filament::getPanel('app'));
         $this->actingAs($closer, 'web');
         $operatorEvidence = view('filament.third-party-engagement', [
             'engagement' => $engagement->fresh()->load([
-                'collaborationRequests.closure.actor', 'collaborationRequests.recipient', 'collaborationRequests.opener',
+                'collaborationRequests.closure.actor', 'collaborationRequests.closure.delivery.recipient', 'collaborationRequests.recipient', 'collaborationRequests.opener',
                 'collaborationRequests.reassignments', 'collaborationRequests.extensions.decision',
                 'collaborationRequests.events.evidence', 'collaborationRequests.reminders', 'collaborationRequests.escalation',
             ]),
@@ -1149,11 +1181,16 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $this->assertStringContainsString('UTC calendar', $operatorEvidence);
         $this->assertStringContainsString($closure->timeliness_fingerprint, $operatorEvidence);
         $this->assertStringContainsString('closure/v2', $operatorEvidence);
+        $this->assertStringContainsString($delivery->notification_id, $operatorEvidence);
+        $this->assertStringContainsString($delivery->fingerprint, $operatorEvidence);
         $document->delete();
         $this->getJson("/api/third-party-engagements/{$engagement->id}/collaboration-requests")
-            ->assertOk()->assertJsonCount(0, 'data.0.closure.accepted_event_snapshot.response.evidence_manifest');
+            ->assertOk()
+            ->assertJsonCount(0, 'data.0.closure.accepted_event_snapshot.response.evidence_manifest')
+            ->assertJsonCount(0, 'data.0.closure.delivery.closure_snapshot.accepted_event_snapshot.response.evidence_manifest');
         $persistedClosure = ThirdPartyCollaborationRequestClosure::query()->findOrFail($closure->id);
         $this->assertSame('closure.txt', $persistedClosure->accepted_event_snapshot['response']['evidence_manifest'][0]['file_name_snapshot']);
+        $this->assertSame('closure.txt', $delivery->fresh()->closure_snapshot['accepted_event_snapshot']['response']['evidence_manifest'][0]['file_name_snapshot']);
         Filament::setCurrentPanel(Filament::getPanel('vendor'));
         $this->actingAs($contact, 'vendor');
         Livewire::test(ListCollaborationRequests::class)->assertCanNotSeeTableRecords([$request]);
@@ -1161,12 +1198,19 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         Livewire::test(ViewCollaborationRequest::class, ['record' => $request->id])
             ->assertSee('Staff closure')->assertSee($closure->fingerprint)
             ->assertSee('On time')->assertSee('UTC')->assertSee($closure->timeliness_fingerprint)
-            ->assertSee('closure/v2')->assertDontSee($closer->email);
+            ->assertSee('closure/v2')->assertSee($delivery->notification_id)->assertSee($delivery->fingerprint)
+            ->assertDontSee($replacement->email)->assertDontSee($closer->email);
         $portalRequest = CollaborationRequestResource::getEloquentQuery()->findOrFail($request->id);
         $this->assertEqualsCanonicalizing(
             ['id', 'third_party_engagement_collaboration_request_id', 'response_recorded_at', 'timeliness_status', 'days_late', 'calendar_timezone', 'timeliness_fingerprint', 'fingerprint_version', 'summary', 'closed_at', 'fingerprint'],
             array_keys($portalRequest->closure->getAttributes()),
         );
+        $this->assertEqualsCanonicalizing(
+            ['channel', 'notification_id', 'attempted_at', 'delivered_at', 'fingerprint'],
+            array_keys($portalRequest->closure->delivery->toArray()),
+        );
+        DB::table('notifications')->where('id', $delivery->notification_id)->delete();
+        $this->assertDatabaseHas('third_party_collaboration_closure_deliveries', ['id' => $delivery->id]);
         $this->assertThrows(fn () => $closure->update(['summary' => 'Rewritten.']), \LogicException::class);
         $factory = ThirdPartyCollaborationRequestClosure::factory()->create();
         $factoryPayload = $factory->only(['third_party_engagement_collaboration_request_id', 'accepted_event_id', 'request_snapshot', 'accepted_event_snapshot', 'recipient_context', 'due_context', 'escalation_snapshot']);
@@ -1180,8 +1224,20 @@ class ThirdPartyEngagementCollaborationTest extends TestCase
         $factoryPayload['closed_at'] = $factory->closed_at->toIso8601String();
         $this->assertSame(hash('sha256', json_encode($factoryPayload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), $factory->fingerprint);
         $this->assertSame('responded', data_get($factory->accepted_event_snapshot, 'response.status'));
-        $migration = require database_path('migrations/2026_08_25_010000_create_third_party_collaboration_request_closures.php');
+        $factoryDelivery = ThirdPartyCollaborationClosureDelivery::factory()->create();
+        $factoryDeliveryPayload = $factoryDelivery->only([
+            'third_party_collaboration_request_closure_id', 'third_party_engagement_collaboration_request_id',
+            'vendor_user_id', 'channel', 'notification_id', 'recipient_snapshot', 'closure_snapshot',
+        ]);
+        $factoryDeliveryPayload['attempted_at'] = $factoryDelivery->attempted_at->toIso8601String();
+        $factoryDeliveryPayload['delivered_at'] = $factoryDelivery->delivered_at->toIso8601String();
+        $this->assertSame(hash('sha256', CanonicalJson::encode($factoryDeliveryPayload)), $factoryDelivery->fingerprint);
+        $this->assertThrows(fn () => $delivery->update(['channel' => 'email']), \LogicException::class);
+        $migration = require database_path('migrations/2026_08_25_030000_create_third_party_collaboration_closure_deliveries.php');
         $migration->down();
+        $this->assertDatabaseHas('third_party_collaboration_closure_deliveries', ['id' => $delivery->id]);
+        $closureMigration = require database_path('migrations/2026_08_25_010000_create_third_party_collaboration_request_closures.php');
+        $closureMigration->down();
         $this->assertDatabaseHas('third_party_collaboration_request_closures', ['id' => $closure->id]);
     }
 

@@ -147,6 +147,15 @@ class ThirdPartyEngagementCollaborationManager
                 $snapshot['response']['evidence_manifest'] = collect(data_get($snapshot, 'response.evidence_manifest', []))
                     ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
                 $closure->accepted_event_snapshot = $snapshot;
+                if ($request->closure->relationLoaded('delivery') && $request->closure->delivery !== null) {
+                    $delivery = clone $request->closure->delivery;
+                    $deliveryClosure = $delivery->closure_snapshot;
+                    $deliveryClosure['accepted_event_snapshot']['response']['evidence_manifest'] = collect(data_get($deliveryClosure, 'accepted_event_snapshot.response.evidence_manifest', []))
+                        ->filter(fn (array $item): bool => in_array($item['vendor_document_id'] ?? null, $authorizedDocumentIds, true))->values()->all();
+                    $delivery->closure_snapshot = $deliveryClosure;
+                    $delivery->makeVisible(['id', 'third_party_collaboration_request_closure_id', 'third_party_engagement_collaboration_request_id', 'vendor_user_id', 'recipient_snapshot', 'closure_snapshot']);
+                    $closure->setRelation('delivery', $delivery);
+                }
                 $visible->setRelation('closure', $closure);
             }
 

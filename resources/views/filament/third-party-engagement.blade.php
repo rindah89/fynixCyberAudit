@@ -195,6 +195,11 @@
                     <div>Response timeliness: {{ $request->closure->timeliness_status?->getLabel() ?? 'Unavailable' }} · {{ $request->closure->days_late ?? 'Unavailable' }} calendar days late · {{ $request->closure->calendar_timezone ?? 'Unavailable' }} calendar · response recorded {{ $request->closure->response_recorded_at?->toDayDateTimeString() ?? 'Unavailable' }}</div>
                     <div class="break-all font-mono text-xs">Timeliness fingerprint: {{ $request->closure->timeliness_fingerprint }}</div>
                     <div>Closure fingerprint version: {{ $request->closure->fingerprint_version ?? 'closure/v1' }}</div>
+                    @if ($request->closure->delivery)
+                        <div>Closure notification: {{ $request->closure->delivery->channel }} · {{ $request->closure->delivery->notification_id }} · attempted {{ $request->closure->delivery->attempted_at?->toDayDateTimeString() }} · delivered {{ $request->closure->delivery->delivered_at?->toDayDateTimeString() }}</div>
+                        <details class="mt-1"><summary class="font-medium">Retained closure-delivery evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['recipient' => $request->closure->delivery->recipient_snapshot, 'closure' => $request->closure->delivery->closure_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
+                        <div class="break-all font-mono text-xs">Delivery fingerprint: {{ $request->closure->delivery->fingerprint }}</div>
+                    @endif
                     <div class="whitespace-pre-wrap">{{ $request->closure->summary }}</div>
                     <details class="mt-1"><summary class="font-medium">Retained closure evidence</summary><pre class="mt-1 overflow-auto whitespace-pre-wrap text-xs">{{ json_encode(['request' => $request->closure->request_snapshot, 'accepted_event' => $request->closure->accepted_event_snapshot, 'recipient' => $request->closure->recipient_context, 'due' => $request->closure->due_context, 'escalation' => $request->closure->escalation_snapshot, 'actor' => $request->closure->actor_snapshot], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre></details>
                     <div class="break-all font-mono text-xs">{{ $request->closure->fingerprint }}</div>

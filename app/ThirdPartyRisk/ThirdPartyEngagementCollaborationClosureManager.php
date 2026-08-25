@@ -12,9 +12,12 @@ use App\Models\ThirdPartyEngagementCollaborationRequest;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\VendorUser;
+use App\Notifications\ThirdPartyCollaborationClosureNotification;
+use App\Support\CanonicalJson;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ThirdPartyEngagementCollaborationClosureManager
@@ -31,7 +34,7 @@ class ThirdPartyEngagementCollaborationClosureManager
             abort_unless($lockedActor && ($lockedActor->isSuperAdmin() || $lockedActor->can('Manage Third Party Risk')), 403);
             $reassignments = $locked->reassignments()->orderBy('version')->lockForUpdate()->get();
             $recipientContext = $locked->setRelation('reassignments', $reassignments)->currentRecipientContext();
-            VendorUser::withTrashed()->lockForUpdate()->findOrFail($recipientContext['recipient_vendor_user_id']);
+            $recipient = VendorUser::withTrashed()->lockForUpdate()->findOrFail($recipientContext['recipient_vendor_user_id']);
             $events = ThirdPartyEngagementCollaborationEvent::query()->where('third_party_engagement_collaboration_request_id', $locked->id)->orderBy('version')->lockForUpdate()->get();
             $acceptedEvent = $events->last() ?? throw ValidationException::withMessages(['request' => 'The collaboration request has no retained event history.']);
             $acceptedResponse = $events->slice(0, -1)->last();
@@ -90,7 +93,34 @@ class ThirdPartyEngagementCollaborationClosureManager
                 'closed_at' => $at->toIso8601String(),
             ];
 
-            return $locked->closure()->create($payload + ['fingerprint' => $this->fingerprint($payload)])->load('actor:id,name,email');
+            $closure = $locked->closure()->create($payload + ['fingerprint' => $this->fingerprint($payload)]);
+            abort_unless($recipient->vendor_id === $engagement->vendor_id, 422, 'The retained collaboration recipient does not belong to this engagement vendor.');
+            $notificationId = Str::uuid()->toString();
+            $attemptedAt = now()->startOfSecond();
+            $recipient->notifyNow(new ThirdPartyCollaborationClosureNotification($notificationId, $engagement->code, $locked->subject, $locked->id));
+            if (! DB::table('notifications')->where('id', $notificationId)
+                ->where('notifiable_type', VendorUser::class)->where('notifiable_id', $recipient->id)->exists()) {
+                throw new \LogicException('The collaboration closure notification was not accepted by the database delivery channel.');
+            }
+            $deliveredAt = now()->startOfSecond();
+            $deliveryPayload = [
+                'third_party_collaboration_request_closure_id' => $closure->id,
+                'third_party_engagement_collaboration_request_id' => $locked->id,
+                'vendor_user_id' => $recipient->id,
+                'channel' => 'database',
+                'notification_id' => $notificationId,
+                'recipient_snapshot' => $recipient->only(['id', 'vendor_id', 'name', 'email', 'is_primary']) + [
+                    'email_verified_at' => $recipient->email_verified_at?->toIso8601String(),
+                    'activated' => $recipient->hasPassword(),
+                    'deleted_at' => $recipient->deleted_at?->toIso8601String(),
+                ],
+                'closure_snapshot' => $closure->attributesToArray(),
+                'attempted_at' => $attemptedAt->toIso8601String(),
+                'delivered_at' => $deliveredAt->toIso8601String(),
+            ];
+            $closure->delivery()->create($deliveryPayload + ['fingerprint' => hash('sha256', CanonicalJson::encode($deliveryPayload))]);
+
+            return $closure->load(['actor:id,name,email', 'delivery.recipient:id,vendor_id,name,email']);
         }, 3);
     }
 
