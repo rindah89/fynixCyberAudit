@@ -3,6 +3,10 @@
 $secrets = env('SUITE_PPM_WEBHOOK_SECRETS', '');
 
 return [
+    'required_sources' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('SUITE_REQUIRED_SOURCES', 'itsm,ppm'))
+    ))),
     'itsm' => [
         'enabled' => filter_var(env('SUITE_ITSM_ENABLED', env('FYNIX_ITSM_ENABLED', false)), FILTER_VALIDATE_BOOL),
         'base_url' => env('SUITE_ITSM_BASE_URL', env('FYNIX_ITSM_BASE_URL')),

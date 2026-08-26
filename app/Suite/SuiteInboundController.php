@@ -27,6 +27,9 @@ class SuiteInboundController
         if (! SuiteEnvelope::verify($secrets, $headers, $raw, time(), $tolerance)) {
             return response()->json(['outcome' => 'invalid signature'], 401);
         }
+        if (! in_array($source, ['ppm', 'itsm'], true)) {
+            return response()->json(['outcome' => 'unsupported source'], 400);
+        }
 
         $envelope = json_decode($raw, true);
         if (! is_array($envelope) || ($envelope['event_type'] ?? null) !== $headers['x-fynix-event']) {
@@ -39,6 +42,9 @@ class SuiteInboundController
         }
 
         if ($source === 'itsm' && (! config('suite.itsm.enabled') || $headers['x-fynix-webhook-id'] !== (string) config('suite.itsm.webhook_id') || (string) ($envelope['tenant_id'] ?? '') !== (string) config('suite.itsm.remote_tenant_id'))) {
+            return response()->json(['outcome' => 'binding disabled'], 503);
+        }
+        if ($source === 'ppm' && (! config('suite.ppm.enabled') || $headers['x-fynix-webhook-id'] !== (string) config('suite.ppm.webhook_id') || (string) ($envelope['tenant_id'] ?? '') !== (string) config('suite.ppm.tenant_id'))) {
             return response()->json(['outcome' => 'binding disabled'], 503);
         }
 
@@ -73,13 +79,33 @@ class SuiteInboundController
 
     public function ready(ItsmGateway $gateway): JsonResponse
     {
-        $missing = config('suite.itsm.enabled') ? $gateway->missingConfiguration() : [];
+        $required = config('suite.required_sources', ['itsm', 'ppm']);
+        $missing = [];
+        if (in_array('itsm', $required, true)) {
+            if (! config('suite.itsm.enabled')) {
+                $missing[] = 'itsm.enabled';
+            } else {
+                $missing = array_merge($missing, array_map(
+                    fn (string $key): string => 'itsm.'.$key,
+                    $gateway->missingConfiguration()
+                ));
+            }
+        }
+        if (in_array('ppm', $required, true)) {
+            foreach (['enabled', 'base_url', 'token', 'tenant_id', 'webhook_id', 'webhook_secrets'] as $key) {
+                if (empty(config('suite.ppm.'.$key))) {
+                    $missing[] = 'ppm.'.$key;
+                }
+            }
+        }
+
         return response()->json([
             'status' => $missing === [] ? 'ok' : 'not_ready',
             'release_sha' => env('FYNIX_RELEASE_SHA', 'development'),
             'ppm' => (bool) config('suite.ppm.enabled'),
             'itsm' => (bool) config('suite.itsm.enabled'),
             'last_inbound_outcome' => SuiteInboundDelivery::query()->where('source', 'itsm')->latest('id')->value('outcome'),
+            'missing' => $missing,
         ], $missing === [] ? 200 : 503);
     }
 }
