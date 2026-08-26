@@ -950,6 +950,38 @@ class ComplianceCaseManagementTest extends TestCase
         $this->assertThrows(fn () => $release->update(['summary' => 'Rewrite']), \LogicException::class);
     }
 
+    public function test_recused_manager_cannot_release_a_legal_hold(): void
+    {
+        $issuer = User::factory()->create();
+        $issuer->assignRole('Security Admin');
+        $releaser = User::factory()->create();
+        $releaser->assignRole('Security Admin');
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Security Admin');
+        $custodian = User::factory()->create();
+        $case = app(ComplianceCaseManager::class)->open($issuer, [
+            'title' => 'Hold recusal', 'category' => ComplianceCaseCategory::Fraud->value,
+            'priority' => ComplianceCasePriority::High->value, 'allegation' => 'A governed allegation.',
+            'summary' => 'Open.',
+        ]);
+        $holdId = $this->actingAs($issuer)->postJson("/api/compliance-cases/{$case->id}/legal-holds", [
+            'scope' => 'Preserve relevant records.', 'systems' => ['Email'], 'data_categories' => ['Correspondence'],
+            'preservation_start_at' => now()->subHour()->toIso8601String(), 'custodian_ids' => [$custodian->id],
+        ])->assertCreated()->json('data.id');
+        $this->actingAs($custodian)->postJson("/api/compliance-case-legal-holds/{$holdId}/acknowledge", [
+            'statement' => 'I acknowledge and will follow this preservation instruction.',
+        ])->assertCreated();
+        $declaration = $this->actingAs($issuer)->postJson("/api/compliance-cases/{$case->id}/conflicts", [
+            'subject_user_id' => $releaser->id, 'nature' => 'Releaser conflict.', 'rationale' => 'Recuse the releaser.',
+        ])->assertCreated()->json('data.id');
+        $this->actingAs($reviewer)->postJson("/api/compliance-case-conflicts/{$declaration}/decision", [
+            'decision' => 'confirmed', 'summary' => 'Releaser is recused.',
+        ])->assertCreated();
+        $this->actingAs($releaser)->postJson("/api/compliance-cases/{$case->id}/legal-holds/{$holdId}/release", [
+            'summary' => 'Recused manager must not release.',
+        ])->assertForbidden();
+    }
+
     public function test_legal_hold_factories_bounds_and_retained_migration_are_coherent(): void
     {
         $factoryHold = ComplianceCaseLegalHold::factory()->create();

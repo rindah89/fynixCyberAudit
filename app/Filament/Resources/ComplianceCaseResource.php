@@ -2,10 +2,15 @@
 
 namespace App\Filament\Resources;
 
+use App\ComplianceCases\ComplianceCaseAccessGrantManager;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ListComplianceCases;
 use App\Filament\Resources\ComplianceCaseResource\Pages\ViewComplianceCase;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\AccessGrantsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ActionIssuesRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ArchiveManifestsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ClosureReportsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\CommunicationsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ConflictsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EventsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\EvidenceSubmissionsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InterviewsRelationManager;
@@ -13,6 +18,9 @@ use App\Filament\Resources\ComplianceCaseResource\RelationManagers\Investigation
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationProcedureExecutionsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\InvestigationReportsRelationManager;
 use App\Filament\Resources\ComplianceCaseResource\RelationManagers\LegalHoldsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\MilestonesRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\ReopenProposalsRelationManager;
+use App\Filament\Resources\ComplianceCaseResource\RelationManagers\RetentionRelationManager;
 use App\Models\ComplianceCase;
 use App\Support\Enterprise;
 use Filament\Infolists\Components\TextEntry;
@@ -42,7 +50,11 @@ class ComplianceCaseResource extends Resource
 
     public static function canAccess(): bool
     {
-        return Enterprise::enabled('compliance_cases') && auth()->user()?->can('viewAny', ComplianceCase::class) === true;
+        $user = auth()->user();
+
+        return Enterprise::enabled('compliance_cases') && $user !== null
+            && ($user->can('viewAny', ComplianceCase::class)
+                || ComplianceCaseAccessGrantManager::granteeHasAnyActiveGrant($user));
     }
 
     public static function infolist(Schema $schema): Schema
@@ -79,8 +91,8 @@ class ComplianceCaseResource extends Resource
     {
         $query = parent::getEloquentQuery()->with(['opener:id,name', 'assignee:id,name']);
         $actor = auth()->user();
-        if ($actor && ! $actor->can('Manage Compliance Cases') && ! $actor->can('Read Compliance Cases')) {
-            $query->where('assigned_to', $actor->id);
+        if ($actor) {
+            ComplianceCaseAccessGrantManager::scopeVisibleTo($query, $actor);
         }
 
         return $query;
@@ -88,7 +100,7 @@ class ComplianceCaseResource extends Resource
 
     public static function getRelations(): array
     {
-        return [EventsRelationManager::class, InvestigationPlansRelationManager::class, InvestigationProcedureExecutionsRelationManager::class, InvestigationReportsRelationManager::class, ClosureReportsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class];
+        return [EventsRelationManager::class, InvestigationPlansRelationManager::class, InvestigationProcedureExecutionsRelationManager::class, InvestigationReportsRelationManager::class, ClosureReportsRelationManager::class, EvidenceSubmissionsRelationManager::class, InterviewsRelationManager::class, ActionIssuesRelationManager::class, LegalHoldsRelationManager::class, ConflictsRelationManager::class, MilestonesRelationManager::class, AccessGrantsRelationManager::class, CommunicationsRelationManager::class, RetentionRelationManager::class, ReopenProposalsRelationManager::class, ArchiveManifestsRelationManager::class];
     }
 
     public static function getPages(): array

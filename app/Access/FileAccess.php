@@ -6,6 +6,7 @@ use App\Models\AiJob;
 use App\Models\AiMonitoringReviewEvidence;
 use App\Models\AuditFindingFollowUpEvidence;
 use App\Models\AuditProcedureExecutionEvidence;
+use App\Models\ComplianceCaseArchiveManifest;
 use App\Models\ComplianceCaseClosureReport;
 use App\Models\ComplianceCaseEvidenceFile;
 use App\Models\ControlTestExecutionEvidence;
@@ -455,7 +456,8 @@ class FileAccess
                 ->orWhereHas('complianceCaseEvidence'))
             ->exists()
             || ComplianceCaseEvidenceFile::query()->where('file_path_snapshot', $path)->exists()
-            || ComplianceCaseClosureReport::query()->where('report_path', $path)->exists()) {
+            || ComplianceCaseClosureReport::query()->where('report_path', $path)->exists()
+            || ComplianceCaseArchiveManifest::query()->where('archive_path', $path)->exists()) {
             throw ValidationException::withMessages([
                 'file_path' => 'Files referenced by governed evidence cannot be removed through product interfaces.',
             ]);

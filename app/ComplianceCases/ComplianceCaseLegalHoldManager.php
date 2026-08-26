@@ -27,6 +27,7 @@ class ComplianceCaseLegalHoldManager
         return DB::transaction(function () use ($actor, $case, $data): ComplianceCaseLegalHold {
             $lockedCase = ComplianceCase::query()->lockForUpdate()->findOrFail($case->id);
             abort_unless($actor->can('Manage Compliance Cases') && $actor->can('update', $lockedCase), 403);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $lockedCase);
             $data = Validator::make($data, self::issueRules())->validate();
             $data['scope'] = trim($data['scope']);
             if ($data['scope'] === '') {
@@ -135,6 +136,7 @@ class ComplianceCaseLegalHoldManager
             $locked = ComplianceCaseLegalHold::query()->where('compliance_case_id', $lockedCase->id)->lockForUpdate()->findOrFail($hold->id);
             abort_unless($actor->can('Manage Compliance Cases') && $actor->can('view', $lockedCase), 403);
             abort_if($actor->id === $locked->issued_by, 403, 'The legal-hold issuer cannot release the same hold.');
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $lockedCase);
             $data = Validator::make($data, self::releaseRules())->validate();
             $data['summary'] = trim($data['summary']);
             if ($data['summary'] === '') {

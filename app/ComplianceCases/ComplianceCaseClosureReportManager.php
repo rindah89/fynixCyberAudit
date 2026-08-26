@@ -55,6 +55,7 @@ class ComplianceCaseClosureReportManager
         try {
             return DB::transaction(function () use ($actor, $case, $data, $disk, $path, &$written): ComplianceCaseClosureReport {
                 $locked = ComplianceCase::query()->lockForUpdate()->findOrFail($case->id);
+                app(ComplianceCaseConflictManager::class)->assertClear($actor, $locked);
                 abort_unless($actor->can('Manage Compliance Cases') && $actor->can('view', $locked), 403);
                 $data = Validator::make($data, self::rules())->validate();
                 if ($locked->investigation_reporting_governed_at === null || $locked->status !== ComplianceCaseStatus::Closed) {

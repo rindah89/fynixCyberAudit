@@ -68,6 +68,7 @@ class ComplianceCaseManager
 
         return DB::transaction(function () use ($actor, $case, $data): ComplianceCaseEvent {
             $locked = ComplianceCase::query()->lockForUpdate()->findOrFail($case->id);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $locked);
             $isManager = $actor->can('Manage Compliance Cases');
             $isInvestigator = $actor->can('Investigate Compliance Cases') && $locked->assigned_to === $actor->id;
             abort_unless($isManager || $isInvestigator, 403);
@@ -127,6 +128,7 @@ class ComplianceCaseManager
                 if (! $assignee->can('Investigate Compliance Cases')) {
                     throw ValidationException::withMessages(['assigned_to' => 'The assigned user must hold Investigate Compliance Cases.']);
                 }
+                app(ComplianceCaseConflictManager::class)->assertAssignable($assignee->id, $locked->id);
                 $changes['assigned_to'] = $assignee->id;
             }
             $prospective = array_merge($locked->getAttributes(), $changes);
@@ -258,6 +260,9 @@ class ComplianceCaseManager
             if (blank($prospective['closure_summary'] ?? null)) {
                 throw ValidationException::withMessages(['status' => 'Closure requires an independent closure summary.']);
             }
+            if (app(ComplianceCaseMilestoneManager::class)->hasBlockingRequiredMilestones($case)) {
+                throw ValidationException::withMessages(['milestones' => 'Required milestones must be completed or waived before closure.']);
+            }
             $investigatorIds = $events->pluck('after_snapshot')->map(fn ($snapshot) => data_get($snapshot, 'assigned_to.id'))->filter()->push($case->assigned_to)->unique();
             $decisionActors = $events->filter(function (ComplianceCaseEvent $event): bool {
                 $beforeStatus = $this->snapshotStatus(data_get($event->before_snapshot, 'status'));
@@ -320,6 +325,12 @@ class ComplianceCaseManager
         }
 
         return is_string($status) ? $status : null;
+    }
+
+    /** @return array<string,mixed> */
+    public function snapshotForReopen(ComplianceCase $case): array
+    {
+        return $this->snapshot($case);
     }
 
     /** @return array<string,mixed> */

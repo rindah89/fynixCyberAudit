@@ -872,6 +872,22 @@ After independent terminal closure, a case manager submits `POST /api/compliance
 
 An independently separated case manager records one terminal `approved` or `rejected` package decision through `POST /api/compliance-case-closure-reports/{report}/review`. Only the latest package is reviewable; the package generator and terminal case closer are excluded. The server re-verifies the private PDF size/SHA-256 before retaining the complete package payload, reviewer identity, summary, time, decision, and canonical fingerprint. Safe case history exposes review metadata but omits the internal package snapshot. This is an attributable internal review action, not legal approval, regulatory filing, external delivery, or assurance of report quality/effectiveness.
 
+`GET|POST /api/compliance-cases/{case}/conflicts` retains immutable conflict declarations (`subject_user_id`, `nature`, `rationale`) bound to the exact current case/event. `POST /api/compliance-case-conflicts/{declaration}/decision` records one terminal `confirmed` or `rejected` decision by a manager other than the subject and declarer. A confirmed conflict recuses that subject from governed assignment, investigation, review, closure, archive, and reopen paths. History is limited to 20 declarations/case. This does not discover conflicts or determine legal/ethical/organizational independence.
+
+`GET|POST /api/compliance-cases/{case}/access-grants` issues time-bounded read grants (`grantee_id`, `purpose`, `starts_at`, `ends_at`). `POST /api/compliance-case-access-grants/{grant}/revoke` immediately removes current read discovery while retaining the grant. Active grants never confer mutation. At most 100 grants/case are retained.
+
+`GET|POST /api/compliance-cases/{case}/milestones` defines bounded milestones (`title`, `description`, `owner_id`, `due_at`, optional `required`). `POST /api/compliance-case-milestones/{milestone}/complete` is available to the owner or a manager. `POST /api/compliance-case-milestones/{milestone}/waive` requires a manager other than the definer and owner. Closed cases reject new milestones; required open milestones block closure. The scheduled `fynix:reconcile-compliance-case-milestones` command (daily 00:20) atomically records each idempotent due-soon/overdue event, an in-app database notification, and immutable delivery evidence for the active owner. This proves database-store insertion only, not reading, external delivery, or legal-deadline calculation. Recused owners cannot complete, and recused managers cannot waive.
+
+`GET|POST /api/compliance-cases/{case}/communications` records immutable `required`/`prepared`/`sent`/`waived`/`cancelled` decisions with `audience`, `purpose`, optional `deadline_at`, and optional `external_reference`. `sent` requires a nonblank unverified reference. This does not send email, file with a regulator, or prove delivery.
+
+`GET|POST /api/compliance-cases/{case}/retention-classifications` classifies a closed case (`policy_reference`, `classification`, `starts_on`, `ends_on`, `rationale`). `POST /api/compliance-case-retention-classifications/{classification}/disposition` records `approved`/`rejected`/`deferred` by a manager other than the classifier after legal holds are released. Approval does not delete files or rows.
+
+`GET|POST /api/compliance-cases/{case}/reopen-proposals` proposes reopening a closed case. `POST /api/compliance-case-reopen-proposals/{proposal}/review` records `approved` or `rejected` against only the latest proposal by a manager other than the proposer. Approval starts a new investigation cycle and appends a `reopened` event without rewriting `closed_at`, `closure_summary`, or prior package/retention evidence.
+
+`GET|POST /api/compliance-cases/{case}/archive-manifests` generates a private ZIP archive from the latest independently approved closure package. It contains a canonical JSON manifest, the verified closure PDF, and every verified retained case-evidence copy, binding current governed-registry fingerprints and per-file size/SHA-256 identities. `POST /api/compliance-case-archive-manifests/{archive}/review` records one terminal decision against the latest manifest by a manager other than the generator. `GET /app/compliance-case-archives/{archive}/download` independently rechecks current case access, requires approval, and streams only after size/SHA-256 verification; mismatch returns 409. Hashes prove retained-byte identity, not authenticity, legal admissibility, or external delivery.
+
+`GET /api/compliance-case-portfolio` returns ACL-safe aggregates (`total`, `by_status`, `by_phase`, `age_bands`, `overdue_milestones`, `open_holds`, `open_issues`, `closed`, `reopened`, `review_outcomes`, `average_open_days`) for cases the caller can currently view. Phase values are `intake`, `investigation`, `remediation`, `resolution`, and `terminal`. `opened_from`/`opened_to` use a UTC date window bounded to 366 days; absent bounds default to the latest 366 days, and more than 10,000 visible cases requires a narrower window. `format=csv` and the operator page use the same filters and aggregates while omitting allegation/evidence content. Unauthorized callers receive 403; callers with no visible cases receive zero totals. This is not a misconduct, legal-exposure, investigator-performance, or effectiveness dashboard.
+
 - `GET|POST /api/compliance-case-intakes`
 - `GET /api/my-compliance-case-intakes`
 - `POST /api/compliance-case-intakes/{intake}/decision`
@@ -891,6 +907,21 @@ An independently separated case manager records one terminal `approved` or `reje
 - `POST /api/compliance-cases/{complianceCase}/legal-holds/{legalHold}/release`
 - `GET /api/my-compliance-case-legal-holds`
 - `POST /api/compliance-case-legal-holds/{legalHold}/acknowledge`
+- `GET|POST /api/compliance-cases/{complianceCase}/conflicts`
+- `POST /api/compliance-case-conflicts/{declaration}/decision`
+- `GET|POST /api/compliance-cases/{complianceCase}/milestones`
+- `POST /api/compliance-case-milestones/{milestone}/complete`
+- `POST /api/compliance-case-milestones/{milestone}/waive`
+- `GET|POST /api/compliance-cases/{complianceCase}/retention-classifications`
+- `POST /api/compliance-case-retention-classifications/{classification}/disposition`
+- `GET|POST /api/compliance-cases/{complianceCase}/access-grants`
+- `POST /api/compliance-case-access-grants/{grant}/revoke`
+- `GET|POST /api/compliance-cases/{complianceCase}/communications`
+- `GET|POST /api/compliance-cases/{complianceCase}/reopen-proposals`
+- `POST /api/compliance-case-reopen-proposals/{proposal}/review`
+- `GET|POST /api/compliance-cases/{complianceCase}/archive-manifests`
+- `POST /api/compliance-case-archive-manifests/{archive}/review`
+- `GET /api/compliance-case-portfolio`
 
 Opening requires `title`, `category`, `priority`, `allegation`, and `summary`; optional fields are `source_channel`, `source_reference`, `reporter_reference`, and `confidential`. Categories are `Conduct`, `Fraud`, `Regulatory`, `Policy Violation`, `Privacy`, `Conflict of Interest`, `Retaliation`, and `Other`. Priorities are `Low`, `Medium`, `High`, and `Critical`.
 

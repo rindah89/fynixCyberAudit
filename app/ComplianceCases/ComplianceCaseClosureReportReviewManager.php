@@ -27,6 +27,7 @@ class ComplianceCaseClosureReportReviewManager
             $caseId = ComplianceCaseClosureReport::query()->whereKey($report->id)->value('compliance_case_id');
             $case = ComplianceCase::query()->lockForUpdate()->findOrFail($caseId);
             abort_unless($actor->can('Manage Compliance Cases') && $actor->can('view', $case), 403);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $case);
             if ($case->investigation_reporting_governed_at === null || $case->status !== ComplianceCaseStatus::Closed) {
                 throw ValidationException::withMessages(['case' => 'Closure-package review requires a governed closed compliance case.']);
             }

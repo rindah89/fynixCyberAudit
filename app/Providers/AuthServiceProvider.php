@@ -8,6 +8,7 @@ use App\Models\AiSystem;
 use App\Models\BusinessService;
 use App\Models\ComplianceCase;
 use App\Models\ComplianceCaseClosureReport;
+use App\Models\ComplianceCaseConflictDeclaration;
 use App\Models\ComplianceCaseEvidenceSubmission;
 use App\Models\ComplianceCaseIntake;
 use App\Models\ComplianceCaseIntakeMessage;
@@ -87,6 +88,7 @@ class AuthServiceProvider extends ServiceProvider
         ComplianceCaseInvestigationProcedureExecution::class => ComplianceCaseOwnedPolicy::class,
         ComplianceCaseInvestigationReport::class => ComplianceCaseOwnedPolicy::class,
         ComplianceCaseClosureReport::class => ComplianceCaseClosureReportPolicy::class,
+        ComplianceCaseConflictDeclaration::class => ComplianceCaseOwnedPolicy::class,
         ThirdPartyCollaborationRequestClosure::class => ThirdPartyCollaborationRequestClosurePolicy::class,
         ThirdPartyCollaborationClosureAcknowledgementDelivery::class => ThirdPartyCollaborationClosureAcknowledgementDeliveryPolicy::class,
         GovernedModel::class => GovernedModelPolicy::class,

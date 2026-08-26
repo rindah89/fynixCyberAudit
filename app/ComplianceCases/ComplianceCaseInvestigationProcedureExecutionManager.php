@@ -32,6 +32,7 @@ class ComplianceCaseInvestigationProcedureExecutionManager
             $isManager = $actor->can('Manage Compliance Cases');
             $isInvestigator = $actor->can('Investigate Compliance Cases') && $locked->assigned_to === $actor->id;
             abort_unless($isManager || $isInvestigator, 403);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $locked);
             if (! in_array($locked->status, [ComplianceCaseStatus::Investigating, ComplianceCaseStatus::ActionRequired], true)) {
                 throw ValidationException::withMessages(['case' => 'Investigation procedures may be concluded only during investigation or action-required work.']);
             }
@@ -101,6 +102,7 @@ class ComplianceCaseInvestigationProcedureExecutionManager
         return DB::transaction(function () use ($actor, $execution, $data): ComplianceCaseInvestigationProcedureReview {
             $caseId = ComplianceCaseInvestigationProcedureExecution::query()->whereKey($execution->id)->value('compliance_case_id');
             $case = ComplianceCase::query()->lockForUpdate()->findOrFail($caseId);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $case);
             abort_unless($actor->can('Manage Compliance Cases'), 403);
             if (! in_array($case->status, [ComplianceCaseStatus::Investigating, ComplianceCaseStatus::ActionRequired], true)) {
                 throw ValidationException::withMessages(['case' => 'Procedure conclusions may be reviewed only during investigation or action-required work.']);

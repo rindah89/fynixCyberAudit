@@ -234,6 +234,24 @@ class ComplianceCaseClosureReportTest extends TestCase
         }
     }
 
+    public function test_recused_manager_cannot_review_a_closure_package(): void
+    {
+        $report = ComplianceCaseClosureReport::factory()->create();
+        $reviewer = User::factory()->create();
+        $reviewer->givePermissionTo(['Manage Compliance Cases', 'Read Compliance Cases']);
+        $confirmer = User::factory()->create();
+        $confirmer->givePermissionTo(['Manage Compliance Cases', 'Read Compliance Cases']);
+        $declaration = $this->actingAs($reviewer)->postJson("/api/compliance-cases/{$report->compliance_case_id}/conflicts", [
+            'subject_user_id' => $reviewer->id, 'nature' => 'Reviewer conflict.', 'rationale' => 'Recuse the package reviewer.',
+        ])->assertCreated()->json('data.id');
+        $this->actingAs($confirmer)->postJson("/api/compliance-case-conflicts/{$declaration}/decision", [
+            'decision' => 'confirmed', 'summary' => 'Package reviewer is recused.',
+        ])->assertCreated();
+        $this->actingAs($reviewer)->postJson("/api/compliance-case-closure-reports/{$report->id}/review", [
+            'decision' => 'approved', 'summary' => 'Recused manager must not review the package.',
+        ])->assertForbidden();
+    }
+
     public function test_closure_package_review_separates_actors_latest_version_and_verified_bytes(): void
     {
         $report = ComplianceCaseClosureReport::factory()->create();

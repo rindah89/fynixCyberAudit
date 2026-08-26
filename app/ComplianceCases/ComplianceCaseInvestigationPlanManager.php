@@ -28,6 +28,7 @@ class ComplianceCaseInvestigationPlanManager
             $locked = ComplianceCase::query()->lockForUpdate()->findOrFail($case->id);
             $manager = $actor->can('Manage Compliance Cases');
             abort_unless($manager || ($actor->can('Investigate Compliance Cases') && $locked->assigned_to === $actor->id), 403);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $locked);
             if ($locked->status !== ComplianceCaseStatus::Triaged) {
                 throw ValidationException::withMessages(['case' => 'Investigation plans may be submitted only while a case is triaged.']);
             }
@@ -78,6 +79,7 @@ class ComplianceCaseInvestigationPlanManager
         return DB::transaction(function () use ($actor, $plan, $data): ComplianceCaseInvestigationPlanReview {
             $caseId = ComplianceCaseInvestigationPlan::query()->whereKey($plan->id)->value('compliance_case_id');
             $case = ComplianceCase::query()->lockForUpdate()->findOrFail($caseId);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $case);
             $locked = ComplianceCaseInvestigationPlan::query()->where('compliance_case_id', $case->id)->lockForUpdate()->findOrFail($plan->id);
             abort_unless($actor->can('Manage Compliance Cases'), 403);
             abort_if($actor->id === $locked->authored_by || $actor->id === $case->assigned_to, 403, 'The author and assigned investigator cannot review the plan.');

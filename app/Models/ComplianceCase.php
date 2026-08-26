@@ -78,6 +78,41 @@ class ComplianceCase extends Model
         return $this->hasMany(ComplianceCaseInvestigationReport::class)->orderBy('version');
     }
 
+    public function conflictDeclarations(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseConflictDeclaration::class)->orderBy('version');
+    }
+
+    public function milestones(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseMilestone::class)->orderBy('version');
+    }
+
+    public function accessGrants(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseAccessGrant::class)->orderBy('version');
+    }
+
+    public function communicationDecisions(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseCommunicationDecision::class)->orderBy('version');
+    }
+
+    public function reopenProposals(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseReopenProposal::class)->orderBy('version');
+    }
+
+    public function retentionClassifications(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseRetentionClassification::class)->orderBy('version');
+    }
+
+    public function archiveManifests(): HasMany
+    {
+        return $this->hasMany(ComplianceCaseArchiveManifest::class)->orderBy('version');
+    }
+
     public function closureReports(): HasMany
     {
         return $this->hasMany(ComplianceCaseClosureReport::class)->orderBy('version');

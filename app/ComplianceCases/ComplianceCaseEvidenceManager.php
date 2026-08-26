@@ -30,6 +30,7 @@ class ComplianceCaseEvidenceManager
                 $isManager = $actor->can('Manage Compliance Cases');
                 $isInvestigator = $actor->can('Investigate Compliance Cases') && $locked->assigned_to === $actor->id;
                 abort_unless($isManager || $isInvestigator, 403);
+                app(ComplianceCaseConflictManager::class)->assertClear($actor, $locked);
                 if ($locked->status === ComplianceCaseStatus::Closed) {
                     throw ValidationException::withMessages(['case' => 'Closed compliance cases cannot receive new evidence.']);
                 }

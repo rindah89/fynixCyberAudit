@@ -146,6 +146,7 @@ class ComplianceCaseInterviewManager
     private function authorizeMutation(User $actor, ComplianceCase $case): void
     {
         abort_unless($actor->can('update', $case), 403);
+        app(ComplianceCaseConflictManager::class)->assertClear($actor, $case);
     }
 
     private function assertInterviewable(ComplianceCase $case): void

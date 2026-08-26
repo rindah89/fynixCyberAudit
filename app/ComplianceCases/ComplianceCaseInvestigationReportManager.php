@@ -38,6 +38,7 @@ class ComplianceCaseInvestigationReportManager
             $isManager = $actor->can('Manage Compliance Cases');
             $isInvestigator = $actor->can('Investigate Compliance Cases') && $locked->assigned_to === $actor->id;
             abort_unless($isManager || $isInvestigator, 403);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $locked);
             $this->assertReportable($locked);
             $data = $this->validated($data, self::submitRules());
             [$events, $plan, $planReview, $executions, $procedureReviews] = $this->lockInvestigationContext($locked);
@@ -82,6 +83,7 @@ class ComplianceCaseInvestigationReportManager
         return DB::transaction(function () use ($actor, $report, $data): ComplianceCaseInvestigationReportReview {
             $caseId = ComplianceCaseInvestigationReport::query()->whereKey($report->id)->value('compliance_case_id');
             $case = ComplianceCase::query()->lockForUpdate()->findOrFail($caseId);
+            app(ComplianceCaseConflictManager::class)->assertClear($actor, $case);
             abort_unless($actor->can('Manage Compliance Cases'), 403);
             $this->assertReportable($case);
             [$events, $plan, $planReview, $executions, $procedureReviews] = $this->lockInvestigationContext($case);
