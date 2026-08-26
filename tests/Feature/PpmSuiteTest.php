@@ -16,6 +16,7 @@ use App\Suite\SuiteEnvelope;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class PpmSuiteTest extends TestCase
@@ -52,6 +53,41 @@ class PpmSuiteTest extends TestCase
         $response->assertJsonPath('outcome', 'invalid signature');
     }
 
+    public function test_signed_event_with_wrong_ppm_binding_is_rejected(): void
+    {
+        Config::set('suite.ppm.webhook_id', '33333333-3333-4333-8333-333333333333');
+
+        $response = $this->postSignedPpmEvent('project.updated', '44444444-4444-4444-8444-444444444444', []);
+
+        $response->assertStatus(503)->assertJsonPath('outcome', 'binding disabled');
+    }
+
+    public function test_signed_event_from_unknown_source_is_rejected(): void
+    {
+        $envelope = [
+            'event_type' => 'finance.invoice.created',
+            'tenant_id' => '11111111-1111-1111-1111-111111111111',
+            'entity_type' => 'invoice',
+            'entity_id' => '44444444-4444-4444-8444-444444444444',
+            'occurred_at' => now()->utc()->format('Y-m-d\TH:i:s+00:00'),
+            'payload' => [],
+        ];
+        $raw = (string) json_encode($envelope, JSON_UNESCAPED_SLASHES);
+        $timestamp = time();
+        $deliveryId = (string) Str::uuid();
+        $webhookId = '22222222-2222-2222-2222-222222222222';
+        $signature = SuiteEnvelope::sign('suite-secret', $timestamp, $envelope['event_type'], 'finance', $webhookId, $deliveryId, $raw);
+
+        $response = $this->call('POST', '/api/suite/events', [], [], [], [
+            'CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_FYNIX_SIGNATURE' => $signature, 'HTTP_X_FYNIX_TIMESTAMP' => (string) $timestamp,
+            'HTTP_X_FYNIX_EVENT' => $envelope['event_type'], 'HTTP_X_FYNIX_SOURCE' => 'finance',
+            'HTTP_X_FYNIX_WEBHOOK_ID' => $webhookId, 'HTTP_X_FYNIX_DELIVERY_ID' => $deliveryId,
+        ], $raw);
+
+        $response->assertStatus(400)->assertJsonPath('outcome', 'unsupported source');
+    }
+
     public function test_publishing_a_poam_creates_a_ppm_project_and_back_link(): void
     {
         $owner = User::factory()->create();
@@ -76,6 +112,27 @@ class PpmSuiteTest extends TestCase
         $again = app(PpmGateway::class)->publishProject($owner, $project);
         $this->assertSame($link->id, $again->id);
         $this->assertSame(1, $client->createProjectCalls);
+    }
+
+    public function test_readiness_fails_when_required_itsm_binding_is_disabled(): void
+    {
+        Config::set('suite.required_sources', ['itsm']);
+        Config::set('suite.itsm.enabled', false);
+
+        $this->getJson('/api/suite/ready')
+            ->assertStatus(503)
+            ->assertJsonPath('status', 'not_ready')
+            ->assertJsonPath('missing.0', 'itsm.enabled');
+    }
+
+    public function test_readiness_fails_when_required_ppm_binding_is_incomplete(): void
+    {
+        Config::set('suite.required_sources', ['ppm']);
+        Config::set('suite.ppm.token', '');
+
+        $this->getJson('/api/suite/ready')
+            ->assertStatus(503)
+            ->assertJsonFragment(['ppm.token']);
     }
 
     public function test_ppm_project_update_projects_status_without_mutating_the_poam(): void
@@ -159,7 +216,7 @@ class PpmSuiteTest extends TestCase
         ];
         $raw = json_encode($envelope, JSON_UNESCAPED_SLASHES);
         $timestamp = time();
-        $deliveryId = (string) \Illuminate\Support\Str::uuid();
+        $deliveryId = (string) Str::uuid();
         $webhookId = '22222222-2222-2222-2222-222222222222';
         $signature = SuiteEnvelope::sign('suite-secret', $timestamp, $eventType, 'ppm', $webhookId, $deliveryId, (string) $raw);
 
