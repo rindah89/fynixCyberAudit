@@ -135,8 +135,12 @@ WORKDIR /var/www/html
 # Copy application code
 COPY . .
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# Composer's Laravel discovery boots the configured default SQLite connection.
+# Supply an empty build-only file; production overrides the connection through
+# its runtime Secret and never uses this file for persisted data.
+RUN mkdir -p database \
+    && touch database/fynixcyberaudit.sqlite \
+    && composer install --no-dev --optimize-autoloader
 
 # Copy package files and install Node dependencies
 COPY package*.json ./
