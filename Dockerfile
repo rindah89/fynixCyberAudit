@@ -149,8 +149,11 @@ RUN npm ci
 # Complete Composer installation with autoloader optimization
 RUN composer dump-autoload --optimize --classmap-authoritative
 
-# Build frontend assets
-RUN npm run build
+# esbuild is a Go binary. Docker Desktop executes this linux/amd64 build under
+# emulation on arm64 operator workstations; disabling asynchronous preemption
+# and limiting the Go scheduler avoids the emulator's lfstack pointer-packing
+# crash without changing the generated assets.
+RUN GOMAXPROCS=1 GODEBUG=asyncpreemptoff=1 npm run build
 
 # Clean up Node modules after build
 RUN rm -rf node_modules
