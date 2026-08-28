@@ -43,6 +43,43 @@ class GovernanceDomainEventTest extends TestCase
         $this->assertSame(hash('sha256', json_encode($envelope, JSON_UNESCAPED_SLASHES)), $request->evidence_sha256);
     }
 
+    public function test_signed_scheduled_hr_purge_creates_reviewable_disposition_receipt(): void
+    {
+        Config::set('data_governance.bindings.hr', [
+            'enabled' => true,
+            'tenant_id' => 'tenant-1',
+            'webhook_id' => 'hr-governance-hook',
+            'secret' => str_repeat('s', 32),
+            'replay_tolerance' => 300,
+        ]);
+        $personId = (string) Str::uuid();
+        $envelope = [
+            'event_type' => 'hr.person.purged',
+            'tenant_id' => 'tenant-1',
+            'entity_type' => 'person',
+            'entity_id' => $personId,
+            'occurred_at' => now()->utc()->toAtomString(),
+            'payload' => [
+                'person_uuid' => $personId,
+                'erasure' => true,
+                'record_class' => 'terminated_employee',
+                'record_created_at' => now()->subDays(366)->utc()->toAtomString(),
+                'retention_days' => 365,
+                'action' => 'anonymize',
+                'evidence_ref' => 'urn:fynix:hr:retention-disposition:'.$personId,
+            ],
+        ];
+
+        $this->postSigned($envelope, 'hr', 'hr-governance-hook', str_repeat('s', 32))
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+
+        $receipt = DispositionReceipt::query()->sole();
+        $this->assertSame($personId, $receipt->record_ref);
+        $this->assertSame('anonymize', $receipt->action);
+        $this->assertSame('pending_review', $receipt->review_status);
+        $this->assertSame(hash('sha256', json_encode($envelope, JSON_UNESCAPED_SLASHES)), $receipt->evidence_sha256);
+    }
+
     public function test_signed_docflow_destruction_creates_reviewable_disposition_receipt(): void
     {
         Config::set('data_governance.bindings.docflow', [

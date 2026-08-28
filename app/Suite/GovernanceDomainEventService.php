@@ -83,6 +83,27 @@ class GovernanceDomainEventService
                 hash('sha256', $raw),
             );
 
+            $retentionDays = (int) ($payload['retention_days'] ?? 0);
+            $recordCreatedAt = (string) ($payload['record_created_at'] ?? '');
+            if (($payload['record_class'] ?? null) === 'terminated_employee'
+                && ($payload['action'] ?? null) === 'anonymize'
+                && $retentionDays > 0 && $recordCreatedAt !== '') {
+                $policy = $this->controls->defineRetentionPolicy([
+                    'tenant_id' => $tenantId,
+                    'source' => $source,
+                    'record_class' => 'terminated_employee',
+                    'retention_days' => $retentionDays,
+                    'disposition_action' => 'anonymize',
+                ]);
+                $this->controls->recordDisposition($policy, [
+                    'record_ref' => $subjectRef,
+                    'record_created_at' => $recordCreatedAt,
+                    'action' => 'anonymize',
+                    'evidence_ref' => 'urn:fynix:hr:retention-disposition:'.$subjectRef,
+                    'evidence_sha256' => hash('sha256', $raw),
+                ]);
+            }
+
             return 'governance evidence recorded';
         }
 
