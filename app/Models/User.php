@@ -12,16 +12,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Jeffgreco13\FilamentBreezy\Traits\TwoFactorAuthenticatable;
 use Kirschbaum\Commentions\Contracts\Commenter;
 use Laravel\Sanctum\HasApiTokens;
-use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
- * @property \Illuminate\Support\Carbon|null $last_activity
+ * @property Carbon|null $last_activity
  */
 class User extends Authenticatable implements Commenter, FilamentUser
 {
@@ -80,6 +81,9 @@ class User extends Authenticatable implements Commenter, FilamentUser
         'password_reset_required' => 'boolean',
         'is_sso' => 'boolean',
         'is_break_glass' => 'boolean',
+        'privacy_restricted_at' => 'datetime',
+        'processing_objection_at' => 'datetime',
+        'privacy_erased_at' => 'datetime',
     ];
 
     /**

@@ -30,7 +30,7 @@ class GovernanceStatementPublisherTest extends TestCase
         $controls = $statement['payload']['controls'];
         $this->assertCount(12, $controls);
         $this->assertCount(12, array_unique(array_column($controls, 'control_id')));
-        $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-03')['status']);
+        $this->assertSame('effective', collect($controls)->firstWhere('control_id', 'DG-03')['status']);
         $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-06')['status']);
         $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-09')['status']);
         $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-11')['status']);

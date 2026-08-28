@@ -20,8 +20,9 @@ use App\Http\Controllers\API\StandardController;
 use App\Http\Controllers\API\SupportChangeEvidenceController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
-use App\Suite\GovernanceControlController;
 use App\Suite\CyberAuditPrivacyExportController;
+use App\Suite\CyberAuditPrivacyRightsController;
+use App\Suite\GovernanceControlController;
 use App\Suite\GovernanceControlReviewController;
 use App\Suite\GovernanceEvidenceController;
 use App\Suite\SuiteInboundController;
@@ -50,24 +51,25 @@ Route::get('/suite/governance/ready', [GovernanceEvidenceController::class, 'rea
 Route::post('/suite/executive-authority-bindings', [ExecutiveAuthorityBindingController::class, 'store'])->middleware('throttle:api');
 Route::post('/support-change-evidence', [SupportChangeEvidenceController::class, 'store'])->middleware('throttle:api')->name('support-change-evidence.store');
 Route::get('/support-change-evidence/{acceptance}', [SupportChangeEvidenceController::class, 'show'])->middleware('throttle:api')->name('support-change-evidence.show');
-Route::post('/support-change-evidence/{acceptance}/accept', [SupportChangeEvidenceController::class, 'accept'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.accept');
-Route::post('/support-change-evidence/{acceptance}/reject', [SupportChangeEvidenceController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.reject');
-Route::post('/support-change-evidence/{acceptance}/revoke', [SupportChangeEvidenceController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api'])->name('support-change-evidence.revoke');
+Route::post('/support-change-evidence/{acceptance}/accept', [SupportChangeEvidenceController::class, 'accept'])->middleware(['auth:sanctum', 'privacy.restriction', 'throttle:api'])->name('support-change-evidence.accept');
+Route::post('/support-change-evidence/{acceptance}/reject', [SupportChangeEvidenceController::class, 'reject'])->middleware(['auth:sanctum', 'privacy.restriction', 'throttle:api'])->name('support-change-evidence.reject');
+Route::post('/support-change-evidence/{acceptance}/revoke', [SupportChangeEvidenceController::class, 'revoke'])->middleware(['auth:sanctum', 'privacy.restriction', 'throttle:api'])->name('support-change-evidence.revoke');
 Route::post('/support-change-evidence/{acceptance}/consume', [SupportChangeEvidenceController::class, 'consume'])->middleware('throttle:api')->name('support-change-evidence.consume');
 Route::post('/evidence-authorizations', [EvidenceAuthorizationController::class, 'store'])->middleware('throttle:api')->name('evidence-authorizations.store');
 Route::get('/evidence-authorizations/{authorization}', [EvidenceAuthorizationController::class, 'show'])->middleware('throttle:api')->name('evidence-authorizations.show');
-Route::post('/evidence-authorizations/{authorization}/accept', [EvidenceAuthorizationController::class, 'accept'])->middleware(['auth:sanctum', 'throttle:api'])->name('evidence-authorizations.accept');
-Route::post('/evidence-authorizations/{authorization}/reject', [EvidenceAuthorizationController::class, 'reject'])->middleware(['auth:sanctum', 'throttle:api'])->name('evidence-authorizations.reject');
-Route::post('/evidence-authorizations/{authorization}/revoke', [EvidenceAuthorizationController::class, 'revoke'])->middleware(['auth:sanctum', 'throttle:api'])->name('evidence-authorizations.revoke');
+Route::post('/evidence-authorizations/{authorization}/accept', [EvidenceAuthorizationController::class, 'accept'])->middleware(['auth:sanctum', 'privacy.restriction', 'throttle:api'])->name('evidence-authorizations.accept');
+Route::post('/evidence-authorizations/{authorization}/reject', [EvidenceAuthorizationController::class, 'reject'])->middleware(['auth:sanctum', 'privacy.restriction', 'throttle:api'])->name('evidence-authorizations.reject');
+Route::post('/evidence-authorizations/{authorization}/revoke', [EvidenceAuthorizationController::class, 'revoke'])->middleware(['auth:sanctum', 'privacy.restriction', 'throttle:api'])->name('evidence-authorizations.revoke');
 Route::post('/evidence-authorizations/{authorization}/claims', [EvidenceAuthorizationController::class, 'claim'])->middleware('throttle:api')->name('evidence-authorizations.claim');
 Route::post('/evidence-authorizations/{authorization}/consume', [EvidenceAuthorizationController::class, 'consume'])->middleware('throttle:api')->name('evidence-authorizations.consume');
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+Route::middleware(['auth:sanctum', 'privacy.restriction'])->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'privacy.restriction'])->group(function () {
     Route::post('/governance/privacy/access-export', CyberAuditPrivacyExportController::class)->middleware('throttle:api');
+    Route::post('/governance/privacy/rights', CyberAuditPrivacyRightsController::class)->middleware('throttle:api');
     Route::get('/governance/oversight', [GovernanceEvidenceController::class, 'oversight']);
     Route::post('/governance/control-reviews', [GovernanceControlReviewController::class, 'store']);
     Route::post('/governance/processor-register-reviews', [GovernanceControlReviewController::class, 'certifyProcessorRegister']);

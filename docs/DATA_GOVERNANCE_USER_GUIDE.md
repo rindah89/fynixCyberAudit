@@ -32,7 +32,15 @@ For PPM access requests, completion evidence identifies a digest-addressed expor
 
 Do not enter names, email addresses, tokens, query strings, signed URLs, or raw document paths. Accepted references are opaque identifiers and controlled `urn:fynix:` or `evidence://` evidence references.
 
-CyberAudit users request their own access export with `POST /api/governance/privacy/access-export` and a controlled `identity_verification_ref`. The export includes account attributes and an explicit fail-closed manifest of user-linked audit, risk, policy, survey, import/export, governance-review, evidence-authorization, support-change, and session metadata. It excludes passwords, tokens, uploaded file contents, and evidence payloads. DG-03 remains partial until correction, restriction, objection, and lawful erasure workflows cover CyberAudit's own data.
+CyberAudit users request their own access export with `POST /api/governance/privacy/access-export` and a controlled `identity_verification_ref`. The export includes account attributes and an explicit fail-closed manifest of user-linked audit, risk, policy, survey, import/export, governance-review, evidence-authorization, support-change, and session metadata. It excludes passwords, tokens, uploaded file contents, and evidence payloads.
+
+Authenticated users exercise correction, restriction, objection, or deletion with `POST /api/governance/privacy/rights`. Every request requires a controlled `identity_verification_ref`; correction also requires the corrected `name`. Correction is deliberately limited to the account display name because changing a login address requires a separate ownership-verification flow.
+
+Restriction and objection immediately stop the account from using authenticated CyberAudit processing routes. Privacy endpoints remain available so the user can retrieve an access export or submit another rights request. If access should later resume, an authorized privacy operator must review the request and remove the state through the controlled administrative process; do not edit the database directly.
+
+Deletion performs lawful anonymization rather than removing integrity-protected audit history. It revokes API tokens, removes role and direct-permission assignments, replaces account identifiers and credentials, and soft-deletes the account. Existing audit records retain only the opaque internal user identifier needed for evidentiary integrity. Super Admin and break-glass accounts cannot self-anonymize until their emergency responsibilities are formally reassigned.
+
+Each completed action creates a closed CyberAudit privacy request with digest-bound evidence in **pending review**. A reviewer other than the requester must verify the identity reference and resulting source state before approval. The API response and evidence trail never repeat the user's prior name, email address, token, or other erased value.
 
 ## Retention, holds, and disposition
 
