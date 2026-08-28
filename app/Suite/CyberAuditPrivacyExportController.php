@@ -9,8 +9,11 @@ class CyberAuditPrivacyExportController
 {
     public function __invoke(Request $request, CyberAuditPrivacyExportService $exports, DataGovernanceControlService $controls): JsonResponse
     {
+        $validated = $request->validate([
+            'identity_verification_ref' => ['required', 'string', 'max:512', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/'],
+        ]);
         $user = $request->user();
-        $export = $exports->export($user);
+        $export = $exports->export($user, $validated['identity_verification_ref']);
         $tenantId = (string) config('data_governance.publisher.tenant_id', '');
         if ($tenantId === '') {
             return response()->json(['message' => 'CyberAudit privacy oversight binding is unavailable.'], 503);

@@ -35,10 +35,22 @@ class CyberAuditPrivacyExportService
         'recovery_evidence' => ['reviewed_by'],
         'governance_control_reviews' => ['reviewer_id'],
         'processor_register_certifications' => ['reviewer_id'],
+        'audit_user' => ['user_id'],
+        'imports' => ['user_id'],
+        'exports' => ['user_id'],
+        'sessions' => ['user_id'],
+        'socialite_users' => ['user_id'],
+        'vendor_documents' => ['reviewed_by'],
+        'evidence_profile_reviewers' => ['user_id'],
+        'evidence_authorizations' => ['reviewed_by', 'revoked_by'],
+        'evidence_authorization_audit' => ['actor_user_id'],
+        'support_change_evidence_reviewers' => ['user_id'],
+        'support_change_evidence_acceptances' => ['reviewed_by', 'revoked_by'],
+        'support_change_evidence_audit' => ['actor_user_id'],
     ];
 
     /** @return array<string, mixed> */
-    public function export(User $user): array
+    public function export(User $user, string $identityVerificationRef): array
     {
         $missing = collect(self::USER_LINKS)->filter(function (array $columns, string $table): bool {
             return ! Schema::hasTable($table) || collect($columns)->contains(fn (string $column): bool => ! Schema::hasColumn($table, $column));
@@ -73,6 +85,7 @@ class CyberAuditPrivacyExportService
         $export = [
             'schema_version' => 'fynix-cyberaudit-person-export/v1',
             'subject_ref' => $subjectRef,
+            'identity_verification_ref' => $identityVerificationRef,
             'exported_at' => now()->utc()->toAtomString(),
             'account' => [
                 'name' => $user->name, 'email' => $user->email,

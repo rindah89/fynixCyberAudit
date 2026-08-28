@@ -30,6 +30,8 @@ For PPM access requests, completion evidence identifies a digest-addressed expor
 
 Do not enter names, email addresses, tokens, query strings, signed URLs, or raw document paths. Accepted references are opaque identifiers and controlled `urn:fynix:` or `evidence://` evidence references.
 
+CyberAudit users request their own access export with `POST /api/governance/privacy/access-export` and a controlled `identity_verification_ref`. The export includes account attributes and an explicit fail-closed manifest of user-linked audit, risk, policy, survey, import/export, governance-review, evidence-authorization, support-change, and session metadata. It excludes passwords, tokens, uploaded file contents, and evidence payloads. DG-03 remains partial until correction, restriction, objection, and lawful erasure workflows cover CyberAudit's own data.
+
 ## Retention, holds, and disposition
 
 Define a record class, retention period, and action. CyberAudit derives eligibility from the source record date plus the retention period. An active legal hold blocks a disposition receipt. Release a hold only with the required legal authority.
