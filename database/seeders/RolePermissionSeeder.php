@@ -48,6 +48,8 @@ class RolePermissionSeeder extends Seeder
             'Configure Authentication',
             'Manage Users',
             'View Audit Log',
+            'View Governance Oversight',
+            'Manage Governance Exceptions',
             'Manage Preferences',
             'review change evidence',
             'revoke change evidence',
@@ -100,6 +102,8 @@ class RolePermissionSeeder extends Seeder
         }
         $securityAdmin->givePermissionTo('Manage Preferences');
         $securityAdmin->givePermissionTo('View Bundles');
+        $securityAdmin->givePermissionTo('View Governance Oversight');
+        $securityAdmin->givePermissionTo('Manage Governance Exceptions');
         $securityAdmin->givePermissionTo('Manage Trust Center');
         $securityAdmin->givePermissionTo('Manage Trust Access');
         $securityAdmin->givePermissionTo('Manage Vendor Management');
@@ -116,6 +120,7 @@ class RolePermissionSeeder extends Seeder
 
         // Assign specific Permissions to Internal Auditor
         $internalAuditor->givePermissionTo([
+            'View Governance Oversight',
             'List Audits',
             'Read Audits',
             'List Standards',

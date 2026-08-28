@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fynixhq.com/contracts/fynix-governance-evidence-v1.schema.json",
+  "title": "Fynix Governance Evidence Statement v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_type", "tenant_id", "entity_type", "entity_id", "occurred_at", "payload"],
+  "properties": {
+    "event_type": { "const": "governance.evidence.reported" },
+    "tenant_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "entity_type": { "const": "governance_statement" },
+    "entity_id": { "type": "string", "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "period_start", "period_end", "controls"],
+      "properties": {
+        "schema_version": { "const": "fynix-governance-evidence/v1" },
+        "period_start": { "type": "string", "format": "date-time" },
+        "period_end": { "type": "string", "format": "date-time" },
+        "controls": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["control_id", "status", "observed_at", "evidence_refs", "metrics"],
+            "properties": {
+              "control_id": { "enum": ["DG-01", "DG-02", "DG-03", "DG-04", "DG-05", "DG-06", "DG-07", "DG-08", "DG-09", "DG-10", "DG-11", "DG-12"] },
+              "status": { "enum": ["effective", "partially_effective", "ineffective", "not_applicable", "unknown"] },
+              "observed_at": { "type": "string", "format": "date-time" },
+              "summary": { "type": "string", "maxLength": 2000 },
+              "evidence_refs": { "type": "array", "maxItems": 50, "items": { "type": "string", "maxLength": 500 } },
+              "metrics": { "type": "object", "maxProperties": 50, "additionalProperties": { "type": ["string", "number", "integer", "boolean", "null"] } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

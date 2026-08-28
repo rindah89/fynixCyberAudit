@@ -51,6 +51,10 @@ Program (optional container)
 | **Vendor** | Third party. Status pending → accepted / rejected / expired / terminated. Organizational rating + assessed score from surveys. |
 | **Survey** | Vendor (or internal) questionnaire. Weighted scoring → 0–100 → Very Low … Critical. |
 | **Trust Center** | Public page at `/trust`. Public docs download freely; protected docs need request + approval + signed magic link. |
+| **Governance Statement** | A signed, tenant-bound, periodic assertion from one Fynix application describing its implementation of the mandatory Suite Data Governance Controls. Cyber Audit stores the received statement; it does not reach into or write to the application's database. |
+| **Control Result** | One application's assessment of one Suite Data Governance Control for a reporting period: effective, partially effective, ineffective, not applicable, or unknown, with non-secret evidence references and measurements. |
+| **Governance Exception** | A failed, overdue, missing, or formally waived Control Result that requires an accountable owner, due date, and remediation trail in Cyber Audit. |
+| **Suite Data Governance Control** | One of the versioned minimum controls every Fynix application must enforce locally and report centrally. Controls cover inventory, ownership, classification, privacy, access, auditability, retention, quality, protection, resilience, incidents, suppliers, and secure development. |
 
 Source: [Key Terms](https://docs.opengrc.com/foundations/key-terms/), [Workflows](https://docs.opengrc.com/foundations/workflows/), [Audits](https://docs.opengrc.com/foundations/audits/).
 

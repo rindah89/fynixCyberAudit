@@ -14,6 +14,14 @@ class Kernel extends ConsoleKernel
     {
         // Generate recurring checklists daily at 6:00 AM
         $schedule->command('checklists:generate-recurring')->dailyAt('06:00');
+        $schedule->command('fynix:monitor-governance --notify')
+            ->hourly()
+            ->withoutOverlapping()
+            ->onOneServer();
+        $schedule->command('fynix:publish-governance')
+            ->dailyAt('02:45')
+            ->withoutOverlapping()
+            ->onOneServer();
     }
 
     /**

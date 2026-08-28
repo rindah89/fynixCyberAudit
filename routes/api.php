@@ -21,6 +21,7 @@ use App\Http\Controllers\API\SupportChangeEvidenceController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
 use App\Suite\SuiteInboundController;
+use App\Suite\GovernanceEvidenceController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -38,6 +39,9 @@ use Illuminate\Support\Facades\Route;
 Route::post('/suite/events', [SuiteInboundController::class, 'store'])
     ->middleware('throttle:suite-inbound');
 Route::get('/suite/ready', [SuiteInboundController::class, 'ready']);
+Route::post('/suite/governance/evidence', [GovernanceEvidenceController::class, 'store'])
+    ->middleware('throttle:suite-inbound');
+Route::get('/suite/governance/ready', [GovernanceEvidenceController::class, 'readiness']);
 Route::post('/suite/executive-authority-bindings', [ExecutiveAuthorityBindingController::class, 'store'])->middleware('throttle:api');
 Route::post('/support-change-evidence', [SupportChangeEvidenceController::class, 'store'])->middleware('throttle:api')->name('support-change-evidence.store');
 Route::get('/support-change-evidence/{acceptance}', [SupportChangeEvidenceController::class, 'show'])->middleware('throttle:api')->name('support-change-evidence.show');
@@ -58,6 +62,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/governance/oversight', [GovernanceEvidenceController::class, 'oversight']);
 
     // RESTful API Resources with full CRUD operations
     Route::apiResource('users', UserController::class);
