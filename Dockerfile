@@ -171,7 +171,7 @@ RUN mkdir -p storage/framework/cache/data \
     bootstrap/cache \
     database \
     && touch storage/logs/laravel.log \
-    && chown -R www-data:www-data /var/www/html \
+    && chown -R www-data:www-data storage bootstrap/cache database \
     && chmod -R 775 storage bootstrap/cache database \
     && chmod 664 storage/logs/laravel.log
 
