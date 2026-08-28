@@ -1,3 +1,9 @@
+FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS frontend-assets
+
+WORKDIR /build
+COPY . .
+RUN npm ci && npm run build
+
 FROM ubuntu:24.04
 
 # Prevent interactive prompts during package installation
@@ -142,21 +148,13 @@ RUN mkdir -p database \
     && touch database/fynixcyberaudit.sqlite \
     && composer install --no-dev --optimize-autoloader
 
-# Copy package files and install Node dependencies
-COPY package*.json ./
-RUN npm ci
-
 # Complete Composer installation with autoloader optimization
 RUN composer dump-autoload --optimize --classmap-authoritative
 
-# esbuild is a Go binary. Docker Desktop executes this linux/amd64 build under
-# emulation on arm64 operator workstations; disabling asynchronous preemption
-# and limiting the Go scheduler avoids the emulator's lfstack pointer-packing
-# crash without changing the generated assets.
-RUN GOMAXPROCS=1 GODEBUG=asyncpreemptoff=1 npm run build
-
-# Clean up Node modules after build
-RUN rm -rf node_modules
+# Compile esbuild on the operator's native build platform, then copy only the
+# deterministic assets into the target runtime image. This avoids executing a
+# linux/amd64 Go binary under emulation on arm64 deployment workstations.
+COPY --from=frontend-assets /build/public/build /var/www/html/public/build
 
 # Create necessary directories and set permissions
 RUN mkdir -p storage/framework/cache/data \
