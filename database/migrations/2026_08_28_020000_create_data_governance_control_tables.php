@@ -45,9 +45,12 @@ return new class extends Migration
             $table->id();
             $table->foreignId('retention_policy_id')->constrained()->cascadeOnDelete();
             $table->string('reason', 1000);
+            $table->string('record_ref')->nullable();
+            $table->string('source_hold_ref')->nullable();
             $table->timestamp('placed_at');
             $table->timestamp('released_at')->nullable();
             $table->timestamps();
+            $table->unique(['retention_policy_id', 'source_hold_ref']);
         });
 
         Schema::create('disposition_receipts', function (Blueprint $table): void {

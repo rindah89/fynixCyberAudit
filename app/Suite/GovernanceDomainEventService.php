@@ -2,6 +2,7 @@
 
 namespace App\Suite;
 
+use App\Models\LegalHold;
 use Illuminate\Support\Str;
 
 class GovernanceDomainEventService
@@ -13,6 +14,36 @@ class GovernanceDomainEventService
     {
         $eventType = (string) ($envelope['event_type'] ?? '');
         $payload = is_array($envelope['payload'] ?? null) ? $envelope['payload'] : [];
+
+        if (in_array($eventType, ['ppm.records.hold_applied', 'ppm.records.hold_released'], true)) {
+            $recordClass = (string) ($payload['record_class_id'] ?? '');
+            $recordRef = (string) ($payload['record_ref'] ?? $envelope['entity_id'] ?? '');
+            $sourceHoldRef = (string) ($payload['source_hold_ref'] ?? '');
+            $retentionDays = (int) ($payload['retention_days'] ?? 0);
+            if (! Str::isUuid($recordClass) || ! Str::isUuid($recordRef) || ! Str::isUuid($sourceHoldRef) || $retentionDays < 1) {
+                return 'ignored';
+            }
+            $policy = $this->controls->defineRetentionPolicy([
+                'tenant_id' => $tenantId, 'source' => $source, 'record_class' => $recordClass,
+                'retention_days' => $retentionDays, 'disposition_action' => 'delete',
+            ]);
+            if ($eventType === 'ppm.records.hold_applied') {
+                $this->controls->placeLegalHold($policy, 'Source application legal hold', $recordRef, $sourceHoldRef);
+            } else {
+                $hold = LegalHold::query()
+                    ->where('source_hold_ref', $sourceHoldRef)
+                    ->whereHas('retentionPolicy', fn ($query) => $query->where(['tenant_id' => $tenantId, 'source' => $source]))
+                    ->first();
+                if ($hold === null) {
+                    return 'ignored';
+                }
+                if ($hold->released_at === null) {
+                    $this->controls->releaseLegalHold($hold);
+                }
+            }
+
+            return 'governance evidence recorded';
+        }
 
         if ($eventType === 'hr.person.purged' && ($payload['erasure'] ?? false) === true) {
             $subjectRef = (string) ($payload['person_uuid'] ?? $envelope['entity_id'] ?? '');

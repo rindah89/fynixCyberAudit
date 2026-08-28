@@ -69,7 +69,10 @@ class SuiteInboundController
                 SuiteInboundHighWater::query()->updateOrCreate($identity, ['occurred_at' => $occurredAt]);
             }
         } elseif ($source === 'ppm') {
-            $outcome = $ppmGateway->applyPpmEvent($envelope);
+            $outcome = $governanceEvents->apply((string) config('suite.ppm.tenant_id'), $source, $envelope, $raw);
+            if ($outcome === 'ignored') {
+                $outcome = $ppmGateway->applyPpmEvent($envelope);
+            }
         } else {
             $outcome = $governanceEvents->apply((string) $governanceBinding['tenant_id'], $source, $envelope, $raw);
         }

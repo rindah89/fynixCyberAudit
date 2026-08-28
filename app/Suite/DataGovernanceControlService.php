@@ -62,13 +62,20 @@ class DataGovernanceControlService
         );
     }
 
-    public function placeLegalHold(RetentionPolicy $policy, string $reason): LegalHold
+    public function placeLegalHold(RetentionPolicy $policy, string $reason, ?string $recordRef = null, ?string $sourceHoldRef = null): LegalHold
     {
         if (blank($reason)) {
             throw new InvalidArgumentException('A legal-hold reason is required.');
         }
 
-        return $policy->legalHolds()->create(['reason' => $reason, 'placed_at' => now()]);
+        if ($sourceHoldRef !== null) {
+            return $policy->legalHolds()->firstOrCreate(
+                ['source_hold_ref' => $sourceHoldRef],
+                ['reason' => $reason, 'record_ref' => $recordRef, 'placed_at' => now()]
+            );
+        }
+
+        return $policy->legalHolds()->create(['reason' => $reason, 'record_ref' => $recordRef, 'placed_at' => now()]);
     }
 
     public function releaseLegalHold(LegalHold $hold): LegalHold
@@ -81,16 +88,21 @@ class DataGovernanceControlService
         return $hold->refresh();
     }
 
-    public function mayDispose(RetentionPolicy $policy): bool
+    public function mayDispose(RetentionPolicy $policy, ?string $recordRef = null): bool
     {
-        return $policy->active && ! $policy->legalHolds()->whereNull('released_at')->exists();
+        $holds = $policy->legalHolds()->whereNull('released_at');
+        if ($recordRef !== null) {
+            $holds->where(fn ($query) => $query->whereNull('record_ref')->orWhere('record_ref', $recordRef));
+        }
+
+        return $policy->active && ! $holds->exists();
     }
 
     public function recordDisposition(RetentionPolicy $policy, array $attributes): DispositionReceipt
     {
         $recordCreatedAt = CarbonImmutable::parse($attributes['record_created_at'] ?? now()->addSecond());
         $eligibleAt = $recordCreatedAt->addDays($policy->retention_days);
-        if (! $this->mayDispose($policy) || $eligibleAt->isFuture()) {
+        if (! $this->mayDispose($policy, (string) ($attributes['record_ref'] ?? '')) || $eligibleAt->isFuture()) {
             throw new InvalidArgumentException('Disposition is not eligible or is blocked by a legal hold.');
         }
         if (($attributes['action'] ?? null) !== $policy->disposition_action || blank($attributes['record_ref'] ?? null) || blank($attributes['evidence_ref'] ?? null) || ! preg_match('/^[a-f0-9]{64}$/', (string) ($attributes['evidence_sha256'] ?? ''))) {

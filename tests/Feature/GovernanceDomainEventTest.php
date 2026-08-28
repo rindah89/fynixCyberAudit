@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DispositionReceipt;
+use App\Models\LegalHold;
 use App\Models\PrivacyRequest;
 use App\Suite\SuiteEnvelope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -98,6 +99,38 @@ class GovernanceDomainEventTest extends TestCase
         $this->assertSame('access', $request->right);
         $this->assertSame($sha, $request->evidence_sha256);
         $this->assertSame('pending_review', $request->review_status);
+    }
+
+    public function test_ppm_legal_hold_events_are_record_scoped_and_idempotent(): void
+    {
+        Config::set('suite.ppm.enabled', true);
+        Config::set('suite.ppm.tenant_id', '11111111-1111-1111-1111-111111111111');
+        Config::set('suite.ppm.webhook_id', 'ppm-hook');
+        Config::set('suite.ppm.webhook_secrets', ['suite-secret']);
+        $recordId = (string) Str::uuid();
+        $holdId = (string) Str::uuid();
+        $payload = [
+            'record_class_id' => (string) Str::uuid(), 'retention_days' => 365,
+            'record_ref' => $recordId, 'source_hold_ref' => $holdId,
+        ];
+        $placed = [
+            'event_type' => 'ppm.records.hold_applied', 'tenant_id' => config('suite.ppm.tenant_id'),
+            'entity_type' => 'record', 'entity_id' => $recordId,
+            'occurred_at' => now()->utc()->toAtomString(), 'payload' => $payload,
+        ];
+
+        $this->postSigned($placed, 'ppm', 'ppm-hook', 'suite-secret')
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+        $hold = LegalHold::query()->sole();
+        $this->assertSame($recordId, $hold->record_ref);
+        $this->assertNull($hold->released_at);
+
+        $released = $placed;
+        $released['event_type'] = 'ppm.records.hold_released';
+        $released['occurred_at'] = now()->addSecond()->utc()->toAtomString();
+        $this->postSigned($released, 'ppm', 'ppm-hook', 'suite-secret')
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+        $this->assertNotNull($hold->refresh()->released_at);
     }
 
     private function postSigned(array $envelope, string $source, string $webhookId, string $secret)
