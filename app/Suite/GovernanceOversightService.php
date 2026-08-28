@@ -58,9 +58,10 @@ class GovernanceOversightService
                 ],
             ];
         }
-        $ready = collect($sources)->every(fn (array $source): bool => $source['binding'] === 'enabled' && $source['freshness'] === 'current' && $source['open_exceptions'] === 0 && $source['operability']['overdue_privacy_requests'] === 0 && $source['operability']['pending_processor_reviews'] === 0 && $source['operability']['pending_privacy_reviews'] === 0 && $source['operability']['pending_recovery_reviews'] === 0 && $source['operability']['pending_disposition_reviews'] === 0);
+        $processorInventoryCurrent = $this->controls->hasCurrentProcessorInventoryRun($now);
+        $ready = $processorInventoryCurrent && collect($sources)->every(fn (array $source): bool => $source['binding'] === 'enabled' && $source['freshness'] === 'current' && $source['open_exceptions'] === 0 && $source['operability']['overdue_privacy_requests'] === 0 && $source['operability']['pending_processor_reviews'] === 0 && $source['operability']['pending_privacy_reviews'] === 0 && $source['operability']['pending_recovery_reviews'] === 0 && $source['operability']['pending_disposition_reviews'] === 0);
         $hasWaivers = collect($sources)->contains(fn (array $source): bool => $source['waived_exceptions'] > 0);
-        $report = ['status' => $ready ? ($hasWaivers ? 'conformant_with_waivers' : 'conformant') : 'attention_required', 'generated_at' => $now->toIso8601String(), 'sources' => $sources];
+        $report = ['status' => $ready ? ($hasWaivers ? 'conformant_with_waivers' : 'conformant') : 'attention_required', 'generated_at' => $now->toIso8601String(), 'processor_inventory_reconciliation' => $processorInventoryCurrent ? 'current' : 'missing_failed_or_stale', 'sources' => $sources];
         if ($includeDetails) {
             $report['controls'] = config('data_governance.controls');
             $report['open_exceptions'] = GovernanceException::query()->whereIn('status', ['open', 'waived'])->orderByRaw("CASE severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END")->orderBy('due_at')->get();

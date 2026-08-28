@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\DataProcessor;
+use App\Models\ProcessorInventoryRun;
+use App\Suite\DataGovernanceControlService;
 use App\Suite\GovernanceOversightService;
 use App\Suite\ProcessorInventoryReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,6 +20,8 @@ class ProcessorInventoryReconcilerTest extends TestCase
         $this->configure(['finance' => [$this->entry('Hosting', 'a')], 'hr' => [$this->entry('Payroll', 'b')]], ['finance', 'hr']);
         $result = app(ProcessorInventoryReconciler::class)->reconcile();
         $this->assertSame(['sources' => 2, 'active' => 2, 'retired' => 0], $result);
+        $this->assertDatabaseHas('processor_inventory_runs', ['status' => 'successful', 'source_count' => 2, 'active_count' => 2]);
+        $this->assertSame('current', app(GovernanceOversightService::class)->report()['processor_inventory_reconciliation']);
 
         $processor = DataProcessor::where('source', 'finance')->firstOrFail();
         $processor->update(['status' => 'approved', 'review_digest' => str_repeat('c', 64)]);
@@ -49,8 +53,13 @@ class ProcessorInventoryReconcilerTest extends TestCase
     public function test_fails_closed_when_required_source_is_missing(): void
     {
         $this->configure(['finance' => [$this->entry('Hosting', 'a')]], ['finance', 'hr']);
-        $this->expectException(InvalidArgumentException::class);
-        app(ProcessorInventoryReconciler::class)->reconcile();
+        try {
+            app(ProcessorInventoryReconciler::class)->reconcile();
+            $this->fail('Incomplete inventory must fail.');
+        } catch (InvalidArgumentException) {
+            $this->assertDatabaseHas('processor_inventory_runs', ['status' => 'failed', 'error_code' => 'validation_failed']);
+            $this->assertSame('missing_failed_or_stale', app(GovernanceOversightService::class)->report()['processor_inventory_reconciliation']);
+        }
     }
 
     public function test_rejects_duplicate_processor_names(): void
@@ -58,6 +67,15 @@ class ProcessorInventoryReconcilerTest extends TestCase
         $this->configure(['finance' => [$this->entry('Hosting', 'a'), $this->entry('Hosting', 'b')]]);
         $this->expectException(InvalidArgumentException::class);
         app(ProcessorInventoryReconciler::class)->reconcile();
+    }
+
+    public function test_latest_failed_or_stale_run_invalidates_a_certified_register(): void
+    {
+        ProcessorInventoryRun::create(['status' => 'successful', 'source_count' => 1, 'active_count' => 1, 'completed_at' => now()->subDays(2)]);
+        $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentProcessorRegister('tenant-1', 'finance', now()));
+
+        ProcessorInventoryRun::create(['status' => 'failed', 'error_code' => 'validation_failed', 'completed_at' => now()]);
+        $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentProcessorRegister('tenant-1', 'finance', now()));
     }
 
     private function configure(array $inventory, array $sources = ['finance']): void

@@ -38,6 +38,10 @@ Processor entries begin as **pending review**. Review purpose, data categories, 
 
 Operators can run `php artisan fynix:reconcile-processor-inventory` after an authorized inventory change. The scheduler runs reconciliation at 02:30 and publishes the governance statement at 02:45. A failed reconciliation must be investigated; do not publish or certify a hand-edited partial register.
 
+CyberAudit records every reconciliation outcome. DG-11 can remain effective only when the latest run succeeded within the evidence freshness window. A failed or stale run invalidates every prior register certification until a complete reconciliation succeeds and any changed entries are reviewed again.
+
+The oversight and readiness responses expose `processor_inventory_reconciliation`. `missing_failed_or_stale` always makes readiness `attention_required`, even if older processor approvals and statements are still present.
+
 Recovery evidence must represent a successful completed restore drill, include a controlled reference, and fall within the required evidence window. Future-dated or self-attested evidence must not promote a control to effective.
 
 Reviewers compare the stored SHA-256 value to the controlled artifact before approving. Rejection records a reason and leaves or opens an exception. Application operators cannot approve their own processor register, privacy completion, disposition receipt, or restore drill.

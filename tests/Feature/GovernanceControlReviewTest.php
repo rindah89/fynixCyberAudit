@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DataProcessor;
+use App\Models\ProcessorInventoryRun;
 use App\Models\RecoveryEvidence;
 use App\Models\User;
 use App\Suite\DataGovernanceControlService;
@@ -115,6 +116,11 @@ class GovernanceControlReviewTest extends TestCase
             'review_evidence_ref' => 'evidence://cyberaudit/processor-register/finance',
             'review_evidence_sha256' => str_repeat('a', 64),
         ])->assertCreated()->assertJsonPath('processor_count', 2);
+
+        ProcessorInventoryRun::create([
+            'status' => 'successful', 'source_count' => 9, 'active_count' => 2,
+            'inventory_digest' => str_repeat('b', 64), 'completed_at' => now(),
+        ]);
 
         $this->assertTrue(app(DataGovernanceControlService::class)->hasCurrentProcessorRegister('tenant-1', 'finance', now()));
 

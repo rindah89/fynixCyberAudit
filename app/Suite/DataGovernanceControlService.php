@@ -6,6 +6,7 @@ use App\Models\DataProcessor;
 use App\Models\DispositionReceipt;
 use App\Models\LegalHold;
 use App\Models\PrivacyRequest;
+use App\Models\ProcessorInventoryRun;
 use App\Models\ProcessorRegisterCertification;
 use App\Models\RecoveryEvidence;
 use App\Models\RetentionPolicy;
@@ -152,6 +153,9 @@ class DataGovernanceControlService
 
     public function hasCurrentProcessorRegister(string $tenantId, string $source, DateTimeInterface $at): bool
     {
+        if (! $this->hasCurrentProcessorInventoryRun($at)) {
+            return false;
+        }
         $processors = DataProcessor::query()
             ->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'approved', 'active' => true])
             ->whereDate('review_due_at', '>=', CarbonImmutable::instance($at)->toDateString())
@@ -167,6 +171,14 @@ class DataGovernanceControlService
             ->where(['tenant_id' => $tenantId, 'source' => $source, 'processor_count' => $processors->count(), 'inventory_digest' => $inventoryDigest])
             ->whereDate('valid_until', '>=', CarbonImmutable::instance($at)->toDateString())
             ->exists();
+    }
+
+    public function hasCurrentProcessorInventoryRun(DateTimeInterface $at): bool
+    {
+        $latestRun = ProcessorInventoryRun::query()->latest('completed_at')->latest('id')->first();
+
+        return $latestRun !== null && $latestRun->status === 'successful'
+            && $latestRun->completed_at->gte(CarbonImmutable::instance($at)->subHours((int) config('data_governance.freshness_hours', 26)));
     }
 
     private function normalizedStrings(array $values): array
