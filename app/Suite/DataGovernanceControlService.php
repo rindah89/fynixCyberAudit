@@ -27,7 +27,15 @@ class DataGovernanceControlService
         }
         $requestedAt = CarbonImmutable::parse($attributes['requested_at'] ?? now());
 
-        return PrivacyRequest::create(array_merge($attributes, ['status' => 'open', 'requested_at' => $requestedAt, 'due_at' => $requestedAt->addDays(30)]));
+        $values = array_merge($attributes, ['status' => 'open', 'requested_at' => $requestedAt, 'due_at' => $requestedAt->addDays(30)]);
+        if (! empty($attributes['source_request_ref'])) {
+            return PrivacyRequest::firstOrCreate([
+                'tenant_id' => $attributes['tenant_id'], 'source' => $attributes['source'],
+                'source_request_ref' => $attributes['source_request_ref'],
+            ], $values);
+        }
+
+        return PrivacyRequest::create($values);
     }
 
     public function closePrivacyRequest(PrivacyRequest $request, string $evidenceRef, string $evidenceSha256): PrivacyRequest

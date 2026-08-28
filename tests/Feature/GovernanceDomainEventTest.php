@@ -142,6 +142,21 @@ class GovernanceDomainEventTest extends TestCase
         $requestId = (string) Str::uuid();
         $subjectRef = (string) Str::uuid();
         $sha = str_repeat('c', 64);
+        $opened = [
+            'event_type' => 'finance.privacy.opened', 'tenant_id' => 'tenant-1',
+            'entity_type' => 'privacy_request', 'entity_id' => $requestId,
+            'occurred_at' => now()->subDays(2)->utc()->toAtomString(),
+            'payload' => [
+                'subject_ref' => $subjectRef, 'right' => 'deletion',
+                'lawful_basis' => 'data_subject_right',
+                'requested_at' => now()->subDays(2)->utc()->toAtomString(),
+            ],
+        ];
+        $this->postSigned($opened, 'finance', 'finance-hook', str_repeat('f', 32))
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+        $centralId = PrivacyRequest::query()->sole()->id;
+        $this->assertSame('open', PrivacyRequest::query()->sole()->status);
+        $this->assertSame($requestId, PrivacyRequest::query()->sole()->source_request_ref);
         $envelope = [
             'event_type' => 'finance.privacy.completed', 'tenant_id' => 'tenant-1',
             'entity_type' => 'privacy_request', 'entity_id' => $requestId,
@@ -159,6 +174,7 @@ class GovernanceDomainEventTest extends TestCase
             ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
 
         $request = PrivacyRequest::query()->sole();
+        $this->assertSame($centralId, $request->id);
         $this->assertSame('deletion', $request->right);
         $this->assertSame($sha, $request->evidence_sha256);
         $this->assertSame('pending_review', $request->review_status);

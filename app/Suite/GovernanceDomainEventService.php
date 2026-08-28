@@ -3,6 +3,7 @@
 namespace App\Suite;
 
 use App\Models\LegalHold;
+use App\Models\PrivacyRequest;
 use Illuminate\Support\Str;
 
 class GovernanceDomainEventService
@@ -14,6 +15,24 @@ class GovernanceDomainEventService
     {
         $eventType = (string) ($envelope['event_type'] ?? '');
         $payload = is_array($envelope['payload'] ?? null) ? $envelope['payload'] : [];
+
+        if (in_array($eventType, ['finance.privacy.opened', 'ppm.privacy.opened'], true)) {
+            $sourceRequestRef = (string) ($envelope['entity_id'] ?? '');
+            $subjectRef = (string) ($payload['subject_ref'] ?? '');
+            $right = (string) ($payload['right'] ?? '');
+            if (! Str::isUuid($sourceRequestRef) || ! Str::isUuid($subjectRef)
+                || ! in_array($right, ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'], true)) {
+                return 'ignored';
+            }
+            $this->controls->openPrivacyRequest([
+                'tenant_id' => $tenantId, 'source' => $source, 'source_request_ref' => $sourceRequestRef,
+                'subject_ref' => $subjectRef, 'right' => $right,
+                'lawful_basis' => (string) ($payload['lawful_basis'] ?? 'data_subject_right'),
+                'requested_at' => $payload['requested_at'] ?? $envelope['occurred_at'] ?? now(),
+            ]);
+
+            return 'governance evidence recorded';
+        }
 
         if (in_array($eventType, ['ppm.records.hold_applied', 'ppm.records.hold_released'], true)) {
             $recordClass = (string) ($payload['record_class_id'] ?? '');
@@ -92,11 +111,19 @@ class GovernanceDomainEventService
             if (! Str::isUuid($subjectRef) || ! in_array($right, ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'], true) || ! preg_match('/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', $evidenceRef) || ! preg_match('/^[a-f0-9]{64}$/', $evidenceSha)) {
                 return 'ignored';
             }
-            $request = $this->controls->openPrivacyRequest([
-                'tenant_id' => $tenantId, 'source' => $source, 'subject_ref' => $subjectRef,
-                'right' => $right, 'lawful_basis' => 'data_subject_right',
+            $sourceRequestRef = in_array($eventType, ['finance.privacy.completed', 'ppm.privacy.erasure_completed'], true)
+                ? (string) ($envelope['entity_id'] ?? '') : null;
+            $request = $sourceRequestRef !== null && Str::isUuid($sourceRequestRef)
+                ? PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'source_request_ref' => $sourceRequestRef])->first()
+                : null;
+            $request ??= $this->controls->openPrivacyRequest([
+                'tenant_id' => $tenantId, 'source' => $source, 'source_request_ref' => $sourceRequestRef,
+                'subject_ref' => $subjectRef, 'right' => $right, 'lawful_basis' => 'data_subject_right',
                 'requested_at' => $payload['requested_at'] ?? $envelope['occurred_at'] ?? now(),
             ]);
+            if ($request->status === 'closed') {
+                return 'governance evidence recorded';
+            }
             $this->controls->closePrivacyRequest($request, $evidenceRef, $evidenceSha);
 
             return 'governance evidence recorded';
