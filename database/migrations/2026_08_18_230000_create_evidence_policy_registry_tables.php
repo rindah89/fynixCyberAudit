@@ -9,7 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('evidence_requester_keys', function (Blueprint $table): void {
+        if (! Schema::hasTable('evidence_requester_keys')) {
+            Schema::create('evidence_requester_keys', function (Blueprint $table): void {
             $table->id();
             $table->string('key_id', 64);
             $table->string('token_digest', 64);
@@ -20,8 +21,10 @@ return new class extends Migration
             $table->timestamps();
             $table->unique(['key_id', 'company_id', 'profile'], 'evidence_key_profile_unique');
             $table->unique(['token_digest', 'company_id', 'profile'], 'evidence_token_profile_unique');
-        });
-        Schema::create('evidence_profile_reviewers', function (Blueprint $table): void {
+            });
+        }
+        if (! Schema::hasTable('evidence_profile_reviewers')) {
+            Schema::create('evidence_profile_reviewers', function (Blueprint $table): void {
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
             $table->unsignedBigInteger('company_id');
             $table->string('profile', 96);
@@ -30,8 +33,10 @@ return new class extends Migration
             $table->boolean('active')->default(true);
             $table->timestamps();
             $table->primary(['user_id', 'company_id', 'profile']);
-        });
-        Schema::create('evidence_authorizations', function (Blueprint $table): void {
+            });
+        }
+        if (! Schema::hasTable('evidence_authorizations')) {
+            Schema::create('evidence_authorizations', function (Blueprint $table): void {
             $table->id();
             $table->string('profile', 96);
             $table->unsignedBigInteger('company_id');
@@ -59,8 +64,10 @@ return new class extends Migration
             $table->unique(['company_id', 'profile', 'request_id'], 'evidence_profile_request_unique');
             $table->unique(['company_id', 'profile', 'operation_id'], 'evidence_profile_operation_unique');
             $table->index(['status', 'expires_at']);
-        });
-        Schema::create('evidence_authorization_claims', function (Blueprint $table): void {
+            });
+        }
+        if (! Schema::hasTable('evidence_authorization_claims')) {
+            Schema::create('evidence_authorization_claims', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('authorization_id')->constrained('evidence_authorizations')->restrictOnDelete();
             $table->uuid('nonce')->unique();
@@ -71,8 +78,10 @@ return new class extends Migration
             $table->timestamp('consumed_at')->nullable();
             $table->timestamps();
             $table->unique('authorization_id');
-        });
-        Schema::create('evidence_authorization_audit', function (Blueprint $table): void {
+            });
+        }
+        if (! Schema::hasTable('evidence_authorization_audit')) {
+            Schema::create('evidence_authorization_audit', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('authorization_id')->nullable()->constrained('evidence_authorizations')->restrictOnDelete();
             $table->unsignedBigInteger('company_id')->nullable();
@@ -86,7 +95,8 @@ return new class extends Migration
             $table->longText('canonical_payload');
             $table->string('event_digest', 64)->unique();
             $table->timestamp('created_at')->useCurrent();
-        });
+            });
+        }
         $this->createCredentialLifecycleTriggers();
     }
 
@@ -102,6 +112,7 @@ return new class extends Migration
 
     private function createCredentialLifecycleTriggers(): void
     {
+        $this->dropCredentialLifecycleTriggers();
         if (Schema::getConnection()->getDriverName() === 'sqlite') {
             DB::unprepared("CREATE TRIGGER evidence_lifecycle_audit_digest AFTER INSERT ON evidence_authorization_audit WHEN NEW.action='credential_revoked' AND NEW.reason_code='key_lifecycle' BEGIN UPDATE evidence_authorization_audit SET event_nonce=json_extract(NEW.canonical_payload,'$.event_nonce'),event_digest=sha256(NEW.canonical_payload) WHERE id=NEW.id; END");
             $audit = "INSERT INTO evidence_authorization_audit (authorization_id,company_id,profile,action,reason_code,previous_digest,event_nonce,occurred_at,canonical_payload,event_digest,created_at) SELECT q.id,q.company_id,q.profile,'credential_revoked','key_lifecycle',q.previous_digest,q.event_nonce,q.occurred_at,q.payload,q.event_nonce,q.occurred_at FROM (SELECT p.*,json_object('action','credential_revoked','actor_user_id',NULL,'authorization_id',p.id,'company_id',p.company_id,'detail_digest',p.request_digest,'event_nonce',p.event_nonce,'occurred_at',p.occurred_at,'previous_digest',p.previous_digest,'profile',p.profile) AS payload FROM (SELECT a.id,a.company_id,a.profile,a.request_digest,lower(hex(randomblob(16))) AS event_nonce,strftime('%Y-%m-%dT%H:%M:%fZ','now') AS occurred_at,(SELECT event_digest FROM evidence_authorization_audit x WHERE x.authorization_id=a.id ORDER BY id DESC LIMIT 1) AS previous_digest FROM evidence_authorizations a WHERE a.requester_key_id=OLD.key_id AND a.consumed_at IS NULL AND a.revoked_at IS NULL) p) q;";
