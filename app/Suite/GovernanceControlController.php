@@ -37,7 +37,7 @@ class GovernanceControlController
         $body = json_decode($raw, true);
         $validator = Validator::make(is_array($body) ? $body : [], [
             'tenant_id' => ['required', 'string', 'max:128'],
-            'command' => ['required', 'in:privacy_request.open,privacy_request.close,retention_policy.define,retention.disposition.record,legal_hold.place,legal_hold.release,processor.register,recovery_evidence.record,audit_event.record'],
+            'command' => ['required', 'in:privacy_request.open,privacy_request.close,retention_policy.define,retention.disposition.record,retention_run.record,legal_hold.place,legal_hold.release,processor.register,recovery_evidence.record,audit_event.record'],
             'payload' => ['required', 'array'],
         ]);
         if ($validator->fails()) {
@@ -56,6 +56,7 @@ class GovernanceControlController
             'processor.register' => ['name' => ['required', 'string', 'max:255'], 'purpose' => ['required', 'string'], 'data_categories' => ['required', 'array', 'min:1'], 'processing_countries' => ['required', 'array'], 'transfer_mechanism' => ['nullable', 'string'], 'agreement_owner' => ['required', 'string'], 'agreement_evidence_ref' => ['required', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/'], 'agreement_evidence_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/'], 'review_due_at' => ['required', 'date']],
             'recovery_evidence.record' => ['kind' => ['required', 'in:restore_drill'], 'occurred_at' => ['required', 'date', 'before_or_equal:now'], 'outcome' => ['required', 'in:successful'], 'evidence_ref' => ['required', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', 'max:2048'], 'evidence_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/']],
             'audit_event.record' => ['source_event_ref' => ['required', 'uuid'], 'subject_ref' => ['nullable', 'uuid'], 'action' => ['required', 'regex:/^[a-z0-9_.:-]+$/', 'max:128'], 'outcome' => ['required', 'in:succeeded,denied,failed'], 'correlation_ref' => ['nullable', 'uuid'], 'occurred_at' => ['required', 'date', 'before_or_equal:now']],
+            'retention_run.record' => ['source_run_ref' => ['required', 'uuid'], 'schema_fingerprint' => ['required', 'regex:/^[a-f0-9]{64}$/'], 'schedule_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/'], 'policy_count' => ['required', 'integer', 'min:1'], 'eligible_count' => ['required', 'integer', 'min:0'], 'disposed_count' => ['required', 'integer', 'min:0'], 'held_count' => ['required', 'integer', 'min:0'], 'preserved_policy_count' => ['required', 'integer', 'min:0'], 'pending_outbox_count' => ['required', 'integer', 'min:0'], 'outcome' => ['required', 'in:successful'], 'occurred_at' => ['required', 'date', 'before_or_equal:now'], 'evidence_ref' => ['required', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', 'max:2048'], 'evidence_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/']],
         });
         if ($payloadValidator->fails()) {
             return response()->json(['outcome' => 'invalid command', 'errors' => $payloadValidator->errors()], 422);
@@ -74,6 +75,7 @@ class GovernanceControlController
                     'processor.register' => $service->registerProcessor($payload),
                     'recovery_evidence.record' => $service->recordRecoveryEvidence($payload),
                     'audit_event.record' => $service->recordAuditEvent($payload),
+                    'retention_run.record' => $service->recordRetentionRun($payload),
                 };
                 DB::table('governance_control_deliveries')->insert([
                     'delivery_id' => $headers['delivery-id'], 'tenant_id' => $binding['tenant_id'],

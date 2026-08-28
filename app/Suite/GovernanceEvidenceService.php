@@ -63,6 +63,14 @@ class GovernanceEvidenceService
             return $control;
         }
         $supported = match ($control['control_id']) {
+            'DG-06' => ! in_array($source, config('data_governance.retention_run_required_sources', []), true)
+                || $this->controls->hasCurrentRetentionRun(
+                    $tenantId,
+                    $source,
+                    $observedAt,
+                    (string) ($control['metrics']['schedule_sha256'] ?? ''),
+                    (int) ($control['metrics']['executable_tables'] ?? 0),
+                ),
             'DG-09' => $this->controls->hasCurrentRecoveryEvidence($tenantId, $source, $observedAt),
             'DG-11' => $this->controls->hasCurrentProcessorRegister($tenantId, $source, $observedAt),
             default => true,
@@ -78,9 +86,11 @@ class GovernanceEvidenceService
             return $control;
         }
         $control['status'] = 'partially_effective';
-        $control['summary'] = $control['control_id'] === 'DG-09'
-            ? 'CyberAudit has no current successful restore-drill evidence for this application.'
-            : 'CyberAudit has no current approved processor register for this application.';
+        $control['summary'] = match ($control['control_id']) {
+            'DG-06' => 'CyberAudit has no current independently approved complete retention-run evidence matching this schedule.',
+            'DG-09' => 'CyberAudit has no current successful restore-drill evidence for this application.',
+            default => 'CyberAudit has no current approved processor register for this application.',
+        };
         $control['metrics']['central_evidence_verified'] = false;
 
         return $control;

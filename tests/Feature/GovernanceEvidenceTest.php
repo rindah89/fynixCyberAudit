@@ -6,6 +6,7 @@ use App\Models\DataProcessor;
 use App\Models\GovernanceException;
 use App\Models\GovernanceStatement;
 use App\Models\ProcessorInventoryRun;
+use App\Models\RetentionRunEvidence;
 use App\Models\User;
 use App\Suite\DataGovernanceControlService;
 use App\Suite\SuiteEnvelope;
@@ -90,6 +91,49 @@ class GovernanceEvidenceTest extends TestCase
         $this->assertSame(['partially_effective'], $results->pluck('status')->unique()->values()->all());
         $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-09', 'status' => 'open']);
         $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-11', 'status' => 'open']);
+    }
+
+    public function test_finance_retention_claim_requires_matching_independently_approved_complete_run(): void
+    {
+        $statement = $this->statement();
+        $statement['payload']['controls'][5]['metrics'] = [
+            'executable_tables' => 398,
+            'remaining_tables' => 0,
+            'schedule_sha256' => str_repeat('b', 64),
+        ];
+        $this->postSigned($statement)->assertCreated();
+        $first = GovernanceStatement::query()->firstOrFail()->controlResults()->where('control_id', 'DG-06')->sole();
+        $this->assertSame('partially_effective', $first->status);
+
+        $run = RetentionRunEvidence::create([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE,
+            'source_run_ref' => '11111111-1111-4111-8111-111111111111',
+            'schema_fingerprint' => str_repeat('a', 64),
+            'schedule_sha256' => str_repeat('b', 64), 'policy_count' => 398,
+            'eligible_count' => 0, 'disposed_count' => 0, 'held_count' => 0,
+            'preserved_policy_count' => 40, 'pending_outbox_count' => 0,
+            'outcome' => 'successful', 'occurred_at' => now()->subMinute(),
+            'evidence_ref' => 'urn:fynix:finance:retention-run:11111111-1111-4111-8111-111111111111',
+            'evidence_sha256' => str_repeat('c', 64), 'review_status' => 'pending_review',
+        ]);
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Internal Auditor');
+        Sanctum::actingAs($reviewer);
+        $this->postJson('/api/governance/control-reviews', [
+            'resource_type' => 'retention_run', 'resource_id' => $run->id,
+            'decision' => 'approved',
+            'review_evidence_ref' => 'evidence://cyberaudit/review/finance-retention-run',
+            'review_evidence_sha256' => str_repeat('d', 64),
+        ])->assertCreated();
+
+        $next = $this->statement(['entity_id' => (string) Str::uuid()]);
+        $next['payload']['controls'][5]['metrics'] = $statement['payload']['controls'][5]['metrics'];
+        $this->postSigned($next)->assertCreated();
+        $latest = GovernanceStatement::query()->latest('id')->firstOrFail()->controlResults()->where('control_id', 'DG-06')->sole();
+        $this->assertSame('effective', $latest->status);
+        $this->assertDatabaseMissing('governance_exceptions', [
+            'source' => self::SOURCE, 'control_id' => 'DG-06', 'status' => 'open',
+        ]);
     }
 
     public function test_certified_processor_register_promotes_an_honest_partial_source_claim(): void
@@ -253,7 +297,7 @@ class GovernanceEvidenceTest extends TestCase
         $this->getJson('/api/suite/governance/ready')
             ->assertOk()
             ->assertJsonPath('status', 'attention_required')
-            ->assertJsonPath('sources.finance.effective_controls', 10)
+            ->assertJsonPath('sources.finance.effective_controls', 9)
             ->assertJsonPath('sources.finance.operability.pending_processor_reviews', 1)
             ->assertJsonPath('sources.finance.operability.overdue_privacy_requests', 0)
             ->assertJsonPath('sources.finance.operability.current_approved_restore_evidence', false)
@@ -265,7 +309,7 @@ class GovernanceEvidenceTest extends TestCase
         $this->getJson('/api/governance/oversight')
             ->assertOk()
             ->assertJsonCount(12, 'controls')
-            ->assertJsonCount(2, 'open_exceptions');
+            ->assertJsonCount(3, 'open_exceptions');
     }
 
     public function test_oversight_requires_explicit_permission(): void

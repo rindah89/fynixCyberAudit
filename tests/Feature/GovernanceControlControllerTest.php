@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\PrivacyRequest;
+use App\Models\RetentionRunEvidence;
 use App\Models\SuiteAuditEvent;
 use App\Suite\SuiteEnvelope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -116,6 +117,54 @@ class GovernanceControlControllerTest extends TestCase
 
         $this->expectException(\LogicException::class);
         $event->update(['outcome' => 'succeeded']);
+    }
+
+    public function test_signed_application_records_complete_retention_run_for_independent_review(): void
+    {
+        $runRef = (string) Str::uuid();
+        $response = $this->postSigned('retention_run.record', [
+            'source_run_ref' => $runRef,
+            'schema_fingerprint' => str_repeat('a', 64),
+            'schedule_sha256' => str_repeat('b', 64),
+            'policy_count' => 398,
+            'eligible_count' => 12,
+            'disposed_count' => 10,
+            'held_count' => 2,
+            'preserved_policy_count' => 40,
+            'pending_outbox_count' => 0,
+            'outcome' => 'successful',
+            'occurred_at' => now()->subSecond()->toAtomString(),
+            'evidence_ref' => 'urn:fynix:finance:retention-run:'.$runRef,
+            'evidence_sha256' => str_repeat('c', 64),
+        ])->assertOk()->assertJsonPath('outcome', 'recorded');
+
+        $run = RetentionRunEvidence::findOrFail($response->json('resource_id'));
+        $this->assertSame(self::TENANT, $run->tenant_id);
+        $this->assertSame('hr', $run->source);
+        $this->assertSame('pending_review', $run->review_status);
+        $this->assertSame(0, $run->pending_outbox_count);
+    }
+
+    public function test_incomplete_or_future_retention_run_is_rejected(): void
+    {
+        $payload = [
+            'source_run_ref' => (string) Str::uuid(),
+            'schema_fingerprint' => str_repeat('a', 64),
+            'schedule_sha256' => str_repeat('b', 64),
+            'policy_count' => 398,
+            'eligible_count' => 1,
+            'disposed_count' => 0,
+            'held_count' => 0,
+            'preserved_policy_count' => 40,
+            'pending_outbox_count' => 1,
+            'outcome' => 'successful',
+            'occurred_at' => now()->addDay()->toAtomString(),
+            'evidence_ref' => 'urn:fynix:finance:retention-run:invalid',
+            'evidence_sha256' => str_repeat('d', 64),
+        ];
+
+        $this->postSigned('retention_run.record', $payload)->assertUnprocessable();
+        $this->assertDatabaseCount('retention_run_evidence', 0);
     }
 
     private function postSigned(string $command, array $payload, ?string $signature = null)

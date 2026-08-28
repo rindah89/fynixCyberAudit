@@ -9,6 +9,7 @@ use App\Models\GovernanceStatement;
 use App\Models\LegalHold;
 use App\Models\PrivacyRequest;
 use App\Models\RecoveryEvidence;
+use App\Models\RetentionRunEvidence;
 use Carbon\CarbonImmutable;
 
 class GovernanceOversightService
@@ -37,6 +38,7 @@ class GovernanceOversightService
             $pendingProcessors = DataProcessor::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'pending_review', 'active' => true])->count();
             $pendingPrivacy = PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'closed', 'review_status' => 'pending_review'])->count();
             $pendingRecovery = RecoveryEvidence::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'pending_review'])->count();
+            $pendingRetentionRuns = RetentionRunEvidence::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'pending_review'])->count();
             $activeHolds = LegalHold::query()->whereNull('released_at')->whereHas('retentionPolicy', fn ($query) => $query->where(['tenant_id' => $tenantId, 'source' => $source]))->count();
             $dispositionReceipts = DispositionReceipt::query()->where(['tenant_id' => $tenantId, 'source' => $source])->count();
             $pendingDispositions = DispositionReceipt::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'pending_review'])->count();
@@ -48,6 +50,8 @@ class GovernanceOversightService
                 ->reject(fn (PrivacyRequest $resource): bool => $this->reviewIntegrity->approved($resource, 'privacy_completion'))->count();
             $invalidReviews += DispositionReceipt::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'approved'])->get()
                 ->reject(fn (DispositionReceipt $resource): bool => $this->reviewIntegrity->approved($resource, 'disposition_receipt'))->count();
+            $invalidReviews += RetentionRunEvidence::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'approved'])->get()
+                ->reject(fn (RetentionRunEvidence $resource): bool => $this->reviewIntegrity->approved($resource, 'retention_run'))->count();
             $sources[$source] = [
                 'binding' => $bindingEnabled ? 'enabled' : 'missing',
                 'freshness' => ! $latest ? 'missing' : ($latest->occurred_at->lessThan($freshAfter) ? 'stale' : 'current'),
@@ -63,6 +67,7 @@ class GovernanceOversightService
                     'pending_privacy_reviews' => $pendingPrivacy,
                     'pending_recovery_reviews' => $pendingRecovery,
                     'pending_disposition_reviews' => $pendingDispositions,
+                    'pending_retention_run_reviews' => $pendingRetentionRuns,
                     'invalid_or_tampered_reviews' => $invalidReviews,
                     'disposition_receipts' => $dispositionReceipts,
                     'current_approved_restore_evidence' => $tenantId !== '' && $this->controls->hasCurrentRecoveryEvidence($tenantId, $source, $now),
@@ -71,7 +76,7 @@ class GovernanceOversightService
             ];
         }
         $processorInventoryCurrent = $this->controls->hasCurrentProcessorInventoryRun($now);
-        $ready = $processorInventoryCurrent && collect($sources)->every(fn (array $source): bool => $source['binding'] === 'enabled' && $source['freshness'] === 'current' && $source['open_exceptions'] === 0 && $source['operability']['overdue_privacy_requests'] === 0 && $source['operability']['pending_processor_reviews'] === 0 && $source['operability']['pending_privacy_reviews'] === 0 && $source['operability']['pending_recovery_reviews'] === 0 && $source['operability']['pending_disposition_reviews'] === 0 && $source['operability']['invalid_or_tampered_reviews'] === 0);
+        $ready = $processorInventoryCurrent && collect($sources)->every(fn (array $source): bool => $source['binding'] === 'enabled' && $source['freshness'] === 'current' && $source['open_exceptions'] === 0 && $source['operability']['overdue_privacy_requests'] === 0 && $source['operability']['pending_processor_reviews'] === 0 && $source['operability']['pending_privacy_reviews'] === 0 && $source['operability']['pending_recovery_reviews'] === 0 && $source['operability']['pending_disposition_reviews'] === 0 && $source['operability']['pending_retention_run_reviews'] === 0 && $source['operability']['invalid_or_tampered_reviews'] === 0);
         $hasWaivers = collect($sources)->contains(fn (array $source): bool => $source['waived_exceptions'] > 0);
         $report = ['status' => $ready ? ($hasWaivers ? 'conformant_with_waivers' : 'conformant') : 'attention_required', 'generated_at' => $now->toIso8601String(), 'processor_inventory_reconciliation' => $processorInventoryCurrent ? 'current' : 'missing_failed_or_stale', 'sources' => $sources];
         if ($includeDetails) {

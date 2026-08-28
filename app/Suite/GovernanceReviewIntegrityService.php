@@ -7,6 +7,7 @@ use App\Models\DispositionReceipt;
 use App\Models\GovernanceControlReview;
 use App\Models\PrivacyRequest;
 use App\Models\RecoveryEvidence;
+use App\Models\RetentionRunEvidence;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
@@ -66,6 +67,21 @@ class GovernanceReviewIntegrityService
                 'retention_policy_id' => $resource->retention_policy_id, 'record_ref' => $resource->record_ref,
                 'eligible_at' => $this->date($resource->eligible_at), 'disposed_at' => $this->date($resource->disposed_at),
                 'action' => $resource->action, 'evidence_ref' => $resource->evidence_ref,
+                'evidence_sha256' => $resource->evidence_sha256,
+            ],
+            $resource instanceof RetentionRunEvidence => [
+                'source_run_ref' => $resource->source_run_ref,
+                'schema_fingerprint' => $resource->schema_fingerprint,
+                'schedule_sha256' => $resource->schedule_sha256,
+                'policy_count' => $resource->policy_count,
+                'eligible_count' => $resource->eligible_count,
+                'disposed_count' => $resource->disposed_count,
+                'held_count' => $resource->held_count,
+                'preserved_policy_count' => $resource->preserved_policy_count,
+                'pending_outbox_count' => $resource->pending_outbox_count,
+                'outcome' => $resource->outcome,
+                'occurred_at' => $this->date($resource->occurred_at),
+                'evidence_ref' => $resource->evidence_ref,
                 'evidence_sha256' => $resource->evidence_sha256,
             ],
             default => throw new InvalidArgumentException('Unsupported review evidence resource.'),

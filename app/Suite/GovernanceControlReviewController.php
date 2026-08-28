@@ -12,7 +12,7 @@ class GovernanceControlReviewController
     {
         abort_unless($request->user()?->can('Review Governance Controls'), 403);
         $validator = Validator::make($request->all(), [
-            'resource_type' => ['required', 'in:processor,recovery_evidence,disposition_receipt,privacy_completion'],
+            'resource_type' => ['required', 'in:processor,recovery_evidence,disposition_receipt,privacy_completion,retention_run'],
             'resource_id' => ['required', 'integer', 'min:1'],
             'decision' => ['required', 'in:approved,rejected'],
             'review_evidence_ref' => ['required', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', 'max:2048'],

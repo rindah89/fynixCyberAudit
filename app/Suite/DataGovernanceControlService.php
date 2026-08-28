@@ -10,6 +10,7 @@ use App\Models\ProcessorInventoryRun;
 use App\Models\ProcessorRegisterCertification;
 use App\Models\RecoveryEvidence;
 use App\Models\RetentionPolicy;
+use App\Models\RetentionRunEvidence;
 use App\Models\SuiteAuditEvent;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -186,6 +187,47 @@ class DataGovernanceControlService
         }
 
         return $event;
+    }
+
+    public function recordRetentionRun(array $attributes): RetentionRunEvidence
+    {
+        if (($attributes['outcome'] ?? null) !== 'successful'
+            || (int) ($attributes['pending_outbox_count'] ?? -1) !== 0
+            || (int) ($attributes['policy_count'] ?? 0) < 1
+            || ! preg_match('/^[a-f0-9]{64}$/', (string) ($attributes['evidence_sha256'] ?? ''))) {
+            throw new InvalidArgumentException('A complete successful retention run is required.');
+        }
+        $identity = collect($attributes)->only(['tenant_id', 'source', 'source_run_ref'])->all();
+        $material = array_merge($attributes, ['review_status' => 'pending_review']);
+        $run = RetentionRunEvidence::firstOrNew($identity);
+        if ($run->exists) {
+            $same = collect($attributes)->except(['tenant_id', 'source', 'source_run_ref'])
+                ->every(fn ($value, $key): bool => $this->comparable($run->{$key}) === $this->comparable($value));
+            if (! $same) {
+                throw new InvalidArgumentException('Retention run reference conflicts with existing evidence.');
+            }
+
+            return $run;
+        }
+        $run->fill($material)->save();
+
+        return $run->refresh();
+    }
+
+    public function hasCurrentRetentionRun(
+        string $tenantId,
+        string $source,
+        DateTimeInterface $at,
+        string $scheduleSha256,
+        int $policyCount,
+    ): bool {
+        return RetentionRunEvidence::query()
+            ->where(['tenant_id' => $tenantId, 'source' => $source, 'outcome' => 'successful',
+                'pending_outbox_count' => 0, 'review_status' => 'approved',
+                'schedule_sha256' => $scheduleSha256, 'policy_count' => $policyCount])
+            ->where('occurred_at', '>=', CarbonImmutable::instance($at)->subHours((int) config('data_governance.freshness_hours', 26)))
+            ->where('occurred_at', '<=', CarbonImmutable::instance($at))
+            ->get()->contains(fn (RetentionRunEvidence $run): bool => $this->reviewIntegrity->approved($run, 'retention_run'));
     }
 
     public function hasCurrentRecoveryEvidence(string $tenantId, string $source, DateTimeInterface $at): bool

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\DataProcessor;
 use App\Models\ProcessorInventoryRun;
 use App\Models\RecoveryEvidence;
+use App\Models\RetentionRunEvidence;
 use App\Models\User;
 use App\Suite\DataGovernanceControlService;
 use App\Suite\GovernanceOversightService;
@@ -142,5 +143,42 @@ class GovernanceControlReviewTest extends TestCase
         DataProcessor::where('tenant_id', 'tenant-1')->where('source', 'finance')->where('name', 'Hosting')
             ->update(['purpose' => 'Changed without review']);
         $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentProcessorRegister('tenant-1', 'finance', now()));
+    }
+
+    public function test_independent_reviewer_approves_digest_bound_retention_run(): void
+    {
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Internal Auditor');
+        Sanctum::actingAs($reviewer);
+        $run = RetentionRunEvidence::create([
+            'tenant_id' => 'tenant-1', 'source' => 'finance',
+            'source_run_ref' => '11111111-1111-4111-8111-111111111111',
+            'schema_fingerprint' => str_repeat('a', 64),
+            'schedule_sha256' => str_repeat('b', 64),
+            'policy_count' => 398, 'eligible_count' => 12, 'disposed_count' => 10,
+            'held_count' => 2, 'preserved_policy_count' => 40, 'pending_outbox_count' => 0,
+            'outcome' => 'successful', 'occurred_at' => now()->subMinute(),
+            'evidence_ref' => 'urn:fynix:finance:retention-run:11111111-1111-4111-8111-111111111111',
+            'evidence_sha256' => str_repeat('c', 64), 'review_status' => 'pending_review',
+        ]);
+
+        $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentRetentionRun(
+            'tenant-1', 'finance', now(), str_repeat('b', 64), 398,
+        ));
+        $this->postJson('/api/governance/control-reviews', [
+            'resource_type' => 'retention_run', 'resource_id' => $run->id,
+            'decision' => 'approved',
+            'review_evidence_ref' => 'evidence://cyberaudit/review/retention-run-1',
+            'review_evidence_sha256' => str_repeat('d', 64),
+            'notes' => 'Schedule, schema coverage, legal holds, and empty outbox verified.',
+        ])->assertCreated()->assertJsonPath('outcome', 'approved');
+
+        $this->assertTrue(app(DataGovernanceControlService::class)->hasCurrentRetentionRun(
+            'tenant-1', 'finance', now(), str_repeat('b', 64), 398,
+        ));
+        $run->update(['disposed_count' => 11]);
+        $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentRetentionRun(
+            'tenant-1', 'finance', now(), str_repeat('b', 64), 398,
+        ));
     }
 }

@@ -8,6 +8,7 @@ use App\Models\GovernanceControlReview;
 use App\Models\PrivacyRequest;
 use App\Models\ProcessorRegisterCertification;
 use App\Models\RecoveryEvidence;
+use App\Models\RetentionRunEvidence;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +96,7 @@ class GovernanceControlReviewService
             'recovery_evidence' => RecoveryEvidence::findOrFail($id),
             'disposition_receipt' => DispositionReceipt::findOrFail($id),
             'privacy_completion' => PrivacyRequest::findOrFail($id),
+            'retention_run' => RetentionRunEvidence::findOrFail($id),
             default => throw new InvalidArgumentException('Unsupported review resource.'),
         };
     }
