@@ -71,6 +71,35 @@ class GovernanceDomainEventTest extends TestCase
         $this->assertSame('pending_review', $receipt->review_status);
     }
 
+    public function test_signed_hr_dsar_export_creates_access_completion(): void
+    {
+        Config::set('data_governance.bindings.hr', [
+            'enabled' => true, 'tenant_id' => 'tenant-1', 'webhook_id' => 'hr-governance-hook',
+            'secret' => str_repeat('s', 32), 'replay_tolerance' => 300,
+        ]);
+        $personId = (string) Str::uuid();
+        $sha = str_repeat('b', 64);
+        $envelope = [
+            'event_type' => 'hr.person.dsar_exported', 'tenant_id' => 'tenant-1',
+            'entity_type' => 'person', 'entity_id' => $personId,
+            'occurred_at' => now()->utc()->toAtomString(),
+            'payload' => [
+                'person_uuid' => $personId, 'right' => 'access',
+                'completed_at' => now()->utc()->toAtomString(),
+                'evidence_ref' => 'urn:fynix:hr:dsar:'.$personId,
+                'evidence_sha256' => $sha,
+            ],
+        ];
+
+        $this->postSigned($envelope, 'hr', 'hr-governance-hook', str_repeat('s', 32))
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+
+        $request = PrivacyRequest::query()->sole();
+        $this->assertSame('access', $request->right);
+        $this->assertSame($sha, $request->evidence_sha256);
+        $this->assertSame('pending_review', $request->review_status);
+    }
+
     private function postSigned(array $envelope, string $source, string $webhookId, string $secret)
     {
         $raw = (string) json_encode($envelope, JSON_UNESCAPED_SLASHES);

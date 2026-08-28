@@ -36,6 +36,23 @@ class GovernanceDomainEventService
             return 'governance evidence recorded';
         }
 
+        if ($eventType === 'hr.person.dsar_exported') {
+            $subjectRef = (string) ($payload['person_uuid'] ?? $envelope['entity_id'] ?? '');
+            $evidenceRef = (string) ($payload['evidence_ref'] ?? '');
+            $evidenceSha = (string) ($payload['evidence_sha256'] ?? '');
+            if (! Str::isUuid($subjectRef) || ($payload['right'] ?? null) !== 'access' || ! preg_match('/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', $evidenceRef) || ! preg_match('/^[a-f0-9]{64}$/', $evidenceSha)) {
+                return 'ignored';
+            }
+            $request = $this->controls->openPrivacyRequest([
+                'tenant_id' => $tenantId, 'source' => $source, 'subject_ref' => $subjectRef,
+                'right' => 'access', 'lawful_basis' => 'data_subject_access',
+                'requested_at' => $envelope['occurred_at'] ?? now(),
+            ]);
+            $this->controls->closePrivacyRequest($request, $evidenceRef, $evidenceSha);
+
+            return 'governance evidence recorded';
+        }
+
         if ($eventType === 'docflow.records.destroyed') {
             $recordRef = (string) ($envelope['entity_id'] ?? '');
             $recordClass = (string) ($payload['record_class'] ?? '');
