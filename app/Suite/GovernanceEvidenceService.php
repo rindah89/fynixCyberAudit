@@ -31,6 +31,7 @@ class GovernanceEvidenceService
             ]);
 
             foreach ($payload['controls'] as $control) {
+                $control = $this->evidenceBackedControl($control);
                 $result = $statement->controlResults()->create([
                     'control_id' => $control['control_id'],
                     'status' => $control['status'],
@@ -44,6 +45,27 @@ class GovernanceEvidenceService
 
             return $statement->load('controlResults');
         });
+    }
+
+    /** @param array<string, mixed> $control
+     * @return array<string, mixed>
+     */
+    private function evidenceBackedControl(array $control): array
+    {
+        $supported = match ($control['control_id']) {
+            'DG-09', 'DG-11' => false,
+            default => true,
+        };
+        if ($supported || ! in_array($control['status'], ['effective', 'not_applicable'], true)) {
+            return $control;
+        }
+        $control['status'] = 'partially_effective';
+        $control['summary'] = $control['control_id'] === 'DG-09'
+            ? 'CyberAudit has no current successful restore-drill evidence for this application.'
+            : 'CyberAudit has no current approved processor register for this application.';
+        $control['metrics']['central_evidence_verified'] = false;
+
+        return $control;
     }
 
     /** @param array<int, array<string, mixed>> $controls */

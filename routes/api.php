@@ -22,6 +22,7 @@ use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
 use App\Suite\SuiteInboundController;
 use App\Suite\GovernanceEvidenceController;
+use App\Suite\GovernanceControlController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +41,8 @@ Route::post('/suite/events', [SuiteInboundController::class, 'store'])
     ->middleware('throttle:suite-inbound');
 Route::get('/suite/ready', [SuiteInboundController::class, 'ready']);
 Route::post('/suite/governance/evidence', [GovernanceEvidenceController::class, 'store'])
+    ->middleware('throttle:suite-inbound');
+Route::post('/suite/governance/controls', [GovernanceControlController::class, 'store'])
     ->middleware('throttle:suite-inbound');
 Route::get('/suite/governance/ready', [GovernanceEvidenceController::class, 'readiness']);
 Route::post('/suite/executive-authority-bindings', [ExecutiveAuthorityBindingController::class, 'store'])->middleware('throttle:api');

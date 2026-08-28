@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\GovernanceException;
 use App\Models\GovernanceStatement;
 use App\Models\User;
+use App\Suite\DataGovernanceControlService;
 use App\Suite\SuiteEnvelope;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -80,6 +81,15 @@ class GovernanceEvidenceTest extends TestCase
         $this->assertSame(64, strlen((string) GovernanceStatement::query()->firstOrFail()->payload_sha256));
     }
 
+    public function test_backup_and_processor_claims_are_downgraded_without_central_evidence(): void
+    {
+        $this->postSigned($this->statement())->assertCreated();
+        $results = GovernanceStatement::query()->firstOrFail()->controlResults()->whereIn('control_id', ['DG-09', 'DG-11'])->get();
+        $this->assertSame(['partially_effective'], $results->pluck('status')->unique()->values()->all());
+        $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-09', 'status' => 'open']);
+        $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-11', 'status' => 'open']);
+    }
+
     public function test_reused_statement_id_with_a_new_delivery_is_rejected_as_a_conflict(): void
     {
         $statement = $this->statement();
@@ -120,6 +130,16 @@ class GovernanceEvidenceTest extends TestCase
 
     public function test_waiver_requires_active_expiry_and_is_reopened_after_expiry(): void
     {
+        $controls = app(DataGovernanceControlService::class);
+        $controls->recordRecoveryEvidence([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'kind' => 'restore_drill',
+            'occurred_at' => now(), 'outcome' => 'successful', 'evidence_ref' => 'evidence://restore/finance/waiver-test',
+        ]);
+        $controls->registerProcessor([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'name' => 'Waiver test hosting',
+            'purpose' => 'Application hosting', 'data_categories' => ['financial_records'],
+            'processing_countries' => [], 'agreement_owner' => 'privacy', 'review_due_at' => now()->addYear(),
+        ]);
         $statement = $this->statement();
         $statement['payload']['controls'][4]['status'] = 'ineffective';
         $this->postSigned($statement)->assertCreated();
@@ -138,7 +158,7 @@ class GovernanceEvidenceTest extends TestCase
         $this->assertSame('waived', $exception->fresh()->status);
         $this->getJson('/api/suite/governance/ready')
             ->assertOk()
-            ->assertJsonPath('status', 'conformant_with_waivers')
+            ->assertJsonPath('status', 'attention_required')
             ->assertJsonPath('sources.finance.waived_exceptions', 1);
 
         $exception->update(['due_at' => now()->subMinute()]);
@@ -155,11 +175,23 @@ class GovernanceEvidenceTest extends TestCase
             ->assertJsonPath('status', 'attention_required')
             ->assertJsonPath('sources.finance.freshness', 'missing');
 
+        $controls = app(DataGovernanceControlService::class);
+        $controls->recordRecoveryEvidence([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'kind' => 'restore_drill',
+            'occurred_at' => now(), 'outcome' => 'successful', 'evidence_ref' => 'evidence://restore/finance/current',
+        ]);
+        $controls->registerProcessor([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'name' => 'Finance hosting',
+            'purpose' => 'Application hosting', 'data_categories' => ['financial_records'],
+            'processing_countries' => [], 'agreement_owner' => 'privacy', 'review_due_at' => now()->addYear(),
+        ]);
         $this->postSigned($this->statement())->assertCreated();
         $this->getJson('/api/suite/governance/ready')
             ->assertOk()
-            ->assertJsonPath('status', 'conformant')
-            ->assertJsonPath('sources.finance.effective_controls', 12);
+            ->assertJsonPath('status', 'attention_required')
+            ->assertJsonPath('sources.finance.effective_controls', 10)
+            ->assertJsonPath('sources.finance.operability.pending_processor_reviews', 1)
+            ->assertJsonPath('sources.finance.operability.overdue_privacy_requests', 0);
 
         $auditor = User::factory()->create();
         $auditor->assignRole('Internal Auditor');
@@ -167,7 +199,7 @@ class GovernanceEvidenceTest extends TestCase
         $this->getJson('/api/governance/oversight')
             ->assertOk()
             ->assertJsonCount(12, 'controls')
-            ->assertJsonCount(0, 'open_exceptions');
+            ->assertJsonCount(2, 'open_exceptions');
     }
 
     public function test_oversight_requires_explicit_permission(): void

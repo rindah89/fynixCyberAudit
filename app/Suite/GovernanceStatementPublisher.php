@@ -15,18 +15,19 @@ class GovernanceStatementPublisher
     {
         $now ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $observedAt = $now->format(\DateTimeInterface::ATOM);
+        $tenantId = (string) config('data_governance.publisher.tenant_id');
         $definitions = [
             'DG-01' => ['effective', 'Standards, controls, implementations, applications and assets form an explicit governance inventory.', ['CONTEXT.md', 'app/Models/Application.php'], ['application_register' => true]],
             'DG-02' => ['effective', 'Applications, assets, evidence and trust-centre documents have explicit protected handling paths.', ['app/Access/FileAccess.php', 'app/Models/Asset.php'], ['private_file_gateway' => true]],
-            'DG-03' => ['partially_effective', 'Privacy-oriented data requests and access controls exist; the full Cameroon privacy rights workflow is not automated.', ['app/Models/DataRequest.php', 'app/Access/DataRequestFulfillment.php'], ['complete_privacy_rights_workflow' => false]],
+            'DG-03' => ['partially_effective', 'Privacy requests are due-dated and auditable, but identity verification and automated data discovery and fulfilment remain application responsibilities.', ['app/Models/PrivacyRequest.php', 'app/Suite/DataGovernanceControlService.php'], ['request_tracking' => true, 'automated_fulfilment' => false]],
             'DG-04' => ['effective', 'Spatie permissions, policies and separated staff/vendor identities enforce least privilege.', ['database/seeders/RolePermissionSeeder.php', 'app/Policies', 'CONTEXT.md#identity'], ['separate_vendor_identity' => true]],
             'DG-05' => ['effective', 'Authentication, audit, evidence authorization and suite receipts are logged and retained.', ['app/Services/AppLogger.php', 'app/Models/GovernanceStatement.php'], ['signed_governance_receipts' => true]],
-            'DG-06' => ['partially_effective', 'Audit evidence and suite state are retained through rollback; configurable disposition for all application records is incomplete.', ['docs/DEPLOYMENT_AGENT.md#versioning-backup-and-rollback'], ['suite_evidence_preserved_on_rollback' => true]],
+            'DG-06' => ['partially_effective', 'Retention eligibility is derived from record age and legal holds block receipts, but source applications must still execute and independently evidence disposition.', ['app/Models/RetentionPolicy.php', 'app/Models/LegalHold.php', 'app/Suite/DataGovernanceControlService.php'], ['eligibility_calculated' => true, 'legal_hold_blocks_disposition' => true, 'source_disposition_execution' => false]],
             'DG-07' => ['effective', 'Control results retain source, period, evidence references, measurements and a payload digest.', ['app/Suite/GovernanceEvidenceService.php'], ['normalized_control_results' => true]],
             'DG-08' => ['effective', 'Dedicated HMAC secrets, private evidence access and encrypted transport boundaries protect data.', ['app/Suite/SuiteEnvelope.php', 'docs/deployment/suite-data-governance.md'], ['shared_application_tokens' => false]],
-            'DG-09' => ['partially_effective', 'Backup, restore, RPO and RTO requirements exist; the temporary AWS proof environment lacks scheduled backups.', ['docs/DEPLOYMENT_AGENT.md#versioning-backup-and-rollback'], ['production_proof_scheduled_backups' => false]],
+            'DG-09' => ['partially_effective', 'Restore-drill evidence can be registered and freshness checked, but independent evidence verification is not yet automated.', ['docs/DEPLOYMENT_AGENT.md#versioning-backup-and-rollback', 'app/Models/RecoveryEvidence.php'], ['independent_restore_verification' => false]],
             'DG-10' => ['effective', 'Incident, breach-notification, remediation and ITSM integration workflows are available.', ['app/Incidents', 'app/Suite/ItsmGateway.php'], ['incident_workflow' => true]],
-            'DG-11' => ['partially_effective', 'Vendor risk and dedicated suite credentials exist; the processor and transfer register is not fully automated.', ['app/Models/Vendor.php', 'docs/DEPLOYMENT_AGENT.md#cross-application-safety'], ['vendor_risk_register' => true]],
+            'DG-11' => ['partially_effective', 'Processor entries and transfer mechanisms are registered as pending review; completeness and independent approval remain required.', ['app/Models/DataProcessor.php', 'app/Suite/DataGovernanceControlService.php'], ['independent_processor_approval' => false]],
             'DG-12' => ['effective', 'Automated tests, static analysis, dependency locking, SBOM generation and deployment gates are maintained.', ['composer.json', 'composer.lock', 'generate-sbom.php'], ['sbom_generation' => true]],
         ];
         $controls = [];
@@ -36,7 +37,7 @@ class GovernanceStatementPublisher
 
         return [
             'event_type' => 'governance.evidence.reported',
-            'tenant_id' => (string) config('data_governance.publisher.tenant_id'),
+            'tenant_id' => $tenantId,
             'entity_type' => 'governance_statement',
             'entity_id' => (string) Str::uuid(),
             'occurred_at' => $observedAt,

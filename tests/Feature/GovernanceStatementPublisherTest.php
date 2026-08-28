@@ -2,13 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Suite\DataGovernanceControlService;
 use App\Suite\GovernanceStatementPublisher;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class GovernanceStatementPublisherTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -27,6 +31,29 @@ class GovernanceStatementPublisherTest extends TestCase
         $this->assertCount(12, $controls);
         $this->assertCount(12, array_unique(array_column($controls, 'control_id')));
         $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-03')['status']);
+        $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-06')['status']);
+        $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-09')['status']);
+        $this->assertSame('partially_effective', collect($controls)->firstWhere('control_id', 'DG-11')['status']);
+    }
+
+    public function test_statement_promotes_only_controls_with_current_operational_evidence(): void
+    {
+        $service = app(DataGovernanceControlService::class);
+        $service->recordRecoveryEvidence([
+            'tenant_id' => 'tenant-1', 'source' => 'cyberaudit', 'kind' => 'restore_drill',
+            'occurred_at' => '2026-08-20T12:00:00Z', 'outcome' => 'successful',
+            'evidence_ref' => 'evidence://restore/cyberaudit/q3',
+        ]);
+        $service->registerProcessor([
+            'tenant_id' => 'tenant-1', 'source' => 'cyberaudit', 'name' => 'AWS',
+            'purpose' => 'Hosting', 'data_categories' => ['audit_evidence'],
+            'processing_countries' => ['CM'], 'transfer_mechanism' => 'domestic_processing',
+            'agreement_owner' => 'DPO', 'review_due_at' => '2027-08-20',
+        ]);
+
+        $controls = collect(app(GovernanceStatementPublisher::class)->build(new \DateTimeImmutable('2026-08-28T12:00:00+00:00'))['payload']['controls']);
+        $this->assertSame('partially_effective', $controls->firstWhere('control_id', 'DG-09')['status']);
+        $this->assertSame('partially_effective', $controls->firstWhere('control_id', 'DG-11')['status']);
     }
 
     public function test_command_signs_statement_and_validates_receipt(): void
