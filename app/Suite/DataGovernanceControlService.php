@@ -22,20 +22,32 @@ class DataGovernanceControlService
     /** @param array<string, mixed> $attributes */
     public function recordControlEvidence(array $attributes): GovernanceControlEvidence
     {
-        return GovernanceControlEvidence::query()->firstOrCreate(
+        $evidence = GovernanceControlEvidence::query()->firstOrNew(
             [
                 'tenant_id' => $attributes['tenant_id'],
                 'source' => $attributes['source'],
                 'source_evidence_ref' => $attributes['source_evidence_ref'],
             ],
-            [
-                'control_id' => $attributes['control_id'],
-                'observed_at' => $attributes['observed_at'],
-                'evidence_ref' => $attributes['evidence_ref'],
-                'evidence_sha256' => $attributes['evidence_sha256'],
-                'review_status' => 'pending_review',
-            ],
         );
+        $material = [
+            'control_id' => $attributes['control_id'],
+            'observed_at' => $attributes['observed_at'],
+            'evidence_ref' => $attributes['evidence_ref'],
+            'evidence_sha256' => $attributes['evidence_sha256'],
+        ];
+        if ($evidence->exists) {
+            $same = collect($material)->every(
+                fn ($value, $key): bool => $this->comparable($evidence->{$key}) === $this->comparable($value)
+            );
+            if (! $same) {
+                throw new InvalidArgumentException('Control evidence reference conflicts with existing evidence.');
+            }
+
+            return $evidence;
+        }
+        $evidence->fill([...$material, 'review_status' => 'pending_review'])->save();
+
+        return $evidence->refresh();
     }
 
     private const PRIVACY_RIGHTS = ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'];
@@ -257,6 +269,20 @@ class DataGovernanceControlService
             ->where('occurred_at', '>=', CarbonImmutable::instance($at)->subMonths(3))
             ->where('occurred_at', '<=', CarbonImmutable::instance($at))
             ->get()->contains(fn (RecoveryEvidence $evidence): bool => $this->reviewIntegrity->approved($evidence, 'recovery_evidence'));
+    }
+
+    public function hasCurrentControlEvidence(string $tenantId, string $source, string $controlId, DateTimeInterface $at): bool
+    {
+        $instant = CarbonImmutable::instance($at);
+
+        return GovernanceControlEvidence::query()
+            ->where([
+                'tenant_id' => $tenantId, 'source' => $source,
+                'control_id' => $controlId, 'review_status' => 'approved',
+            ])
+            ->where('observed_at', '>=', $instant->subDays((int) config('data_governance.control_evidence_freshness_days', 365)))
+            ->where('observed_at', '<=', $instant)
+            ->get()->contains(fn (GovernanceControlEvidence $evidence): bool => $this->reviewIntegrity->approved($evidence, 'control_evidence'));
     }
 
     public function hasCurrentProcessorRegister(string $tenantId, string $source, DateTimeInterface $at): bool

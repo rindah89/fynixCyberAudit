@@ -47,6 +47,10 @@ return [
     // claim therefore requires a current complete run, exact schedule match,
     // empty evidence outbox, and independent CyberAudit approval.
     'retention_run_required_sources' => array_keys($sourcePrefixes),
+    // Controls without a dedicated domain verifier require a current,
+    // independently approved evidence artifact before an effective claim is accepted.
+    'reviewed_evidence_required_controls' => ['DG-01', 'DG-02', 'DG-03', 'DG-04', 'DG-05', 'DG-07', 'DG-08', 'DG-10', 'DG-12'],
+    'control_evidence_freshness_days' => (int) env('SUITE_GOVERNANCE_CONTROL_EVIDENCE_FRESHNESS_DAYS', 365),
     'controls' => [
         'DG-01' => ['name' => 'Data inventory and accountable ownership', 'standards' => ['ISO/IEC 38505-1', 'NIST PF ID.IM-P']],
         'DG-02' => ['name' => 'Classification and handling', 'standards' => ['ISO/IEC 27001:2022', 'NIST CSF ID.AM']],

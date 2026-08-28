@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DataProcessor;
+use App\Models\GovernanceControlEvidence;
 use App\Models\GovernanceException;
 use App\Models\GovernanceStatement;
 use App\Models\ProcessorInventoryRun;
@@ -239,6 +240,20 @@ class GovernanceEvidenceTest extends TestCase
             'entity_id' => (string) Str::uuid(),
             'occurred_at' => now()->addMinute()->utc()->toIso8601String(),
         ]);
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Internal Auditor');
+        Sanctum::actingAs($reviewer);
+        $evidence = GovernanceControlEvidence::create([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'control_id' => 'DG-05',
+            'source_evidence_ref' => (string) Str::uuid(), 'observed_at' => now(),
+            'evidence_ref' => 'urn:fynix:finance:control:DG-05',
+            'evidence_sha256' => str_repeat('e', 64), 'review_status' => 'pending_review',
+        ]);
+        $this->postJson('/api/governance/control-reviews', [
+            'resource_type' => 'control_evidence', 'resource_id' => $evidence->id,
+            'decision' => 'approved', 'review_evidence_ref' => 'urn:fynix:cyberaudit:review:DG-05',
+            'review_evidence_sha256' => str_repeat('f', 64),
+        ])->assertCreated();
         $this->postSigned($next)->assertCreated();
         $this->assertSame('resolved', $exception->fresh()->status);
         $this->assertNotNull($exception->fresh()->resolved_at);
@@ -305,7 +320,7 @@ class GovernanceEvidenceTest extends TestCase
         $this->getJson('/api/suite/governance/ready')
             ->assertOk()
             ->assertJsonPath('status', 'attention_required')
-            ->assertJsonPath('sources.finance.effective_controls', 9)
+            ->assertJsonPath('sources.finance.effective_controls', 0)
             ->assertJsonPath('sources.finance.operability.pending_processor_reviews', 1)
             ->assertJsonPath('sources.finance.operability.overdue_privacy_requests', 0)
             ->assertJsonPath('sources.finance.operability.current_approved_restore_evidence', false)
@@ -317,7 +332,7 @@ class GovernanceEvidenceTest extends TestCase
         $this->getJson('/api/governance/oversight')
             ->assertOk()
             ->assertJsonCount(12, 'controls')
-            ->assertJsonCount(3, 'open_exceptions');
+            ->assertJsonCount(12, 'open_exceptions');
     }
 
     public function test_oversight_requires_explicit_permission(): void
