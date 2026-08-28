@@ -46,6 +46,9 @@ class GovernanceControlReviewTest extends TestCase
             'decision' => 'approved', 'reviewer_id' => $reviewer->id,
         ]);
         $this->assertSame(64, strlen((string) $evidence->fresh()->review_digest));
+        $this->assertTrue(app(DataGovernanceControlService::class)->hasCurrentRecoveryEvidence('tenant-1', 'ppm', now()));
+        $evidence->update(['evidence_sha256' => str_repeat('f', 64)]);
+        $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentRecoveryEvidence('tenant-1', 'ppm', now()));
     }
 
     public function test_unprivileged_user_cannot_review_and_rejected_processor_does_not_pass(): void
@@ -99,8 +102,14 @@ class GovernanceControlReviewTest extends TestCase
                 'processing_countries' => [], 'transfer_mechanism' => null,
                 'agreement_owner' => 'DPO', 'agreement_evidence_ref' => 'evidence://finance/dpa/'.strtolower($name),
                 'agreement_evidence_sha256' => str_repeat((string) ($index + 1), 64),
-                'review_due_at' => now()->addYear(), 'status' => 'approved',
+                'review_due_at' => now()->addYear(), 'status' => 'pending_review',
             ]);
+            $processor = DataProcessor::where(['tenant_id' => 'tenant-1', 'source' => 'finance', 'name' => $name])->firstOrFail();
+            $this->postJson('/api/governance/control-reviews', [
+                'resource_type' => 'processor', 'resource_id' => $processor->id, 'decision' => 'approved',
+                'review_evidence_ref' => 'evidence://cyberaudit/review/processor/'.strtolower($name),
+                'review_evidence_sha256' => str_repeat((string) ($index + 3), 64),
+            ])->assertCreated();
         }
 
         $this->postJson('/api/governance/processor-register-reviews', [

@@ -15,6 +15,8 @@ use InvalidArgumentException;
 
 class GovernanceControlReviewService
 {
+    public function __construct(private readonly GovernanceReviewIntegrityService $integrity) {}
+
     /** @param array<string, mixed> $attributes */
     public function review(array $attributes, User $reviewer): GovernanceControlReview
     {
@@ -28,17 +30,13 @@ class GovernanceControlReviewService
                 throw new InvalidArgumentException('Privacy fulfillment must be complete before review.');
             }
 
-            $decidedAt = now();
-            $canonical = json_encode([
-                'tenant_id' => $resource->tenant_id, 'source' => $resource->source,
-                'resource_type' => $attributes['resource_type'], 'resource_id' => $resource->getKey(),
+            $decidedAt = now()->startOfSecond();
+            $digest = $this->integrity->digest($resource, $attributes['resource_type'], [
                 'decision' => $attributes['decision'], 'reviewer_id' => $reviewer->getKey(),
                 'review_evidence_ref' => $attributes['review_evidence_ref'],
                 'review_evidence_sha256' => $attributes['review_evidence_sha256'],
-                'resource_evidence' => $resource instanceof DataProcessor ? $resource->materialEvidence() : null,
-                'notes' => $attributes['notes'] ?? null, 'decided_at' => $decidedAt->toISOString(),
-            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-            $digest = hash('sha256', $canonical);
+                'notes' => $attributes['notes'] ?? null, 'decided_at' => $decidedAt,
+            ]);
             $resource->update([
                 $statusField => $attributes['decision'], 'reviewed_by' => $reviewer->getKey(),
                 'reviewed_at' => $decidedAt, 'review_digest' => $digest,
@@ -65,7 +63,7 @@ class GovernanceControlReviewService
             if ($processors->count() !== (int) $attributes['expected_processor_count'] || $processors->isEmpty()) {
                 throw new InvalidArgumentException('Processor inventory count does not match the reviewed register.');
             }
-            if ($processors->contains(fn (DataProcessor $processor): bool => $processor->status !== 'approved' || $processor->review_due_at->isPast())) {
+            if ($processors->contains(fn (DataProcessor $processor): bool => $processor->status !== 'approved' || $processor->review_due_at->isPast() || ! $this->integrity->approved($processor, 'processor'))) {
                 throw new InvalidArgumentException('Every processor must be approved and within its review period.');
             }
             $inventoryDigest = hash('sha256', $processors->map(fn (DataProcessor $processor): array => [

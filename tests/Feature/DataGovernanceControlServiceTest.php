@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\RecoveryEvidence;
+use App\Models\User;
 use App\Suite\DataGovernanceControlService;
+use App\Suite\GovernanceControlReviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
 use Tests\TestCase;
@@ -87,7 +89,12 @@ class DataGovernanceControlServiceTest extends TestCase
             'evidence_sha256' => str_repeat('e', 64),
         ]);
 
-        RecoveryEvidence::query()->where('source', 'docflow')->update(['review_status' => 'approved']);
+        $evidence = RecoveryEvidence::query()->where('source', 'docflow')->firstOrFail();
+        app(GovernanceControlReviewService::class)->review([
+            'resource_type' => 'recovery_evidence', 'resource_id' => $evidence->id,
+            'decision' => 'approved', 'review_evidence_ref' => 'evidence://review/restore/docflow',
+            'review_evidence_sha256' => str_repeat('1', 64),
+        ], User::factory()->create());
 
         $this->assertTrue($service->hasCurrentRecoveryEvidence('tenant-1', 'docflow', now()));
         $this->assertFalse($service->hasCurrentRecoveryEvidence('tenant-1', 'office', now()));

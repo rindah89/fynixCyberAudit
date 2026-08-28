@@ -18,6 +18,8 @@ class DataGovernanceControlService
 {
     private const PRIVACY_RIGHTS = ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'];
 
+    public function __construct(private readonly GovernanceReviewIntegrityService $reviewIntegrity) {}
+
     public function openPrivacyRequest(array $attributes): PrivacyRequest
     {
         if (! in_array($attributes['right'] ?? null, self::PRIVACY_RIGHTS, true)) {
@@ -148,7 +150,7 @@ class DataGovernanceControlService
             ->where(['tenant_id' => $tenantId, 'source' => $source, 'kind' => 'restore_drill', 'outcome' => 'successful', 'review_status' => 'approved'])
             ->where('occurred_at', '>=', CarbonImmutable::instance($at)->subMonths(3))
             ->where('occurred_at', '<=', CarbonImmutable::instance($at))
-            ->exists();
+            ->get()->contains(fn (RecoveryEvidence $evidence): bool => $this->reviewIntegrity->approved($evidence, 'recovery_evidence'));
     }
 
     public function hasCurrentProcessorRegister(string $tenantId, string $source, DateTimeInterface $at): bool
