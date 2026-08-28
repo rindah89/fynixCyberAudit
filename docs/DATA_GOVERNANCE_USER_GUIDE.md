@@ -42,6 +42,8 @@ CyberAudit reconciles the complete processor and international-transfer inventor
 
 Processor entries begin as **pending review**. Review purpose, data categories, countries, transfer mechanism, agreement owner, evidence digest, and review date before approval. Unchanged daily reconciliations preserve approval. Any material change returns the entry to pending review; removal marks it inactive. After all active entries are approved, an independent reviewer certifies the exact register. A changed inventory invalidates the prior certification automatically.
 
+Source applications may honestly report DG-11 as partially effective while awaiting central review. Once the latest complete inventory reconciliation is current and the exact register has an unexpired independent certification, CyberAudit promotes that result to effective and records `central_evidence_verified`. It never requires the source application to self-certify its vendor inventory.
+
 Operators can run `php artisan fynix:reconcile-processor-inventory` after an authorized inventory change. The scheduler runs reconciliation at 02:30 and publishes the governance statement at 02:45. A failed reconciliation must be investigated; do not publish or certify a hand-edited partial register.
 
 CyberAudit records every reconciliation outcome. DG-11 can remain effective only when the latest run succeeded within the evidence freshness window. A failed or stale run invalidates every prior register certification until a complete reconciliation succeeds and any changed entries are reviewed again.

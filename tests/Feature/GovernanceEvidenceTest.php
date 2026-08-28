@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\DataProcessor;
 use App\Models\GovernanceException;
 use App\Models\GovernanceStatement;
+use App\Models\ProcessorInventoryRun;
 use App\Models\User;
 use App\Suite\DataGovernanceControlService;
 use App\Suite\SuiteEnvelope;
@@ -88,6 +90,48 @@ class GovernanceEvidenceTest extends TestCase
         $this->assertSame(['partially_effective'], $results->pluck('status')->unique()->values()->all());
         $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-09', 'status' => 'open']);
         $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-11', 'status' => 'open']);
+    }
+
+    public function test_certified_processor_register_promotes_an_honest_partial_source_claim(): void
+    {
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Internal Auditor');
+        Sanctum::actingAs($reviewer);
+        $processor = DataProcessor::create([
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'name' => 'Finance hosting',
+            'purpose' => 'Application hosting', 'data_categories' => ['financial_records'],
+            'processing_countries' => [], 'agreement_owner' => 'privacy',
+            'agreement_evidence_ref' => 'evidence://finance/dpa/hosting',
+            'agreement_evidence_sha256' => str_repeat('d', 64), 'review_due_at' => now()->addYear(),
+            'status' => 'pending_review', 'active' => true,
+        ]);
+        $this->postJson('/api/governance/control-reviews', [
+            'resource_type' => 'processor', 'resource_id' => $processor->id, 'decision' => 'approved',
+            'review_evidence_ref' => 'evidence://cyberaudit/review/finance-hosting',
+            'review_evidence_sha256' => str_repeat('e', 64),
+        ])->assertCreated();
+        $this->postJson('/api/governance/processor-register-reviews', [
+            'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'expected_processor_count' => 1,
+            'valid_until' => now()->addYear()->toDateString(),
+            'review_evidence_ref' => 'evidence://cyberaudit/processor-register/finance',
+            'review_evidence_sha256' => str_repeat('f', 64),
+        ])->assertCreated();
+        ProcessorInventoryRun::create([
+            'status' => 'successful', 'source_count' => 1, 'active_count' => 1,
+            'inventory_digest' => str_repeat('a', 64), 'completed_at' => now(),
+        ]);
+        $statement = $this->statement();
+        $statement['payload']['controls'][10]['status'] = 'partially_effective';
+        $statement['payload']['controls'][10]['summary'] = 'Awaiting central register certification.';
+
+        $this->postSigned($statement)->assertCreated();
+
+        $result = GovernanceStatement::query()->firstOrFail()->controlResults()->where('control_id', 'DG-11')->sole();
+        $this->assertSame('effective', $result->status);
+        $this->assertTrue($result->metrics['central_evidence_verified']);
+        $this->assertDatabaseMissing('governance_exceptions', [
+            'source' => self::SOURCE, 'control_id' => 'DG-11', 'status' => 'open',
+        ]);
     }
 
     public function test_unapproved_not_applicable_claim_is_downgraded_and_opened_as_exception(): void
