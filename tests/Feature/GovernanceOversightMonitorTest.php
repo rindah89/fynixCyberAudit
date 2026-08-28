@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PrivacyRequest;
 use App\Models\User;
 use App\Notifications\DropdownNotification;
 use Database\Seeders\RolePermissionSeeder;
@@ -54,5 +55,30 @@ class GovernanceOversightMonitorTest extends TestCase
         $this->artisan('fynix:monitor-governance --notify')->assertFailed();
 
         Notification::assertSentToTimes($auditor, DropdownNotification::class, 1);
+    }
+
+    public function test_operational_change_generates_a_new_oversight_notification(): void
+    {
+        Notification::fake();
+        $auditor = User::factory()->create();
+        $auditor->assignRole('Internal Auditor');
+
+        $this->artisan('fynix:monitor-governance --notify')->assertFailed();
+        PrivacyRequest::create([
+            'tenant_id' => '11111111-1111-4111-8111-111111111111',
+            'source' => 'finance',
+            'subject_ref' => '10000000-0000-4000-8000-000000000001',
+            'right' => 'access',
+            'lawful_basis' => 'data_subject_request',
+            'requested_at' => now()->subDays(31),
+            'due_at' => now()->subDay(),
+            'status' => 'open',
+        ]);
+
+        $this->artisan('fynix:monitor-governance --notify')
+            ->expectsOutputToContain('1-privacy-overdue')
+            ->assertFailed();
+
+        Notification::assertSentToTimes($auditor, DropdownNotification::class, 2);
     }
 }

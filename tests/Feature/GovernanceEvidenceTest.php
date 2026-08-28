@@ -206,7 +206,9 @@ class GovernanceEvidenceTest extends TestCase
             ->assertJsonPath('status', 'attention_required')
             ->assertJsonPath('sources.finance.effective_controls', 10)
             ->assertJsonPath('sources.finance.operability.pending_processor_reviews', 1)
-            ->assertJsonPath('sources.finance.operability.overdue_privacy_requests', 0);
+            ->assertJsonPath('sources.finance.operability.overdue_privacy_requests', 0)
+            ->assertJsonPath('sources.finance.operability.current_approved_restore_evidence', false)
+            ->assertJsonPath('sources.finance.operability.processor_register_certified', false);
 
         $auditor = User::factory()->create();
         $auditor->assignRole('Internal Auditor');

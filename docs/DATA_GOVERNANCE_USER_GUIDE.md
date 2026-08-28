@@ -10,10 +10,12 @@ For each application, review:
 - **Freshness** — whether its latest twelve-control statement is current.
 - **Effective controls** — controls supported by the submitted status and central validation.
 - **Open and waived exceptions** — risks requiring remediation, evidence, or time-bound acceptance.
-- **Operability** — overdue privacy requests, active legal holds, pending processor reviews, and disposition receipts.
+- **Operational oversight** — overdue privacy requests, active legal holds, disposition receipts, every pending evidence-review queue, invalidated reviews, restore-evidence currency, and processor-register certification.
 - **Evidence review** — pending privacy, disposition, processor, and recovery evidence requiring a reviewer other than the submitting application.
 
 `Partially effective`, `ineffective`, `unknown`, stale, or missing means attention is required. A `recorded` receipt only proves CyberAudit accepted the signed submission. It does not prove that deletion, privacy fulfillment, recovery, or vendor review occurred.
+
+The same operational values are included in the authenticated `/api/governance/oversight` response and the scheduled governance monitor fingerprint. A new overdue request, pending review, invalid review, stale restore drill, or uncertified processor register therefore changes the monitor result even when the application's daily statement remains current.
 
 ## Privacy requests
 

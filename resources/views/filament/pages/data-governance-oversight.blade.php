@@ -24,6 +24,21 @@
                         <div><dt style="color: var(--ink-muted, #5B5B56);">Exceptions</dt><dd class="font-medium">{{ $coverage['open_exceptions'] }} open / {{ $coverage['waived_exceptions'] }} waived</dd></div>
                         <div><dt style="color: var(--ink-muted, #5B5B56);">Last report</dt><dd class="font-medium">{{ $coverage['last_statement_at'] ?? 'Never' }}</dd></div>
                     </dl>
+                    <div class="mt-4 border-t pt-4" style="border-color: var(--border, #DADAD4);">
+                        <h3 class="text-xs font-semibold uppercase tracking-wide" style="color: var(--ink-muted, #5B5B56);">Operational oversight</h3>
+                        <dl class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Overdue privacy</dt><dd class="font-medium {{ $coverage['operability']['overdue_privacy_requests'] > 0 ? 'text-red-700' : '' }}">{{ $coverage['operability']['overdue_privacy_requests'] }}</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Active holds</dt><dd class="font-medium">{{ $coverage['operability']['active_legal_holds'] }}</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Privacy review</dt><dd class="font-medium {{ $coverage['operability']['pending_privacy_reviews'] > 0 ? 'text-amber-700' : '' }}">{{ $coverage['operability']['pending_privacy_reviews'] }} pending</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Disposition review</dt><dd class="font-medium {{ $coverage['operability']['pending_disposition_reviews'] > 0 ? 'text-amber-700' : '' }}">{{ $coverage['operability']['pending_disposition_reviews'] }} pending</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Processor review</dt><dd class="font-medium {{ $coverage['operability']['pending_processor_reviews'] > 0 ? 'text-amber-700' : '' }}">{{ $coverage['operability']['pending_processor_reviews'] }} pending</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Recovery review</dt><dd class="font-medium {{ $coverage['operability']['pending_recovery_reviews'] > 0 ? 'text-amber-700' : '' }}">{{ $coverage['operability']['pending_recovery_reviews'] }} pending</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Restore evidence</dt><dd class="font-medium {{ $coverage['operability']['current_approved_restore_evidence'] ? 'text-green-700' : 'text-red-700' }}">{{ $coverage['operability']['current_approved_restore_evidence'] ? 'Current' : 'Missing or stale' }}</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Processor register</dt><dd class="font-medium {{ $coverage['operability']['processor_register_certified'] ? 'text-green-700' : 'text-red-700' }}">{{ $coverage['operability']['processor_register_certified'] ? 'Certified' : 'Not certified' }}</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Disposition receipts</dt><dd class="font-medium">{{ $coverage['operability']['disposition_receipts'] }}</dd></div>
+                            <div><dt style="color: var(--ink-muted, #5B5B56);">Invalid reviews</dt><dd class="font-medium {{ $coverage['operability']['invalid_or_tampered_reviews'] > 0 ? 'text-red-700' : '' }}">{{ $coverage['operability']['invalid_or_tampered_reviews'] }}</dd></div>
+                        </dl>
+                    </div>
                 </div>
             @endforeach
         </div>
