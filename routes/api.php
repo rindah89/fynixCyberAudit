@@ -21,6 +21,7 @@ use App\Http\Controllers\API\SupportChangeEvidenceController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
 use App\Suite\GovernanceControlController;
+use App\Suite\CyberAuditPrivacyExportController;
 use App\Suite\GovernanceControlReviewController;
 use App\Suite\GovernanceEvidenceController;
 use App\Suite\SuiteInboundController;
@@ -66,6 +67,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 });
 
 Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/governance/privacy/access-export', CyberAuditPrivacyExportController::class)->middleware('throttle:api');
     Route::get('/governance/oversight', [GovernanceEvidenceController::class, 'oversight']);
     Route::post('/governance/control-reviews', [GovernanceControlReviewController::class, 'store']);
     Route::post('/governance/processor-register-reviews', [GovernanceControlReviewController::class, 'certifyProcessorRegister']);
