@@ -65,7 +65,10 @@ class SuiteInboundController
             if ($watermark && $occurredAt->lessThanOrEqualTo($watermark->occurred_at)) {
                 $outcome = 'stale';
             } else {
-                $outcome = $itsmGateway->applyEvent($envelope);
+                $outcome = $governanceEvents->apply((string) config('suite.itsm.remote_tenant_id'), $source, $envelope, $raw);
+                if ($outcome === 'ignored') {
+                    $outcome = $itsmGateway->applyEvent($envelope);
+                }
                 SuiteInboundHighWater::query()->updateOrCreate($identity, ['occurred_at' => $occurredAt]);
             }
         } elseif ($source === 'ppm') {

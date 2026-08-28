@@ -84,7 +84,7 @@ class GovernanceDomainEventService
             return 'governance evidence recorded';
         }
 
-        if ($eventType === 'finance.privacy.completed') {
+        if (in_array($eventType, ['finance.privacy.completed', 'itsm.privacy.erasure_completed'], true)) {
             $subjectRef = (string) ($payload['subject_ref'] ?? '');
             $right = (string) ($payload['right'] ?? '');
             $evidenceRef = (string) ($payload['evidence_ref'] ?? '');

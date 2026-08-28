@@ -164,6 +164,38 @@ class GovernanceDomainEventTest extends TestCase
         $this->assertSame('pending_review', $request->review_status);
     }
 
+    public function test_itsm_erasure_completion_is_queued_for_independent_review(): void
+    {
+        Config::set('suite.itsm.enabled', true);
+        Config::set('suite.itsm.webhook_id', 'itsm-hook');
+        Config::set('suite.itsm.webhook_secret', str_repeat('i', 32));
+        Config::set('suite.itsm.remote_tenant_id', 'tenant-1');
+        Config::set('suite.itsm.local_tenant_id', 'cyberaudit');
+        $subjectRef = (string) Str::uuid();
+        $sha = str_repeat('d', 64);
+        $envelope = [
+            'event_type' => 'itsm.privacy.erasure_completed', 'tenant_id' => 'tenant-1',
+            'entity_type' => 'privacy_request', 'entity_id' => $subjectRef,
+            'occurred_at' => now()->utc()->toAtomString(),
+            'payload' => [
+                'subject_ref' => $subjectRef, 'right' => 'deletion',
+                'requested_at' => now()->subHour()->utc()->toAtomString(),
+                'completed_at' => now()->utc()->toAtomString(),
+                'evidence_ref' => 'urn:fynix:itsm:privacy-erasure:'.Str::uuid(),
+                'evidence_sha256' => $sha,
+            ],
+        ];
+
+        $this->postSigned($envelope, 'itsm', 'itsm-hook', str_repeat('i', 32))
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+
+        $request = PrivacyRequest::query()->sole();
+        $this->assertSame('itsm', $request->source);
+        $this->assertSame('deletion', $request->right);
+        $this->assertSame($sha, $request->evidence_sha256);
+        $this->assertSame('pending_review', $request->review_status);
+    }
+
     private function postSigned(array $envelope, string $source, string $webhookId, string $secret)
     {
         $raw = (string) json_encode($envelope, JSON_UNESCAPED_SLASHES);
