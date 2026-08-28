@@ -74,9 +74,22 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-# Ensure storage directories have correct permissions
-chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+# Ensure local storage has the expected permissions. Network filesystems such as
+# EFS can enable root-squash and legitimately reject ownership changes even when
+# the mounted access point is already writable by the application.
+if ! chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache; then
+    echo "Warning: storage ownership could not be changed; validating existing access-point permissions."
+fi
+if ! chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache; then
+    echo "Warning: storage modes could not be changed; validating existing access-point permissions."
+fi
+
+for writable_path in /var/www/html/storage /var/www/html/bootstrap/cache; do
+    if ! su -s /bin/sh www-data -c "test -w '$writable_path'"; then
+        echo "Application user cannot write to required path: $writable_path"
+        exit 1
+    fi
+done
 
 # Create PHP-FPM run directory if it doesn't exist
 mkdir -p /run/php
