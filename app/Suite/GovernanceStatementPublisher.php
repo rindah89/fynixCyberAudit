@@ -60,7 +60,11 @@ class GovernanceStatementPublisher
         $endpoint = (string) config('data_governance.publisher.endpoint');
         $webhookId = (string) config('data_governance.publisher.webhook_id');
         $secret = (string) config('data_governance.publisher.secret');
-        if ((! str_starts_with($endpoint, 'https://') && ! str_starts_with($endpoint, 'http://localhost')) || blank($webhookId) || strlen($secret) < 32 || blank(config('data_governance.publisher.tenant_id'))) {
+        $parts = parse_url($endpoint);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        $secureEndpoint = $scheme === 'https' || ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '::1'], true));
+        if (! $secureEndpoint || blank($webhookId) || strlen($secret) < 32 || blank(config('data_governance.publisher.tenant_id'))) {
             throw new InvalidArgumentException('Cyber Audit governance publisher binding is incomplete or insecure.');
         }
         $statement = $this->build();

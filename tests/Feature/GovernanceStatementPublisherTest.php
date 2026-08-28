@@ -78,4 +78,11 @@ class GovernanceStatementPublisherTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         app(GovernanceStatementPublisher::class)->publish();
     }
+
+    public function test_publisher_rejects_hostname_that_only_starts_with_localhost(): void
+    {
+        Config::set('data_governance.publisher.endpoint', 'http://localhost.evil.example/evidence');
+        $this->expectException(\InvalidArgumentException::class);
+        app(GovernanceStatementPublisher::class)->publish();
+    }
 }
