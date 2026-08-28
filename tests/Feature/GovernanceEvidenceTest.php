@@ -198,6 +198,14 @@ class GovernanceEvidenceTest extends TestCase
         $this->assertSame([], config('data_governance.applicability'));
     }
 
+    public function test_every_required_source_needs_independently_reviewed_retention_run_evidence(): void
+    {
+        $required = config('data_governance.required_sources');
+        $gated = config('data_governance.retention_run_required_sources');
+        $this->assertSame([], array_values(array_diff($required, $gated)));
+        $this->assertContains(self::SOURCE, $gated);
+    }
+
     public function test_reused_statement_id_with_a_new_delivery_is_rejected_as_a_conflict(): void
     {
         $statement = $this->statement();
