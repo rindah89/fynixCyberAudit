@@ -56,7 +56,7 @@ class GovernanceDomainEventService
                 'subject_ref' => $subjectRef,
                 'right' => 'deletion',
                 'lawful_basis' => 'data_subject_or_retention_erasure',
-                'requested_at' => $envelope['occurred_at'] ?? now(),
+                'requested_at' => $payload['requested_at'] ?? $envelope['occurred_at'] ?? now(),
             ]);
             $this->controls->closePrivacyRequest(
                 $request,
@@ -78,6 +78,24 @@ class GovernanceDomainEventService
                 'tenant_id' => $tenantId, 'source' => $source, 'subject_ref' => $subjectRef,
                 'right' => 'access', 'lawful_basis' => 'data_subject_access',
                 'requested_at' => $envelope['occurred_at'] ?? now(),
+            ]);
+            $this->controls->closePrivacyRequest($request, $evidenceRef, $evidenceSha);
+
+            return 'governance evidence recorded';
+        }
+
+        if ($eventType === 'finance.privacy.completed') {
+            $subjectRef = (string) ($payload['subject_ref'] ?? '');
+            $right = (string) ($payload['right'] ?? '');
+            $evidenceRef = (string) ($payload['evidence_ref'] ?? '');
+            $evidenceSha = (string) ($payload['evidence_sha256'] ?? '');
+            if (! Str::isUuid($subjectRef) || ! in_array($right, ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'], true) || ! preg_match('/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', $evidenceRef) || ! preg_match('/^[a-f0-9]{64}$/', $evidenceSha)) {
+                return 'ignored';
+            }
+            $request = $this->controls->openPrivacyRequest([
+                'tenant_id' => $tenantId, 'source' => $source, 'subject_ref' => $subjectRef,
+                'right' => $right, 'lawful_basis' => 'data_subject_right',
+                'requested_at' => $payload['requested_at'] ?? $envelope['occurred_at'] ?? now(),
             ]);
             $this->controls->closePrivacyRequest($request, $evidenceRef, $evidenceSha);
 

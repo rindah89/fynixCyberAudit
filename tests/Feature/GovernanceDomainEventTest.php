@@ -133,6 +133,37 @@ class GovernanceDomainEventTest extends TestCase
         $this->assertNotNull($hold->refresh()->released_at);
     }
 
+    public function test_finance_privacy_completion_is_queued_for_independent_review(): void
+    {
+        Config::set('data_governance.bindings.finance', [
+            'enabled' => true, 'tenant_id' => 'tenant-1', 'webhook_id' => 'finance-hook',
+            'secret' => str_repeat('f', 32), 'replay_tolerance' => 300,
+        ]);
+        $requestId = (string) Str::uuid();
+        $subjectRef = (string) Str::uuid();
+        $sha = str_repeat('c', 64);
+        $envelope = [
+            'event_type' => 'finance.privacy.completed', 'tenant_id' => 'tenant-1',
+            'entity_type' => 'privacy_request', 'entity_id' => $requestId,
+            'occurred_at' => now()->utc()->toAtomString(),
+            'payload' => [
+                'subject_ref' => $subjectRef, 'right' => 'deletion',
+                'requested_at' => now()->subDays(2)->utc()->toAtomString(),
+                'completed_at' => now()->utc()->toAtomString(),
+                'evidence_ref' => 'urn:fynix:finance:privacy:'.$requestId,
+                'evidence_sha256' => $sha,
+            ],
+        ];
+
+        $this->postSigned($envelope, 'finance', 'finance-hook', str_repeat('f', 32))
+            ->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+
+        $request = PrivacyRequest::query()->sole();
+        $this->assertSame('deletion', $request->right);
+        $this->assertSame($sha, $request->evidence_sha256);
+        $this->assertSame('pending_review', $request->review_status);
+    }
+
     private function postSigned(array $envelope, string $source, string $webhookId, string $secret)
     {
         $raw = (string) json_encode($envelope, JSON_UNESCAPED_SLASHES);
