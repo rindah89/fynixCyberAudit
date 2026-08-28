@@ -10,12 +10,16 @@ use RuntimeException;
 
 class GovernanceStatementPublisher
 {
+    public function __construct(private readonly DataGovernanceControlService $controls) {}
+
     /** @return array<string, mixed> */
     public function build(?\DateTimeImmutable $now = null): array
     {
         $now ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $observedAt = $now->format(\DateTimeInterface::ATOM);
         $tenantId = (string) config('data_governance.publisher.tenant_id');
+        $recoveryCurrent = $tenantId !== '' && $this->controls->hasCurrentRecoveryEvidence($tenantId, 'cyberaudit', $now);
+        $processorRegisterCurrent = $tenantId !== '' && $this->controls->hasCurrentProcessorRegister($tenantId, 'cyberaudit', $now);
         $definitions = [
             'DG-01' => ['effective', 'Standards, controls, implementations, applications and assets form an explicit governance inventory.', ['CONTEXT.md', 'app/Models/Application.php'], ['application_register' => true]],
             'DG-02' => ['effective', 'Applications, assets, evidence and trust-centre documents have explicit protected handling paths.', ['app/Access/FileAccess.php', 'app/Models/Asset.php'], ['private_file_gateway' => true]],
@@ -25,9 +29,9 @@ class GovernanceStatementPublisher
             'DG-06' => ['partially_effective', 'Retention eligibility is derived from record age and legal holds block receipts, but source applications must still execute and independently evidence disposition.', ['app/Models/RetentionPolicy.php', 'app/Models/LegalHold.php', 'app/Suite/DataGovernanceControlService.php'], ['eligibility_calculated' => true, 'legal_hold_blocks_disposition' => true, 'source_disposition_execution' => false]],
             'DG-07' => ['effective', 'Control results retain source, period, evidence references, measurements and a payload digest.', ['app/Suite/GovernanceEvidenceService.php'], ['normalized_control_results' => true]],
             'DG-08' => ['effective', 'Dedicated HMAC secrets, private evidence access and encrypted transport boundaries protect data.', ['app/Suite/SuiteEnvelope.php', 'docs/deployment/suite-data-governance.md'], ['shared_application_tokens' => false]],
-            'DG-09' => ['partially_effective', 'Restore-drill evidence can be registered and freshness checked, but independent evidence verification is not yet automated.', ['docs/DEPLOYMENT_AGENT.md#versioning-backup-and-rollback', 'app/Models/RecoveryEvidence.php'], ['independent_restore_verification' => false]],
+            'DG-09' => [$recoveryCurrent ? 'effective' : 'partially_effective', $recoveryCurrent ? 'A current restore drill has independently reviewed, digest-bound evidence.' : 'No current independently approved restore-drill evidence is registered.', ['docs/DEPLOYMENT_AGENT.md#versioning-backup-and-rollback', 'app/Models/RecoveryEvidence.php', 'app/Models/GovernanceControlReview.php'], ['independent_restore_verification' => $recoveryCurrent]],
             'DG-10' => ['effective', 'Incident, breach-notification, remediation and ITSM integration workflows are available.', ['app/Incidents', 'app/Suite/ItsmGateway.php'], ['incident_workflow' => true]],
-            'DG-11' => ['partially_effective', 'Processor entries and transfer mechanisms are registered as pending review; completeness and independent approval remain required.', ['app/Models/DataProcessor.php', 'app/Suite/DataGovernanceControlService.php'], ['independent_processor_approval' => false]],
+            'DG-11' => [$processorRegisterCurrent ? 'effective' : 'partially_effective', $processorRegisterCurrent ? 'Every processor entry is approved and the complete inventory has a current independent certification.' : 'Processor entries require approval and a complete-register certification.', ['app/Models/DataProcessor.php', 'app/Models/ProcessorRegisterCertification.php'], ['certified_processor_register' => $processorRegisterCurrent]],
             'DG-12' => ['effective', 'Automated tests, static analysis, dependency locking, SBOM generation and deployment gates are maintained.', ['composer.json', 'composer.lock', 'generate-sbom.php'], ['sbom_generation' => true]],
         ];
         $controls = [];

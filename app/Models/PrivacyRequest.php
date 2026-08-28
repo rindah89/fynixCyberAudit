@@ -8,5 +8,5 @@ class PrivacyRequest extends Model
 {
     protected $guarded = [];
 
-    protected $casts = ['requested_at' => 'immutable_datetime', 'due_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+    protected $casts = ['requested_at' => 'immutable_datetime', 'due_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime', 'reviewed_at' => 'immutable_datetime'];
 }

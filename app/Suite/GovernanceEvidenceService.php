@@ -11,6 +11,8 @@ use Illuminate\Validation\ValidationException;
 
 class GovernanceEvidenceService
 {
+    public function __construct(private readonly DataGovernanceControlService $controls) {}
+
     /** @param array<string, mixed> $envelope */
     public function record(array $envelope, string $source, string $deliveryId, string $raw): GovernanceStatement
     {
@@ -31,7 +33,7 @@ class GovernanceEvidenceService
             ]);
 
             foreach ($payload['controls'] as $control) {
-                $control = $this->evidenceBackedControl($control);
+                $control = $this->evidenceBackedControl($control, $statement->tenant_id, $source, $statement->occurred_at);
                 $result = $statement->controlResults()->create([
                     'control_id' => $control['control_id'],
                     'status' => $control['status'],
@@ -50,10 +52,11 @@ class GovernanceEvidenceService
     /** @param array<string, mixed> $control
      * @return array<string, mixed>
      */
-    private function evidenceBackedControl(array $control): array
+    private function evidenceBackedControl(array $control, string $tenantId, string $source, \DateTimeInterface $observedAt): array
     {
         $supported = match ($control['control_id']) {
-            'DG-09', 'DG-11' => false,
+            'DG-09' => $this->controls->hasCurrentRecoveryEvidence($tenantId, $source, $observedAt),
+            'DG-11' => $this->controls->hasCurrentProcessorRegister($tenantId, $source, $observedAt),
             default => true,
         };
         if ($supported || ! in_array($control['status'], ['effective', 'not_applicable'], true)) {

@@ -10,5 +10,5 @@ class RecoveryEvidence extends Model
 
     protected $guarded = [];
 
-    protected $casts = ['occurred_at' => 'immutable_datetime'];
+    protected $casts = ['occurred_at' => 'immutable_datetime', 'reviewed_at' => 'immutable_datetime'];
 }

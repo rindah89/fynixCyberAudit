@@ -20,9 +20,10 @@ use App\Http\Controllers\API\StandardController;
 use App\Http\Controllers\API\SupportChangeEvidenceController;
 use App\Http\Controllers\API\UserController;
 use App\Http\Controllers\API\VendorController;
-use App\Suite\SuiteInboundController;
-use App\Suite\GovernanceEvidenceController;
 use App\Suite\GovernanceControlController;
+use App\Suite\GovernanceControlReviewController;
+use App\Suite\GovernanceEvidenceController;
+use App\Suite\SuiteInboundController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -66,6 +67,8 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/governance/oversight', [GovernanceEvidenceController::class, 'oversight']);
+    Route::post('/governance/control-reviews', [GovernanceControlReviewController::class, 'store']);
+    Route::post('/governance/processor-register-reviews', [GovernanceControlReviewController::class, 'certifyProcessorRegister']);
 
     // RESTful API Resources with full CRUD operations
     Route::apiResource('users', UserController::class);

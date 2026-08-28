@@ -43,12 +43,13 @@ class GovernanceStatementPublisherTest extends TestCase
             'tenant_id' => 'tenant-1', 'source' => 'cyberaudit', 'kind' => 'restore_drill',
             'occurred_at' => '2026-08-20T12:00:00Z', 'outcome' => 'successful',
             'evidence_ref' => 'evidence://restore/cyberaudit/q3',
+            'evidence_sha256' => str_repeat('a', 64),
         ]);
         $service->registerProcessor([
             'tenant_id' => 'tenant-1', 'source' => 'cyberaudit', 'name' => 'AWS',
             'purpose' => 'Hosting', 'data_categories' => ['audit_evidence'],
             'processing_countries' => ['CM'], 'transfer_mechanism' => 'domestic_processing',
-            'agreement_owner' => 'DPO', 'review_due_at' => '2027-08-20',
+            'agreement_owner' => 'DPO', 'agreement_evidence_ref' => 'evidence://cyberaudit/dpa/aws', 'agreement_evidence_sha256' => str_repeat('b', 64), 'review_due_at' => '2027-08-20',
         ]);
 
         $controls = collect(app(GovernanceStatementPublisher::class)->build(new \DateTimeImmutable('2026-08-28T12:00:00+00:00'))['payload']['controls']);

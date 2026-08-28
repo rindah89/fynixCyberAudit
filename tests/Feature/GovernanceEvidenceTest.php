@@ -133,12 +133,12 @@ class GovernanceEvidenceTest extends TestCase
         $controls = app(DataGovernanceControlService::class);
         $controls->recordRecoveryEvidence([
             'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'kind' => 'restore_drill',
-            'occurred_at' => now(), 'outcome' => 'successful', 'evidence_ref' => 'evidence://restore/finance/waiver-test',
+            'occurred_at' => now(), 'outcome' => 'successful', 'evidence_ref' => 'evidence://restore/finance/waiver-test', 'evidence_sha256' => str_repeat('a', 64),
         ]);
         $controls->registerProcessor([
             'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'name' => 'Waiver test hosting',
             'purpose' => 'Application hosting', 'data_categories' => ['financial_records'],
-            'processing_countries' => [], 'agreement_owner' => 'privacy', 'review_due_at' => now()->addYear(),
+            'processing_countries' => [], 'agreement_owner' => 'privacy', 'agreement_evidence_ref' => 'evidence://finance/dpa/waiver-test', 'agreement_evidence_sha256' => str_repeat('b', 64), 'review_due_at' => now()->addYear(),
         ]);
         $statement = $this->statement();
         $statement['payload']['controls'][4]['status'] = 'ineffective';
@@ -178,12 +178,12 @@ class GovernanceEvidenceTest extends TestCase
         $controls = app(DataGovernanceControlService::class);
         $controls->recordRecoveryEvidence([
             'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'kind' => 'restore_drill',
-            'occurred_at' => now(), 'outcome' => 'successful', 'evidence_ref' => 'evidence://restore/finance/current',
+            'occurred_at' => now(), 'outcome' => 'successful', 'evidence_ref' => 'evidence://restore/finance/current', 'evidence_sha256' => str_repeat('c', 64),
         ]);
         $controls->registerProcessor([
             'tenant_id' => self::TENANT, 'source' => self::SOURCE, 'name' => 'Finance hosting',
             'purpose' => 'Application hosting', 'data_categories' => ['financial_records'],
-            'processing_countries' => [], 'agreement_owner' => 'privacy', 'review_due_at' => now()->addYear(),
+            'processing_countries' => [], 'agreement_owner' => 'privacy', 'agreement_evidence_ref' => 'evidence://finance/dpa/hosting', 'agreement_evidence_sha256' => str_repeat('d', 64), 'review_due_at' => now()->addYear(),
         ]);
         $this->postSigned($this->statement())->assertCreated();
         $this->getJson('/api/suite/governance/ready')

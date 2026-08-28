@@ -9,7 +9,7 @@ class DispositionReceipt extends Model
 {
     protected $guarded = [];
 
-    protected $casts = ['eligible_at' => 'immutable_datetime', 'disposed_at' => 'immutable_datetime'];
+    protected $casts = ['eligible_at' => 'immutable_datetime', 'disposed_at' => 'immutable_datetime', 'reviewed_at' => 'immutable_datetime'];
 
     public function retentionPolicy(): BelongsTo
     {

@@ -8,5 +8,5 @@ class DataProcessor extends Model
 {
     protected $guarded = [];
 
-    protected $casts = ['data_categories' => 'array', 'processing_countries' => 'array', 'review_due_at' => 'immutable_date'];
+    protected $casts = ['data_categories' => 'array', 'processing_countries' => 'array', 'review_due_at' => 'immutable_date', 'reviewed_at' => 'immutable_datetime'];
 }

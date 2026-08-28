@@ -8,10 +8,13 @@ use App\Models\GovernanceException;
 use App\Models\GovernanceStatement;
 use App\Models\LegalHold;
 use App\Models\PrivacyRequest;
+use App\Models\RecoveryEvidence;
 use Carbon\CarbonImmutable;
 
 class GovernanceOversightService
 {
+    public function __construct(private readonly DataGovernanceControlService $controls) {}
+
     /** @return array<string, mixed> */
     public function report(bool $includeDetails = true): array
     {
@@ -29,8 +32,11 @@ class GovernanceOversightService
             $tenantId = is_array($binding) ? (string) ($binding['tenant_id'] ?? '') : '';
             $overduePrivacy = PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'open'])->where('due_at', '<', $now)->count();
             $pendingProcessors = DataProcessor::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'pending_review'])->count();
+            $pendingPrivacy = PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'closed', 'review_status' => 'pending_review'])->count();
+            $pendingRecovery = RecoveryEvidence::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'pending_review'])->count();
             $activeHolds = LegalHold::query()->whereNull('released_at')->whereHas('retentionPolicy', fn ($query) => $query->where(['tenant_id' => $tenantId, 'source' => $source]))->count();
-            $dispositionReceipts = DispositionReceipt::query()->whereHas('retentionPolicy', fn ($query) => $query->where(['tenant_id' => $tenantId, 'source' => $source]))->count();
+            $dispositionReceipts = DispositionReceipt::query()->where(['tenant_id' => $tenantId, 'source' => $source])->count();
+            $pendingDispositions = DispositionReceipt::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'pending_review'])->count();
             $sources[$source] = [
                 'binding' => $bindingEnabled ? 'enabled' : 'missing',
                 'freshness' => ! $latest ? 'missing' : ($latest->occurred_at->lessThan($freshAfter) ? 'stale' : 'current'),
@@ -43,11 +49,16 @@ class GovernanceOversightService
                     'overdue_privacy_requests' => $overduePrivacy,
                     'active_legal_holds' => $activeHolds,
                     'pending_processor_reviews' => $pendingProcessors,
+                    'pending_privacy_reviews' => $pendingPrivacy,
+                    'pending_recovery_reviews' => $pendingRecovery,
+                    'pending_disposition_reviews' => $pendingDispositions,
                     'disposition_receipts' => $dispositionReceipts,
+                    'current_approved_restore_evidence' => $tenantId !== '' && $this->controls->hasCurrentRecoveryEvidence($tenantId, $source, $now),
+                    'processor_register_certified' => $tenantId !== '' && $this->controls->hasCurrentProcessorRegister($tenantId, $source, $now),
                 ],
             ];
         }
-        $ready = collect($sources)->every(fn (array $source): bool => $source['binding'] === 'enabled' && $source['freshness'] === 'current' && $source['open_exceptions'] === 0 && $source['operability']['overdue_privacy_requests'] === 0 && $source['operability']['pending_processor_reviews'] === 0);
+        $ready = collect($sources)->every(fn (array $source): bool => $source['binding'] === 'enabled' && $source['freshness'] === 'current' && $source['open_exceptions'] === 0 && $source['operability']['overdue_privacy_requests'] === 0 && $source['operability']['pending_processor_reviews'] === 0 && $source['operability']['pending_privacy_reviews'] === 0 && $source['operability']['pending_recovery_reviews'] === 0 && $source['operability']['pending_disposition_reviews'] === 0);
         $hasWaivers = collect($sources)->contains(fn (array $source): bool => $source['waived_exceptions'] > 0);
         $report = ['status' => $ready ? ($hasWaivers ? 'conformant_with_waivers' : 'conformant') : 'attention_required', 'generated_at' => $now->toIso8601String(), 'sources' => $sources];
         if ($includeDetails) {

@@ -39,6 +39,7 @@ class GovernanceControlControllerTest extends TestCase
         $this->postSigned('privacy_request.close', [
             'privacy_request_id' => $opened['resource_id'],
             'evidence_ref' => 'evidence://hr/person-42/export',
+            'evidence_sha256' => str_repeat('a', 64),
         ])->assertOk()->assertJsonPath('outcome', 'recorded');
         $this->assertDatabaseHas('privacy_requests', ['id' => $opened['resource_id'], 'status' => 'closed']);
     }
@@ -57,7 +58,7 @@ class GovernanceControlControllerTest extends TestCase
         ]);
 
         $this->postSigned('privacy_request.close', [
-            'privacy_request_id' => $foreign->id, 'evidence_ref' => 'evidence://foreign/export',
+            'privacy_request_id' => $foreign->id, 'evidence_ref' => 'evidence://foreign/export', 'evidence_sha256' => str_repeat('b', 64),
         ])->assertNotFound();
         $this->assertDatabaseHas('privacy_requests', ['id' => $foreign->id, 'status' => 'open']);
     }
