@@ -91,3 +91,7 @@ Each application's operability report includes `invalid_or_tampered_reviews`. A 
 ## Exceptions and waivers
 
 Assign every exception an owner, due date, and resolution plan. A waiver must be authorized, documented, and time-bound. CyberAudit reopens expired waivers when the source continues to report the gap. Never change a status merely to make readiness pass.
+
+## Getting help or reporting a governance issue
+
+Contact the source application's data owner when the underlying record, privacy action, retention action, legal hold, processor inventory, or restore drill is wrong or incomplete. Contact the CyberAudit assurance owner when evidence is stale, a review is pending, an exception is open, or oversight disagrees with the source. Use the security-incident channel when governance evidence or personal data may have been exposed or altered. Include the tenant, source application, control ID, opaque resource or request ID, UTC time, and exception ID. Never include personal data, credentials, evidence payloads, raw exports, or signed links in a help request.
