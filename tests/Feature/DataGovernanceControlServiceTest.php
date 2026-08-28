@@ -93,6 +93,25 @@ class DataGovernanceControlServiceTest extends TestCase
         ]);
     }
 
+    public function test_zero_day_policy_supports_immediate_disposition_of_ephemeral_derived_data(): void
+    {
+        $service = app(DataGovernanceControlService::class);
+        $policy = $service->defineRetentionPolicy([
+            'tenant_id' => 'tenant-1', 'source' => 'devops',
+            'record_class' => 'code_graph_projection', 'retention_days' => 0,
+            'disposition_action' => 'delete',
+        ]);
+        $receipt = $service->recordDisposition($policy, [
+            'record_ref' => '11111111-1111-4111-8111-111111111111',
+            'record_created_at' => now()->subSecond(), 'action' => 'delete',
+            'evidence_ref' => 'urn:fynix:devops:disposition:11111111-1111-4111-8111-111111111111',
+            'evidence_sha256' => str_repeat('a', 64),
+        ]);
+
+        $this->assertSame(0, $policy->retention_days);
+        $this->assertSame('pending_review', $receipt->review_status);
+    }
+
     public function test_recovery_control_requires_a_successful_recent_restore_drill(): void
     {
         $service = app(DataGovernanceControlService::class);

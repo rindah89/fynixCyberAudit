@@ -75,7 +75,7 @@ class DataGovernanceControlService
 
     public function defineRetentionPolicy(array $attributes): RetentionPolicy
     {
-        if (($attributes['retention_days'] ?? 0) < 1 || ! in_array($attributes['disposition_action'] ?? null, ['delete', 'anonymize', 'archive'], true)) {
+        if (($attributes['retention_days'] ?? -1) < 0 || ! in_array($attributes['disposition_action'] ?? null, ['delete', 'anonymize', 'archive'], true)) {
             throw new InvalidArgumentException('Retention and disposition policy is invalid.');
         }
 

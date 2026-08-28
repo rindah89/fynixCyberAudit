@@ -49,7 +49,7 @@ class GovernanceControlController
         $payloadValidator = Validator::make($body['payload'], match ($body['command']) {
             'privacy_request.open' => ['subject_ref' => ['required', 'uuid'], 'right' => ['required', 'string'], 'lawful_basis' => ['required', 'string', 'max:64'], 'requested_at' => ['nullable', 'date']],
             'privacy_request.close' => ['privacy_request_id' => ['required', 'integer', 'min:1'], 'evidence_ref' => ['required', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', 'max:2048'], 'evidence_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/']],
-            'retention_policy.define' => ['record_class' => ['required', 'string', 'max:128'], 'retention_days' => ['required', 'integer', 'min:1'], 'disposition_action' => ['required', 'in:delete,anonymize,archive']],
+            'retention_policy.define' => ['record_class' => ['required', 'string', 'max:128'], 'retention_days' => ['required', 'integer', 'min:0'], 'disposition_action' => ['required', 'in:delete,anonymize,archive']],
             'retention.disposition.record' => ['retention_policy_id' => ['required', 'integer', 'min:1'], 'record_ref' => ['required', 'uuid'], 'record_created_at' => ['required', 'date'], 'action' => ['required', 'in:delete,anonymize,archive'], 'evidence_ref' => ['required', 'regex:/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', 'max:2048'], 'evidence_sha256' => ['required', 'regex:/^[a-f0-9]{64}$/']],
             'legal_hold.place' => ['retention_policy_id' => ['required', 'integer', 'min:1'], 'reason' => ['required', 'string', 'max:1000'], 'record_ref' => ['nullable', 'uuid'], 'source_hold_ref' => ['nullable', 'uuid']],
             'legal_hold.release' => ['legal_hold_id' => ['required', 'integer', 'min:1']],
