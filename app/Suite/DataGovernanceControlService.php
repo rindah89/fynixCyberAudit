@@ -10,6 +10,7 @@ use App\Models\ProcessorInventoryRun;
 use App\Models\ProcessorRegisterCertification;
 use App\Models\RecoveryEvidence;
 use App\Models\RetentionPolicy;
+use App\Models\SuiteAuditEvent;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use InvalidArgumentException;
@@ -150,6 +151,26 @@ class DataGovernanceControlService
         }
 
         return RecoveryEvidence::create(array_merge($attributes, ['review_status' => 'pending_review']));
+    }
+
+    public function recordAuditEvent(array $attributes): SuiteAuditEvent
+    {
+        $material = collect($attributes)->only([
+            'tenant_id', 'source', 'source_event_ref', 'subject_ref', 'action',
+            'outcome', 'correlation_ref', 'occurred_at',
+        ])->all();
+        $digest = hash('sha256', json_encode($material, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+
+        $event = SuiteAuditEvent::firstOrCreate([
+            'tenant_id' => $attributes['tenant_id'],
+            'source' => $attributes['source'],
+            'source_event_ref' => $attributes['source_event_ref'],
+        ], array_merge($material, ['event_sha256' => $digest]));
+        if (! hash_equals($event->event_sha256, $digest)) {
+            throw new InvalidArgumentException('Audit event reference already exists with different material.');
+        }
+
+        return $event;
     }
 
     public function hasCurrentRecoveryEvidence(string $tenantId, string $source, DateTimeInterface $at): bool

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\PrivacyRequest;
+use App\Models\SuiteAuditEvent;
 use App\Suite\SuiteEnvelope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
@@ -90,6 +91,31 @@ class GovernanceControlControllerTest extends TestCase
             'kind' => 'restore_drill', 'occurred_at' => now(), 'outcome' => 'successful',
             'evidence_ref' => 'https://example.test/report?token=secret',
         ])->assertUnprocessable();
+    }
+
+    public function test_signed_application_records_an_append_only_pseudonymous_audit_event(): void
+    {
+        $eventRef = (string) Str::uuid();
+        $subjectRef = (string) Str::uuid();
+        $response = $this->postSigned('audit_event.record', [
+            'source_event_ref' => $eventRef,
+            'subject_ref' => $subjectRef,
+            'action' => 'authorization.denied',
+            'outcome' => 'denied',
+            'correlation_ref' => (string) Str::uuid(),
+            'occurred_at' => now()->subSecond()->toAtomString(),
+            'email' => 'must-not-be-stored@example.test',
+        ])->assertOk();
+
+        $event = SuiteAuditEvent::findOrFail($response->json('resource_id'));
+        $this->assertSame(self::TENANT, $event->tenant_id);
+        $this->assertSame('hr', $event->source);
+        $this->assertSame($subjectRef, $event->subject_ref);
+        $this->assertSame(64, strlen($event->event_sha256));
+        $this->assertFalse(array_key_exists('email', $event->getAttributes()));
+
+        $this->expectException(\LogicException::class);
+        $event->update(['outcome' => 'succeeded']);
     }
 
     private function postSigned(string $command, array $payload, ?string $signature = null)
