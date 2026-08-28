@@ -15,6 +15,8 @@ For each application, review:
 
 `Partially effective`, `ineffective`, `unknown`, stale, or missing means attention is required. A `recorded` receipt only proves CyberAudit accepted the signed submission. It does not prove that deletion, privacy fulfillment, recovery, or vendor review occurred.
 
+No required Fynix application has a blanket privacy-rights exemption. A `not_applicable` result is rejected unless CyberAudit has an explicit, reviewed source-and-control applicability decision; the default registry contains no such exceptions.
+
 The same operational values are included in the authenticated `/api/governance/oversight` response and the scheduled governance monitor fingerprint. A new overdue request, pending review, invalid review, stale restore drill, or uncertified processor register therefore changes the monitor result even when the application's daily statement remains current.
 
 ## Privacy requests

@@ -42,9 +42,7 @@ return [
     ],
     // A control may be reported not_applicable only when CyberAudit owns an
     // explicit applicability decision for that source/control pair.
-    'applicability' => [
-        'devops' => ['DG-03' => false],
-    ],
+    'applicability' => [],
     'controls' => [
         'DG-01' => ['name' => 'Data inventory and accountable ownership', 'standards' => ['ISO/IEC 38505-1', 'NIST PF ID.IM-P']],
         'DG-02' => ['name' => 'Classification and handling', 'standards' => ['ISO/IEC 27001:2022', 'NIST CSF ID.AM']],

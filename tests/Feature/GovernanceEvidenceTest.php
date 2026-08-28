@@ -149,6 +149,11 @@ class GovernanceEvidenceTest extends TestCase
         ]);
     }
 
+    public function test_no_required_source_has_a_static_privacy_not_applicable_bypass(): void
+    {
+        $this->assertSame([], config('data_governance.applicability'));
+    }
+
     public function test_reused_statement_id_with_a_new_delivery_is_rejected_as_a_conflict(): void
     {
         $statement = $this->statement();
