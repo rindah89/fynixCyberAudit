@@ -62,6 +62,8 @@ Define a record class, retention period, and action. CyberAudit derives eligibil
 
 A disposition receipt is evidence metadata; the source application must actually delete, anonymise, or archive the record. Keep the control partial if source execution is not independently verified.
 
+Every required application is subject to the complete-run gate for DG-06. An effective source claim is downgraded unless CyberAudit has a current independently approved `retention_run` whose schedule digest and policy count exactly match the statement and whose disposition-evidence outbox was empty. Review the schema fingerprint, full policy inventory, legal-hold results, action counts, source receipts, and empty-outbox proof before approval. A catalog, one successful deletion, or a manually submitted command is not a complete run.
+
 ## Processors and recovery
 
 CyberAudit reconciles the complete processor and international-transfer inventory from `SUITE_GOVERNANCE_PROCESSOR_INVENTORY_JSON` every day. The JSON must contain a non-empty list for every required application. Each item supplies `name`, `purpose`, `data_categories`, `processing_countries`, `transfer_mechanism`, `agreement_owner`, `agreement_evidence_ref`, `agreement_evidence_sha256`, and `review_due_at`. A missing application or duplicate processor name fails the reconciliation.
