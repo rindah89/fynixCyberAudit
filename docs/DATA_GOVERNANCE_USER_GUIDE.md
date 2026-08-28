@@ -2,6 +2,20 @@
 
 CyberAudit is the central oversight application for Fynix data governance. Source applications remain responsible for their own records and business actions.
 
+## Standards and certification status
+
+The twelve suite controls provide a common evidence layer for ISO/IEC 27001, ISO/IEC 27701, SOC 2, GDPR, NIST Cybersecurity Framework 2.0, and CIS Controls assessments. CyberAudit does not award those certifications and a framework mapping is not proof of conformity. Assessors must confirm scope, applicability, operating period, control design, operating effectiveness, and the evidence required by the selected certification or attestation.
+
+Use one status vocabulary across the suite:
+
+- **Recorded** — a signed submission passed intake validation; the underlying control is not yet certified.
+- **Pending review** — independent assurance is required and has not passed.
+- **Effective** — current source evidence passed the configured automated gates and all required independent reviews.
+- **Partially effective** — a known implementation, coverage, freshness, or evidence gap remains.
+- **Not applicable** — allowed only by an explicit reviewed applicability decision for that source and control.
+
+Before presenting evidence to an assessor, export the current statement, scope/applicability decisions, review history, evidence digests, open and waived exceptions, freshness results, and the source application's executable coverage report. Never present the dashboard alone as proof of certification.
+
 ## Reading the oversight page
 
 For each application, review:
