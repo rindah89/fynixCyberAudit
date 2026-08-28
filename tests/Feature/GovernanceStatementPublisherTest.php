@@ -18,6 +18,7 @@ class GovernanceStatementPublisherTest extends TestCase
         parent::setUp();
         Config::set('data_governance.publisher', [
             'endpoint' => 'https://cyberaudit.example/api/suite/governance/evidence',
+            'control_endpoint' => 'https://cyberaudit.example/api/suite/governance/controls',
             'tenant_id' => 'tenant-1',
             'webhook_id' => '11111111-1111-4111-8111-111111111111',
             'secret' => str_repeat('x', 32),
@@ -65,11 +66,18 @@ class GovernanceStatementPublisherTest extends TestCase
             $this->assertStringStartsWith('v2=', $request->header('X-Fynix-Signature')[0]);
             $this->assertSame('tenant-1', $body['tenant_id']);
 
+            if (($body['command'] ?? null) === 'control_evidence.record') {
+                $this->assertContains($body['payload']['control_id'], ['DG-01', 'DG-02', 'DG-03', 'DG-04', 'DG-05', 'DG-07', 'DG-08', 'DG-10', 'DG-12']);
+                $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $body['payload']['evidence_sha256']);
+
+                return Http::response(['outcome' => 'recorded', 'resource_type' => 'control_evidence', 'resource_id' => 10], 201);
+            }
+
             return Http::response(['outcome' => 'recorded', 'statement_id' => $body['entity_id']], 201);
         });
 
         $this->artisan('fynix:publish-governance')->assertSuccessful();
-        Http::assertSentCount(1);
+        Http::assertSentCount(10);
     }
 
     public function test_publisher_rejects_insecure_remote_endpoint(): void

@@ -10,6 +10,8 @@ use RuntimeException;
 
 class GovernanceStatementPublisher
 {
+    private const REVIEWED_EVIDENCE_CONTROLS = ['DG-01', 'DG-02', 'DG-03', 'DG-04', 'DG-05', 'DG-07', 'DG-08', 'DG-10', 'DG-12'];
+
     public function __construct(private readonly DataGovernanceControlService $controls) {}
 
     /** @return array<string, mixed> */
@@ -68,6 +70,7 @@ class GovernanceStatementPublisher
             throw new InvalidArgumentException('Cyber Audit governance publisher binding is incomplete or insecure.');
         }
         $statement = $this->build();
+        $this->publishControlEvidence($statement['payload']['controls'], $webhookId, $secret);
         $raw = json_encode($statement, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         $timestamp = time();
         $deliveryId = (string) Str::uuid();
@@ -89,6 +92,56 @@ class GovernanceStatementPublisher
         }
 
         return ['outcome' => $receipt['outcome'], 'statement_id' => $receipt['statement_id']];
+    }
+
+    /** @param list<array<string, mixed>> $controls */
+    private function publishControlEvidence(array $controls, string $webhookId, string $secret): void
+    {
+        $endpoint = (string) config('data_governance.publisher.control_endpoint');
+        $parts = parse_url($endpoint);
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        $host = strtolower((string) ($parts['host'] ?? ''));
+        if (! ($scheme === 'https' || ($scheme === 'http' && in_array($host, ['localhost', '127.0.0.1', '::1'], true)))) {
+            throw new InvalidArgumentException('Cyber Audit governance control endpoint is incomplete or insecure.');
+        }
+        foreach ($controls as $control) {
+            if (! in_array($control['control_id'], self::REVIEWED_EVIDENCE_CONTROLS, true) || $control['status'] !== 'effective') {
+                continue;
+            }
+            $material = json_encode([
+                'control_id' => $control['control_id'], 'summary' => $control['summary'],
+                'evidence_refs' => $control['evidence_refs'], 'metrics' => $control['metrics'],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $digest = hash('sha256', $material);
+            $hex = substr($digest, 0, 32);
+            $hex[12] = '5';
+            $hex[16] = dechex((hexdec($hex[16]) & 0x3) | 0x8);
+            $sourceRef = substr($hex, 0, 8).'-'.substr($hex, 8, 4).'-'.substr($hex, 12, 4)
+                .'-'.substr($hex, 16, 4).'-'.substr($hex, 20, 12);
+            $body = json_encode([
+                'tenant_id' => config('data_governance.publisher.tenant_id'),
+                'command' => 'control_evidence.record',
+                'payload' => [
+                    'control_id' => $control['control_id'], 'source_evidence_ref' => $sourceRef,
+                    'observed_at' => $control['observed_at'],
+                    'evidence_ref' => "urn:fynix:cyberaudit:control-evidence:{$sourceRef}",
+                    'evidence_sha256' => $digest,
+                ],
+            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $timestamp = time();
+            $deliveryId = (string) Str::uuid();
+            $signature = SuiteEnvelope::sign($secret, $timestamp, 'governance.control.commanded', 'cyberaudit', $webhookId, $deliveryId, $body);
+            $response = $this->client()->withHeaders([
+                'X-Fynix-Timestamp' => (string) $timestamp, 'X-Fynix-Event' => 'governance.control.commanded',
+                'X-Fynix-Source' => 'cyberaudit', 'X-Fynix-Webhook-Id' => $webhookId,
+                'X-Fynix-Delivery-Id' => $deliveryId, 'X-Fynix-Signature' => $signature,
+            ])->withBody($body, 'application/json')->post($endpoint);
+            $receipt = $response->json();
+            if (! $response->successful() || ($receipt['outcome'] ?? null) !== 'recorded'
+                || ($receipt['resource_type'] ?? null) !== 'control_evidence' || empty($receipt['resource_id'])) {
+                throw new RuntimeException("Cyber Audit returned an invalid {$control['control_id']} evidence receipt.");
+            }
+        }
     }
 
     protected function client(): PendingRequest

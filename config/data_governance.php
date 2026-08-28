@@ -36,6 +36,7 @@ return [
     'processor_inventory' => is_array($decodedProcessorInventory) ? $decodedProcessorInventory : [],
     'publisher' => [
         'endpoint' => env('CYBERAUDIT_GOVERNANCE_ENDPOINT'),
+        'control_endpoint' => env('CYBERAUDIT_GOVERNANCE_CONTROL_ENDPOINT'),
         'tenant_id' => env('CYBERAUDIT_GOVERNANCE_TENANT_ID'),
         'webhook_id' => env('CYBERAUDIT_GOVERNANCE_WEBHOOK_ID'),
         'secret' => env('CYBERAUDIT_GOVERNANCE_SECRET'),
