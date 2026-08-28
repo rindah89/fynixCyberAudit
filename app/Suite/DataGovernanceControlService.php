@@ -31,7 +31,6 @@ class DataGovernanceControlService
         );
         $material = [
             'control_id' => $attributes['control_id'],
-            'observed_at' => $attributes['observed_at'],
             'evidence_ref' => $attributes['evidence_ref'],
             'evidence_sha256' => $attributes['evidence_sha256'],
         ];
@@ -45,7 +44,7 @@ class DataGovernanceControlService
 
             return $evidence;
         }
-        $evidence->fill([...$material, 'review_status' => 'pending_review'])->save();
+        $evidence->fill([...$material, 'observed_at' => $attributes['observed_at'], 'review_status' => 'pending_review'])->save();
 
         return $evidence->refresh();
     }

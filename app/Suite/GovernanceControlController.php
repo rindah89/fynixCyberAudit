@@ -2,9 +2,16 @@
 
 namespace App\Suite;
 
+use App\Models\DataProcessor;
+use App\Models\DispositionReceipt;
+use App\Models\GovernanceControlEvidence;
 use App\Models\LegalHold;
 use App\Models\PrivacyRequest;
+use App\Models\RecoveryEvidence;
 use App\Models\RetentionPolicy;
+use App\Models\RetentionRunEvidence;
+use App\Models\SuiteAuditEvent;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -82,7 +89,7 @@ class GovernanceControlController
                 DB::table('governance_control_deliveries')->insert([
                     'delivery_id' => $headers['delivery-id'], 'tenant_id' => $binding['tenant_id'],
                     'source' => $source, 'command' => $body['command'],
-                    'resource_type' => $resource->getMorphClass(), 'resource_id' => $resource->getKey(),
+                    'resource_type' => $this->resourceType($resource), 'resource_id' => $resource->getKey(),
                     'payload_sha256' => hash('sha256', $raw), 'created_at' => now(), 'updated_at' => now(),
                 ]);
 
@@ -99,6 +106,22 @@ class GovernanceControlController
             return response()->json(['outcome' => 'invalid command', 'message' => $exception->getMessage()], 422);
         }
 
-        return response()->json(['outcome' => 'recorded', 'resource_type' => $resource->getMorphClass(), 'resource_id' => $resource->getKey()], $created ? 201 : 200);
+        return response()->json(['outcome' => 'recorded', 'resource_type' => $this->resourceType($resource), 'resource_id' => $resource->getKey()], $created ? 201 : 200);
+    }
+
+    private function resourceType(Model $resource): string
+    {
+        return match (true) {
+            $resource instanceof PrivacyRequest => 'privacy_request',
+            $resource instanceof RetentionPolicy => 'retention_policy',
+            $resource instanceof DispositionReceipt => 'disposition_receipt',
+            $resource instanceof LegalHold => 'legal_hold',
+            $resource instanceof DataProcessor => 'processor',
+            $resource instanceof RecoveryEvidence => 'recovery_evidence',
+            $resource instanceof SuiteAuditEvent => 'audit_event',
+            $resource instanceof RetentionRunEvidence => 'retention_run',
+            $resource instanceof GovernanceControlEvidence => 'control_evidence',
+            default => throw new \LogicException('Unsupported governance resource type.'),
+        };
     }
 }
