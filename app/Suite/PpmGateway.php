@@ -7,10 +7,14 @@ use App\Models\RemediationTask;
 use App\Models\SuiteEntityLink;
 use App\Models\User;
 use App\Support\Enterprise;
+use Illuminate\Support\Str;
 
 class PpmGateway
 {
-    public function __construct(private readonly PpmClient $client) {}
+    public function __construct(
+        private readonly PpmClient $client,
+        private readonly DataGovernanceControlService $governance,
+    ) {}
 
     public function enabled(): bool
     {
@@ -194,6 +198,10 @@ class PpmGateway
         $entityType = (string) ($envelope['entity_type'] ?? '');
         $entityId = (string) ($envelope['entity_id'] ?? '');
 
+        if ($eventType === 'ppm.records.disposition_executed') {
+            return $this->recordDispositionEvidence($envelope, $entityId);
+        }
+
         if (! in_array($eventType, ['project.updated', 'project.deleted', 'work_package.updated', 'work_package.deleted'], true)) {
             return 'ignored';
         }
@@ -228,6 +236,39 @@ class PpmGateway
         ]);
 
         return 'applied';
+    }
+
+    /** @param array<string, mixed> $envelope */
+    private function recordDispositionEvidence(array $envelope, string $recordId): string
+    {
+        $payload = is_array($envelope['payload'] ?? null) ? $envelope['payload'] : [];
+        $recordClass = (string) ($payload['record_class_id'] ?? '');
+        $retentionDays = (int) ($payload['retention_days'] ?? 0);
+        $recordCreatedAt = (string) ($payload['record_created_at'] ?? '');
+        $action = (string) ($payload['action'] ?? '');
+        $evidenceRef = (string) ($payload['evidence_ref'] ?? '');
+        $evidenceSha = (string) ($payload['evidence_sha256'] ?? '');
+        if ($recordId === '' || $recordClass === '' || $retentionDays < 1 || $recordCreatedAt === '' || ! in_array($action, ['delete', 'anonymize', 'archive'], true) || ! preg_match('/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', $evidenceRef) || ! preg_match('/^[a-f0-9]{64}$/', $evidenceSha)) {
+            return 'ignored';
+        }
+
+        $tenantId = (string) config('suite.ppm.tenant_id');
+        $policy = $this->governance->defineRetentionPolicy([
+            'tenant_id' => $tenantId,
+            'source' => 'ppm',
+            'record_class' => $recordClass,
+            'retention_days' => $retentionDays,
+            'disposition_action' => $action,
+        ]);
+        $this->governance->recordDisposition($policy, [
+            'record_ref' => $recordId,
+            'record_created_at' => $recordCreatedAt,
+            'action' => $action,
+            'evidence_ref' => $evidenceRef,
+            'evidence_sha256' => $evidenceSha,
+        ]);
+
+        return 'governance evidence recorded';
     }
 
     private function projectDescription(RemediationProject $project): string
@@ -272,7 +313,7 @@ class PpmGateway
         ];
         $raw = json_encode($envelope, JSON_UNESCAPED_SLASHES);
         $timestamp = time();
-        $deliveryId = (string) \Illuminate\Support\Str::uuid();
+        $deliveryId = (string) Str::uuid();
         $headers = [
             'X-Fynix-Timestamp' => (string) $timestamp,
             'X-Fynix-Event' => 'grc.remediation.published',
@@ -317,7 +358,7 @@ class PpmGateway
         ];
         $raw = json_encode($envelope, JSON_UNESCAPED_SLASHES);
         $timestamp = time();
-        $deliveryId = (string) \Illuminate\Support\Str::uuid();
+        $deliveryId = (string) Str::uuid();
         $this->client->postSuiteEvent((string) $raw, [
             'X-Fynix-Timestamp' => (string) $timestamp,
             'X-Fynix-Event' => 'grc.remediation.task_published',

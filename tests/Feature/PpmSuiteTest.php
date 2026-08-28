@@ -6,7 +6,9 @@ use App\Enums\WorkflowStatus;
 use App\Models\Audit;
 use App\Models\AuditItem;
 use App\Models\Control;
+use App\Models\DispositionReceipt;
 use App\Models\RemediationTask;
+use App\Models\RetentionPolicy;
 use App\Models\SuiteEntityLink;
 use App\Models\User;
 use App\Remediation\Remediation;
@@ -86,6 +88,29 @@ class PpmSuiteTest extends TestCase
         ], $raw);
 
         $response->assertStatus(400)->assertJsonPath('outcome', 'unsupported source');
+    }
+
+    public function test_signed_ppm_disposition_event_becomes_reviewable_governance_evidence(): void
+    {
+        $recordId = '44444444-4444-4444-8444-444444444444';
+        $classId = '55555555-5555-4555-8555-555555555555';
+        $sha = str_repeat('a', 64);
+
+        $response = $this->postSignedPpmEvent('ppm.records.disposition_executed', $recordId, [
+            'record_class_id' => $classId,
+            'retention_days' => 365,
+            'record_created_at' => now()->subDays(400)->toAtomString(),
+            'action' => 'delete',
+            'evidence_ref' => 'urn:fynix:ppm:disposition:'.$recordId,
+            'evidence_sha256' => $sha,
+        ]);
+
+        $response->assertOk()->assertJsonPath('outcome', 'governance evidence recorded');
+        $policy = RetentionPolicy::query()->where('record_class', $classId)->sole();
+        $receipt = DispositionReceipt::query()->where('record_ref', $recordId)->sole();
+        $this->assertSame($policy->id, $receipt->retention_policy_id);
+        $this->assertSame('pending_review', $receipt->review_status);
+        $this->assertSame($sha, $receipt->evidence_sha256);
     }
 
     public function test_publishing_a_poam_creates_a_ppm_project_and_back_link(): void
