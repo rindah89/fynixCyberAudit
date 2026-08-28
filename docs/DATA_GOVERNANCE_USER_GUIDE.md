@@ -32,7 +32,11 @@ A disposition receipt is evidence metadata; the source application must actually
 
 ## Processors and recovery
 
-Processor entries begin as **pending review**. Review purpose, data categories, countries, transfer mechanism, agreement owner, and review date before approval. One entry does not prove the register is complete.
+CyberAudit reconciles the complete processor and international-transfer inventory from `SUITE_GOVERNANCE_PROCESSOR_INVENTORY_JSON` every day. The JSON must contain a non-empty list for every required application. Each item supplies `name`, `purpose`, `data_categories`, `processing_countries`, `transfer_mechanism`, `agreement_owner`, `agreement_evidence_ref`, `agreement_evidence_sha256`, and `review_due_at`. A missing application or duplicate processor name fails the reconciliation.
+
+Processor entries begin as **pending review**. Review purpose, data categories, countries, transfer mechanism, agreement owner, evidence digest, and review date before approval. Unchanged daily reconciliations preserve approval. Any material change returns the entry to pending review; removal marks it inactive. After all active entries are approved, an independent reviewer certifies the exact register. A changed inventory invalidates the prior certification automatically.
+
+Operators can run `php artisan fynix:reconcile-processor-inventory` after an authorized inventory change. The scheduler runs reconciliation at 02:30 and publishes the governance statement at 02:45. A failed reconciliation must be investigated; do not publish or certify a hand-edited partial register.
 
 Recovery evidence must represent a successful completed restore drill, include a controlled reference, and fall within the required evidence window. Future-dated or self-attested evidence must not promote a control to effective.
 

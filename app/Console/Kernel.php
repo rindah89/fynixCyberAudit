@@ -22,6 +22,10 @@ class Kernel extends ConsoleKernel
             ->dailyAt('02:45')
             ->withoutOverlapping()
             ->onOneServer();
+        $schedule->command('fynix:reconcile-processor-inventory')
+            ->dailyAt('02:30')
+            ->withoutOverlapping()
+            ->onOneServer();
     }
 
     /**

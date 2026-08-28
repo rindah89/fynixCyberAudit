@@ -39,15 +39,26 @@ class DataGovernanceControlService
 
     public function registerProcessor(array $attributes): DataProcessor
     {
-        $countries = $attributes['processing_countries'] ?? [];
+        $attributes['data_categories'] = $this->normalizedStrings($attributes['data_categories'] ?? []);
+        $attributes['processing_countries'] = $this->normalizedStrings($attributes['processing_countries'] ?? []);
+        $countries = $attributes['processing_countries'];
         if (($countries !== [] && blank($attributes['transfer_mechanism'] ?? null)) || ! preg_match('/^[a-f0-9]{64}$/', (string) ($attributes['agreement_evidence_sha256'] ?? ''))) {
             throw new InvalidArgumentException('A transfer mechanism is required for cross-border processing.');
         }
 
-        return DataProcessor::updateOrCreate(
-            ['tenant_id' => $attributes['tenant_id'], 'source' => $attributes['source'], 'name' => $attributes['name']],
-            array_merge($attributes, ['status' => 'pending_review']),
+        $identity = ['tenant_id' => $attributes['tenant_id'], 'source' => $attributes['source'], 'name' => $attributes['name']];
+        $processor = DataProcessor::firstOrNew($identity);
+        $material = array_merge($attributes, ['active' => true]);
+        $changed = ! $processor->exists || collect($material)->contains(
+            fn ($value, $key): bool => $this->comparable($processor->{$key}) !== $this->comparable($value)
         );
+        $processor->fill($material);
+        if ($changed) {
+            $processor->fill(['status' => 'pending_review', 'reviewed_by' => null, 'reviewed_at' => null, 'review_digest' => null]);
+        }
+        $processor->save();
+
+        return $processor->refresh();
     }
 
     public function defineRetentionPolicy(array $attributes): RetentionPolicy
@@ -142,7 +153,7 @@ class DataGovernanceControlService
     public function hasCurrentProcessorRegister(string $tenantId, string $source, DateTimeInterface $at): bool
     {
         $processors = DataProcessor::query()
-            ->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'approved'])
+            ->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'approved', 'active' => true])
             ->whereDate('review_due_at', '>=', CarbonImmutable::instance($at)->toDateString())
             ->orderBy('name')->get();
         if ($processors->isEmpty()) {
@@ -158,5 +169,25 @@ class DataGovernanceControlService
             ->where(['tenant_id' => $tenantId, 'source' => $source, 'processor_count' => $processors->count(), 'inventory_digest' => $inventoryDigest])
             ->whereDate('valid_until', '>=', CarbonImmutable::instance($at)->toDateString())
             ->exists();
+    }
+
+    private function normalizedStrings(array $values): array
+    {
+        $values = array_values(array_unique(array_map('strval', $values)));
+        sort($values, SORT_STRING);
+
+        return $values;
+    }
+
+    private function comparable(mixed $value): mixed
+    {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+        if (is_array($value)) {
+            return $this->normalizedStrings($value);
+        }
+
+        return $value;
     }
 }

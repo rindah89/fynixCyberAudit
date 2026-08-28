@@ -2,6 +2,8 @@
 
 $rawBindings = env('SUITE_GOVERNANCE_BINDINGS_JSON', '{}');
 $decodedBindings = json_decode(is_string($rawBindings) ? $rawBindings : '{}', true);
+$rawProcessorInventory = env('SUITE_GOVERNANCE_PROCESSOR_INVENTORY_JSON', '{}');
+$decodedProcessorInventory = json_decode(is_string($rawProcessorInventory) ? $rawProcessorInventory : '{}', true);
 $sourcePrefixes = [
     'hq' => 'HQ', 'ppm' => 'PPM', 'hr' => 'HR', 'finance' => 'FINANCE',
     'itsm' => 'ITSM', 'docflow' => 'DOCFLOW', 'devops' => 'DEVOPS',
@@ -31,6 +33,7 @@ return [
         explode(',', (string) env('SUITE_GOVERNANCE_REQUIRED_SOURCES', 'hq,ppm,hr,finance,itsm,docflow,devops,office,cyberaudit'))
     ))),
     'bindings' => is_array($decodedBindings) && $decodedBindings !== [] ? $decodedBindings : $environmentBindings,
+    'processor_inventory' => is_array($decodedProcessorInventory) ? $decodedProcessorInventory : [],
     'publisher' => [
         'endpoint' => env('CYBERAUDIT_GOVERNANCE_ENDPOINT'),
         'tenant_id' => env('CYBERAUDIT_GOVERNANCE_TENANT_ID'),

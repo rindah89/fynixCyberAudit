@@ -59,7 +59,7 @@ class GovernanceControlReviewService
     {
         return DB::transaction(function () use ($attributes, $reviewer): ProcessorRegisterCertification {
             $processors = DataProcessor::query()
-                ->where(['tenant_id' => $attributes['tenant_id'], 'source' => $attributes['source']])
+                ->where(['tenant_id' => $attributes['tenant_id'], 'source' => $attributes['source'], 'active' => true])
                 ->orderBy('name')->lockForUpdate()->get();
             if ($processors->count() !== (int) $attributes['expected_processor_count'] || $processors->isEmpty()) {
                 throw new InvalidArgumentException('Processor inventory count does not match the reviewed register.');
