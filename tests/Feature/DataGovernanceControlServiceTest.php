@@ -77,6 +77,20 @@ class DataGovernanceControlServiceTest extends TestCase
         ]);
         $this->assertSame('delete', $receipt->action);
         $this->assertNotNull($receipt->disposed_at);
+        $retry = $service->recordDisposition($policy, [
+            'record_ref' => 'journal-42', 'action' => 'delete', 'record_created_at' => now()->subYears(11),
+            'evidence_ref' => 'evidence://finance/journal-42/deleted',
+            'evidence_sha256' => str_repeat('d', 64),
+        ]);
+        $this->assertSame($receipt->id, $retry->id);
+        $this->assertDatabaseCount('disposition_receipts', 1);
+
+        $this->expectException(InvalidArgumentException::class);
+        $service->recordDisposition($policy, [
+            'record_ref' => 'journal-42', 'action' => 'delete', 'record_created_at' => now()->subYears(11),
+            'evidence_ref' => 'evidence://finance/journal-42/different',
+            'evidence_sha256' => str_repeat('e', 64),
+        ]);
     }
 
     public function test_recovery_control_requires_a_successful_recent_restore_drill(): void

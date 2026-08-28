@@ -125,6 +125,21 @@ class DataGovernanceControlService
     {
         $recordCreatedAt = CarbonImmutable::parse($attributes['record_created_at'] ?? now()->addSecond());
         $eligibleAt = $recordCreatedAt->addDays($policy->retention_days);
+        $existing = DispositionReceipt::query()->where([
+            'retention_policy_id' => $policy->getKey(),
+            'record_ref' => (string) ($attributes['record_ref'] ?? ''),
+        ])->first();
+        if ($existing !== null) {
+            $same = $existing->action === ($attributes['action'] ?? null)
+                && $existing->evidence_ref === ($attributes['evidence_ref'] ?? null)
+                && $existing->evidence_sha256 === ($attributes['evidence_sha256'] ?? null)
+                && $existing->eligible_at->getTimestamp() === $eligibleAt->getTimestamp();
+            if (! $same) {
+                throw new InvalidArgumentException('Disposition record reference conflicts with existing evidence.');
+            }
+
+            return $existing;
+        }
         if (! $this->mayDispose($policy, (string) ($attributes['record_ref'] ?? '')) || $eligibleAt->isFuture()) {
             throw new InvalidArgumentException('Disposition is not eligible or is blocked by a legal hold.');
         }
