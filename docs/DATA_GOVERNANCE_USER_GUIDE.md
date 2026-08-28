@@ -24,6 +24,8 @@ For each application, review:
 
 Finance and PPM send a signed intake event when a source request is accepted. CyberAudit correlates later completion evidence to that same source request, so the deadline, status, and review history remain one case. A repeated intake or completion event is idempotent; it must not create a second case. If an expected intake event is absent, treat the source integration as unhealthy rather than opening a replacement case by hand.
 
+For PPM access requests, completion evidence identifies a digest-addressed export retained in PPM's governed WORM store. Reviewers must compare the submitted SHA-256 with the artifact returned by PPM before approving completion; CyberAudit does not store the exported personal data.
+
 Do not enter names, email addresses, tokens, query strings, signed URLs, or raw document paths. Accepted references are opaque identifiers and controlled `urn:fynix:` or `evidence://` evidence references.
 
 ## Retention, holds, and disposition

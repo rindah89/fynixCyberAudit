@@ -103,7 +103,7 @@ class GovernanceDomainEventService
             return 'governance evidence recorded';
         }
 
-        if (in_array($eventType, ['finance.privacy.completed', 'itsm.privacy.erasure_completed', 'ppm.privacy.erasure_completed'], true)) {
+        if (in_array($eventType, ['finance.privacy.completed', 'itsm.privacy.erasure_completed', 'ppm.privacy.erasure_completed', 'ppm.privacy.access_completed'], true)) {
             $subjectRef = (string) ($payload['subject_ref'] ?? '');
             $right = (string) ($payload['right'] ?? '');
             $evidenceRef = (string) ($payload['evidence_ref'] ?? '');
@@ -111,7 +111,7 @@ class GovernanceDomainEventService
             if (! Str::isUuid($subjectRef) || ! in_array($right, ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'], true) || ! preg_match('/^(urn:fynix:|evidence:\/\/)[A-Za-z0-9._:\/-]+$/', $evidenceRef) || ! preg_match('/^[a-f0-9]{64}$/', $evidenceSha)) {
                 return 'ignored';
             }
-            $sourceRequestRef = in_array($eventType, ['finance.privacy.completed', 'ppm.privacy.erasure_completed'], true)
+            $sourceRequestRef = in_array($eventType, ['finance.privacy.completed', 'ppm.privacy.erasure_completed', 'ppm.privacy.access_completed'], true)
                 ? (string) ($envelope['entity_id'] ?? '') : null;
             $request = $sourceRequestRef !== null && Str::isUuid($sourceRequestRef)
                 ? PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'source_request_ref' => $sourceRequestRef])->first()

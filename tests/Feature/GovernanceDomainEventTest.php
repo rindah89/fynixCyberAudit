@@ -244,6 +244,47 @@ class GovernanceDomainEventTest extends TestCase
         $this->assertSame('pending_review', $request->review_status);
     }
 
+    public function test_ppm_access_export_closes_the_correlated_request(): void
+    {
+        Config::set('suite.ppm.enabled', true);
+        Config::set('suite.ppm.webhook_id', 'ppm-hook');
+        Config::set('suite.ppm.webhook_secrets', [str_repeat('p', 32)]);
+        Config::set('suite.ppm.tenant_id', 'tenant-1');
+        $subjectRef = (string) Str::uuid();
+        $requestId = (string) Str::uuid();
+        $occurredAt = now()->utc()->toAtomString();
+
+        $this->postSigned([
+            'event_type' => 'ppm.privacy.opened', 'tenant_id' => 'tenant-1',
+            'entity_type' => 'privacy_request', 'entity_id' => $requestId,
+            'occurred_at' => $occurredAt,
+            'payload' => [
+                'subject_ref' => $subjectRef, 'right' => 'access',
+                'lawful_basis' => 'data_subject_right', 'requested_at' => $occurredAt,
+            ],
+        ], 'ppm', 'ppm-hook', str_repeat('p', 32))->assertOk();
+
+        $sha = str_repeat('a', 64);
+        $this->postSigned([
+            'event_type' => 'ppm.privacy.access_completed', 'tenant_id' => 'tenant-1',
+            'entity_type' => 'privacy_request', 'entity_id' => $requestId,
+            'occurred_at' => $occurredAt,
+            'payload' => [
+                'subject_ref' => $subjectRef, 'right' => 'access',
+                'requested_at' => $occurredAt, 'completed_at' => $occurredAt,
+                'evidence_ref' => 'urn:fynix:ppm:privacy:'.$requestId.':export',
+                'evidence_sha256' => $sha,
+            ],
+        ], 'ppm', 'ppm-hook', str_repeat('p', 32))->assertOk();
+
+        $this->assertDatabaseCount('privacy_requests', 1);
+        $request = PrivacyRequest::query()->sole();
+        $this->assertSame('closed', $request->status);
+        $this->assertSame('access', $request->right);
+        $this->assertSame($sha, $request->evidence_sha256);
+        $this->assertSame('pending_review', $request->review_status);
+    }
+
     private function postSigned(array $envelope, string $source, string $webhookId, string $secret)
     {
         $raw = (string) json_encode($envelope, JSON_UNESCAPED_SLASHES);
