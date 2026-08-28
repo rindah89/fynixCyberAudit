@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 
 class SuiteInboundController
 {
-    public function store(Request $request, PpmGateway $ppmGateway, ItsmGateway $itsmGateway): JsonResponse
+    public function store(Request $request, PpmGateway $ppmGateway, ItsmGateway $itsmGateway, GovernanceDomainEventService $governanceEvents): JsonResponse
     {
         $raw = $request->getContent();
         $headers = [];
@@ -19,18 +19,20 @@ class SuiteInboundController
         }
 
         $source = $headers['x-fynix-source'];
+        $governanceBinding = config('data_governance.bindings.'.$source);
+        if ($source !== '' && ! in_array($source, ['ppm', 'itsm'], true) && (! is_array($governanceBinding) || ! ($governanceBinding['enabled'] ?? false))) {
+            return response()->json(['outcome' => 'unsupported source'], 400);
+        }
         $secrets = $source === 'itsm'
             ? array_values(array_filter([(string) config('suite.itsm.webhook_secret')]))
-            : config('suite.ppm.webhook_secrets', []);
-        $tolerance = (int) config($source === 'itsm' ? 'suite.itsm.replay_tolerance' : 'suite.ppm.replay_tolerance', 21600);
+            : ($source === 'ppm' ? config('suite.ppm.webhook_secrets', []) : array_values(array_filter([(string) ($governanceBinding['secret'] ?? '')])));
+        $tolerance = (int) ($source === 'itsm'
+            ? config('suite.itsm.replay_tolerance', 21600)
+            : ($source === 'ppm' ? config('suite.ppm.replay_tolerance', 21600) : ($governanceBinding['replay_tolerance'] ?? 300)));
 
         if (! SuiteEnvelope::verify($secrets, $headers, $raw, time(), $tolerance)) {
             return response()->json(['outcome' => 'invalid signature'], 401);
         }
-        if (! in_array($source, ['ppm', 'itsm'], true)) {
-            return response()->json(['outcome' => 'unsupported source'], 400);
-        }
-
         $envelope = json_decode($raw, true);
         if (! is_array($envelope) || ($envelope['event_type'] ?? null) !== $headers['x-fynix-event']) {
             return response()->json(['outcome' => 'invalid json'], 400);
@@ -45,6 +47,9 @@ class SuiteInboundController
             return response()->json(['outcome' => 'binding disabled'], 503);
         }
         if ($source === 'ppm' && (! config('suite.ppm.enabled') || $headers['x-fynix-webhook-id'] !== (string) config('suite.ppm.webhook_id') || (string) ($envelope['tenant_id'] ?? '') !== (string) config('suite.ppm.tenant_id'))) {
+            return response()->json(['outcome' => 'binding disabled'], 503);
+        }
+        if (! in_array($source, ['ppm', 'itsm'], true) && ($headers['x-fynix-webhook-id'] !== (string) ($governanceBinding['webhook_id'] ?? '') || (string) ($envelope['tenant_id'] ?? '') !== (string) ($governanceBinding['tenant_id'] ?? ''))) {
             return response()->json(['outcome' => 'binding disabled'], 503);
         }
 
@@ -63,8 +68,10 @@ class SuiteInboundController
                 $outcome = $itsmGateway->applyEvent($envelope);
                 SuiteInboundHighWater::query()->updateOrCreate($identity, ['occurred_at' => $occurredAt]);
             }
-        } else {
+        } elseif ($source === 'ppm') {
             $outcome = $ppmGateway->applyPpmEvent($envelope);
+        } else {
+            $outcome = $governanceEvents->apply((string) $governanceBinding['tenant_id'], $source, $envelope, $raw);
         }
 
         SuiteInboundDelivery::query()->create([
