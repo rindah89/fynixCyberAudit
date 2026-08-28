@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DataProcessor;
+use App\Suite\GovernanceOversightService;
 use App\Suite\ProcessorInventoryReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
@@ -41,6 +42,8 @@ class ProcessorInventoryReconcilerTest extends TestCase
 
         $this->assertSame(1, $result['retired']);
         $this->assertFalse(DataProcessor::where('name', 'Email')->firstOrFail()->active);
+        $oversight = app(GovernanceOversightService::class)->report();
+        $this->assertSame(1, $oversight['sources']['finance']['operability']['pending_processor_reviews']);
     }
 
     public function test_fails_closed_when_required_source_is_missing(): void

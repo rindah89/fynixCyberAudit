@@ -31,7 +31,7 @@ class GovernanceOversightService
                 && ! empty($binding['secret']);
             $tenantId = is_array($binding) ? (string) ($binding['tenant_id'] ?? '') : '';
             $overduePrivacy = PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'open'])->where('due_at', '<', $now)->count();
-            $pendingProcessors = DataProcessor::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'pending_review'])->count();
+            $pendingProcessors = DataProcessor::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'pending_review', 'active' => true])->count();
             $pendingPrivacy = PrivacyRequest::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'status' => 'closed', 'review_status' => 'pending_review'])->count();
             $pendingRecovery = RecoveryEvidence::query()->where(['tenant_id' => $tenantId, 'source' => $source, 'review_status' => 'pending_review'])->count();
             $activeHolds = LegalHold::query()->whereNull('released_at')->whereHas('retentionPolicy', fn ($query) => $query->where(['tenant_id' => $tenantId, 'source' => $source]))->count();
