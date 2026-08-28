@@ -2,7 +2,7 @@ FROM --platform=$BUILDPLATFORM composer:latest AS frontend-php-dependencies
 
 WORKDIR /build
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --ignore-platform-reqs --prefer-dist
+RUN composer install --no-dev --no-scripts --no-autoloader --ignore-platform-reqs --prefer-dist
 
 FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS frontend-assets
 
