@@ -1,7 +1,14 @@
+FROM --platform=$BUILDPLATFORM composer:latest AS frontend-php-dependencies
+
+WORKDIR /build
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --ignore-platform-reqs --prefer-dist
+
 FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS frontend-assets
 
 WORKDIR /build
 COPY . .
+COPY --from=frontend-php-dependencies /build/vendor ./vendor
 RUN npm ci && npm run build
 
 FROM ubuntu:24.04

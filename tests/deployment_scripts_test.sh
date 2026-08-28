@@ -56,6 +56,7 @@ if grep -q -- '--pull' "$root/scripts/build-release-bundle.sh"; then exit 1; fi
 if grep -q 'compose .*--build' "$root/deploy/aws-update.sh"; then exit 1; fi
 grep -q 'image_sha256' "$root/scripts/build-release-bundle.sh"
 grep -q 'FROM --platform=\$BUILDPLATFORM node:20-bookworm-slim AS frontend-assets' "$root/Dockerfile"
+grep -q 'COPY --from=frontend-php-dependencies /build/vendor ./vendor' "$root/Dockerfile"
 grep -q 'COPY --from=frontend-assets /build/public/build /var/www/html/public/build' "$root/Dockerfile"
 grep -q 'cyberaudit_change_signing_public_keys' "$root/deploy/handoff-support-change-verifier.sh"
 if grep -q 'signing_private_key:.' "$root/deploy/handoff-support-change-verifier.sh"; then exit 1; fi
