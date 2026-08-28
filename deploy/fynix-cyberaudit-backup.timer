@@ -1,8 +1,8 @@
 [Unit]
-Description=Daily Fynix CyberAudit encrypted backup
+Description=Hourly Fynix CyberAudit encrypted backup
 
 [Timer]
-OnCalendar=*-*-* 01:15:00 UTC
+OnCalendar=hourly
 Persistent=true
 RandomizedDelaySec=15m
 Unit=fynix-cyberaudit-backup.service

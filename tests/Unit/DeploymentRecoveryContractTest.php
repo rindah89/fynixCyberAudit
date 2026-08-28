@@ -27,14 +27,14 @@ class DeploymentRecoveryContractTest extends TestCase
         $this->assertStringContainsString('DROP DATABASE IF EXISTS', $rehearsal);
     }
 
-    public function test_daily_backup_and_quarterly_drill_timers_are_installed(): void
+    public function test_hourly_backup_and_quarterly_drill_timers_are_installed(): void
     {
         $root = dirname(__DIR__, 2);
         $daily = file_get_contents($root.'/deploy/fynix-cyberaudit-backup.timer');
         $quarterly = file_get_contents($root.'/deploy/fynix-cyberaudit-recovery-drill.timer');
         $installer = file_get_contents($root.'/deploy/install-recovery-schedule.sh');
 
-        $this->assertStringContainsString('OnCalendar=*-*-* 01:15:00 UTC', $daily);
+        $this->assertStringContainsString('OnCalendar=hourly', $daily);
         $this->assertStringContainsString('OnCalendar=*-01,04,07,10-01 03:30:00 UTC', $quarterly);
         $this->assertStringContainsString('systemctl enable --now', $installer);
     }
