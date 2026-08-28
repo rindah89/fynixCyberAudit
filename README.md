@@ -9,6 +9,8 @@ Fynix Cyber Audit is a cyber Governance, Risk, and Compliance web application in
 * Report generation capability to create deliverables for auditors
 * Intuitive dashboards to display your progress
 
+For suite privacy, retention, legal-hold, processor, recovery, evidence, and exception workflows, see the [Suite data governance user guide](docs/DATA_GOVERNANCE_USER_GUIDE.md).
+
 Above all, Fynix Cyber Audit is written to solve cyber compliance headaches that tend to be caused by complex enterprise solutions. It doesn't have to be that hard!
 
 
@@ -23,4 +25,3 @@ Fynix Cyber Audit is built on the shoulders of giants. We would like to thank th
 
 * [Laravel](https://laravel.com)
 * [Filament](https://filamentphp.com)
-
