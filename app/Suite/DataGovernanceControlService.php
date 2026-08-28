@@ -4,6 +4,7 @@ namespace App\Suite;
 
 use App\Models\DataProcessor;
 use App\Models\DispositionReceipt;
+use App\Models\GovernanceControlEvidence;
 use App\Models\LegalHold;
 use App\Models\PrivacyRequest;
 use App\Models\ProcessorInventoryRun;
@@ -18,6 +19,25 @@ use InvalidArgumentException;
 
 class DataGovernanceControlService
 {
+    /** @param array<string, mixed> $attributes */
+    public function recordControlEvidence(array $attributes): GovernanceControlEvidence
+    {
+        return GovernanceControlEvidence::query()->firstOrCreate(
+            [
+                'tenant_id' => $attributes['tenant_id'],
+                'source' => $attributes['source'],
+                'source_evidence_ref' => $attributes['source_evidence_ref'],
+            ],
+            [
+                'control_id' => $attributes['control_id'],
+                'observed_at' => $attributes['observed_at'],
+                'evidence_ref' => $attributes['evidence_ref'],
+                'evidence_sha256' => $attributes['evidence_sha256'],
+                'review_status' => 'pending_review',
+            ],
+        );
+    }
+
     private const PRIVACY_RIGHTS = ['access', 'correction', 'deletion', 'restriction', 'objection', 'portability'];
 
     public function __construct(private readonly GovernanceReviewIntegrityService $reviewIntegrity) {}

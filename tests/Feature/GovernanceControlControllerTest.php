@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\GovernanceControlEvidence;
 use App\Models\PrivacyRequest;
 use App\Models\RetentionRunEvidence;
 use App\Models\SuiteAuditEvent;
@@ -143,6 +144,24 @@ class GovernanceControlControllerTest extends TestCase
         $this->assertSame('hr', $run->source);
         $this->assertSame('pending_review', $run->review_status);
         $this->assertSame(0, $run->pending_outbox_count);
+    }
+
+    public function test_signed_application_records_digest_bound_control_evidence_for_review(): void
+    {
+        $sourceRef = (string) Str::uuid();
+        $response = $this->postSigned('control_evidence.record', [
+            'control_id' => 'DG-05',
+            'source_evidence_ref' => $sourceRef,
+            'observed_at' => now()->subSecond()->toAtomString(),
+            'evidence_ref' => 'urn:fynix:hr:audit-control:'.$sourceRef,
+            'evidence_sha256' => str_repeat('d', 64),
+        ])->assertOk()->assertJsonPath('outcome', 'recorded');
+
+        $evidence = GovernanceControlEvidence::findOrFail($response->json('resource_id'));
+        $this->assertSame(self::TENANT, $evidence->tenant_id);
+        $this->assertSame('hr', $evidence->source);
+        $this->assertSame('DG-05', $evidence->control_id);
+        $this->assertSame('pending_review', $evidence->review_status);
     }
 
     public function test_incomplete_or_future_retention_run_is_rejected(): void

@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\DataProcessor;
+use App\Models\GovernanceControlEvidence;
 use App\Models\ProcessorInventoryRun;
 use App\Models\RecoveryEvidence;
 use App\Models\RetentionRunEvidence;
 use App\Models\User;
 use App\Suite\DataGovernanceControlService;
 use App\Suite\GovernanceOversightService;
+use App\Suite\GovernanceReviewIntegrityService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -75,6 +77,32 @@ class GovernanceControlReviewTest extends TestCase
             'review_evidence_sha256' => str_repeat('d', 64),
         ])->assertForbidden();
         $this->assertSame('pending_review', $processor->fresh()->status);
+    }
+
+    public function test_reviewer_approves_control_evidence_and_integrity_detects_tampering(): void
+    {
+        $reviewer = User::factory()->create();
+        $reviewer->assignRole('Internal Auditor');
+        Sanctum::actingAs($reviewer);
+        $evidence = GovernanceControlEvidence::create([
+            'tenant_id' => 'tenant-1', 'source' => 'hr', 'control_id' => 'DG-05',
+            'source_evidence_ref' => '11111111-1111-4111-8111-111111111111',
+            'observed_at' => now()->subMinute(),
+            'evidence_ref' => 'urn:fynix:hr:audit-control:11111111-1111-4111-8111-111111111111',
+            'evidence_sha256' => str_repeat('a', 64), 'review_status' => 'pending_review',
+        ]);
+
+        $this->postJson('/api/governance/control-reviews', [
+            'resource_type' => 'control_evidence', 'resource_id' => $evidence->id,
+            'decision' => 'approved', 'review_evidence_ref' => 'urn:fynix:cyberaudit:review:control-1',
+            'review_evidence_sha256' => str_repeat('b', 64),
+        ])->assertCreated()->assertJsonPath('outcome', 'approved');
+
+        $this->assertTrue(app(GovernanceReviewIntegrityService::class)
+            ->approved($evidence->fresh(), 'control_evidence'));
+        $evidence->update(['evidence_sha256' => str_repeat('f', 64)]);
+        $this->assertFalse(app(GovernanceReviewIntegrityService::class)
+            ->approved($evidence->fresh(), 'control_evidence'));
     }
 
     public function test_review_rejects_missing_or_mismatched_evidence_digest(): void

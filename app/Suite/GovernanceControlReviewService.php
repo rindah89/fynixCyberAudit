@@ -4,6 +4,7 @@ namespace App\Suite;
 
 use App\Models\DataProcessor;
 use App\Models\DispositionReceipt;
+use App\Models\GovernanceControlEvidence;
 use App\Models\GovernanceControlReview;
 use App\Models\PrivacyRequest;
 use App\Models\ProcessorRegisterCertification;
@@ -97,6 +98,7 @@ class GovernanceControlReviewService
             'disposition_receipt' => DispositionReceipt::findOrFail($id),
             'privacy_completion' => PrivacyRequest::findOrFail($id),
             'retention_run' => RetentionRunEvidence::findOrFail($id),
+            'control_evidence' => GovernanceControlEvidence::findOrFail($id),
             default => throw new InvalidArgumentException('Unsupported review resource.'),
         };
     }

@@ -4,6 +4,7 @@ namespace App\Suite;
 
 use App\Models\DataProcessor;
 use App\Models\DispositionReceipt;
+use App\Models\GovernanceControlEvidence;
 use App\Models\GovernanceControlReview;
 use App\Models\PrivacyRequest;
 use App\Models\RecoveryEvidence;
@@ -81,6 +82,13 @@ class GovernanceReviewIntegrityService
                 'pending_outbox_count' => $resource->pending_outbox_count,
                 'outcome' => $resource->outcome,
                 'occurred_at' => $this->date($resource->occurred_at),
+                'evidence_ref' => $resource->evidence_ref,
+                'evidence_sha256' => $resource->evidence_sha256,
+            ],
+            $resource instanceof GovernanceControlEvidence => [
+                'control_id' => $resource->control_id,
+                'source_evidence_ref' => $resource->source_evidence_ref,
+                'observed_at' => $this->date($resource->observed_at),
                 'evidence_ref' => $resource->evidence_ref,
                 'evidence_sha256' => $resource->evidence_sha256,
             ],
