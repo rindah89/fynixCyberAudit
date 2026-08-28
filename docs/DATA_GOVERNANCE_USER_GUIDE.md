@@ -48,6 +48,8 @@ Reviewers compare the stored SHA-256 value to the controlled artifact before app
 
 Approval is bound to a canonical snapshot of the submitted control record and its review evidence. Changing an evidence digest, reference, processor purpose, processing country, transfer mechanism, agreement, or review date after approval invalidates that approval. Setting an `approved` status without its matching independent review record never satisfies a control.
 
+Each application's operability report includes `invalid_or_tampered_reviews`. A non-zero value always fails readiness and requires a new independent review after the underlying record is corrected; changing the status alone does not clear it.
+
 ## Exceptions and waivers
 
 Assign every exception an owner, due date, and resolution plan. A waiver must be authorized, documented, and time-bound. CyberAudit reopens expired waivers when the source continues to report the gap. Never change a status merely to make readiness pass.

@@ -7,6 +7,7 @@ use App\Models\ProcessorInventoryRun;
 use App\Models\RecoveryEvidence;
 use App\Models\User;
 use App\Suite\DataGovernanceControlService;
+use App\Suite\GovernanceOversightService;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -49,6 +50,11 @@ class GovernanceControlReviewTest extends TestCase
         $this->assertTrue(app(DataGovernanceControlService::class)->hasCurrentRecoveryEvidence('tenant-1', 'ppm', now()));
         $evidence->update(['evidence_sha256' => str_repeat('f', 64)]);
         $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentRecoveryEvidence('tenant-1', 'ppm', now()));
+        config([
+            'data_governance.required_sources' => ['ppm'],
+            'data_governance.bindings.ppm' => ['enabled' => true, 'tenant_id' => 'tenant-1', 'webhook_id' => 'webhook-1', 'secret' => str_repeat('x', 32)],
+        ]);
+        $this->assertSame(1, app(GovernanceOversightService::class)->report()['sources']['ppm']['operability']['invalid_or_tampered_reviews']);
     }
 
     public function test_unprivileged_user_cannot_review_and_rejected_processor_does_not_pass(): void
