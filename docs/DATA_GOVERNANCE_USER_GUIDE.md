@@ -48,6 +48,8 @@ The oversight and readiness responses expose `processor_inventory_reconciliation
 
 Recovery evidence must represent a successful completed restore drill, include a controlled reference, and fall within the required evidence window. Future-dated or self-attested evidence must not promote a control to effective.
 
+For CyberAudit itself, run `deploy/rehearse-restore.sh` against a checksum-verified backup. The drill restores into a disposable database, verifies the restored schema and application storage through suite preflight, writes a bounded JSON report, and queues its SHA-256 for review. Keep the report in the restricted governance evidence directory; never approve a backup-only receipt.
+
 Reviewers compare the stored SHA-256 value to the controlled artifact before approving. Rejection records a reason and leaves or opens an exception. Application operators cannot approve their own processor register, privacy completion, disposition receipt, or restore drill.
 
 Approval is bound to a canonical snapshot of the submitted control record and its review evidence. Changing an evidence digest, reference, processor purpose, processing country, transfer mechanism, agreement, or review date after approval invalidates that approval. Setting an `approved` status without its matching independent review record never satisfies a control.

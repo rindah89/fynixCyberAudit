@@ -1,0 +1,11 @@
+[Unit]
+Description=Quarterly Fynix CyberAudit isolated restore drill
+
+[Timer]
+OnCalendar=*-01,04,07,10-01 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=30m
+Unit=fynix-cyberaudit-recovery-drill.service
+
+[Install]
+WantedBy=timers.target

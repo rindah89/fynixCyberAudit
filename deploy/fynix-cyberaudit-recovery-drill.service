@@ -1,0 +1,15 @@
+[Unit]
+Description=Fynix CyberAudit isolated quarterly restore drill
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/fynix-suite/cyberaudit/deploy/quarterly-recovery.sh /opt/fynix-suite/cyberaudit /var/backups/fynix/cyberaudit /var/lib/fynix-governance/recovery/cyberaudit
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true
+TimeoutStartSec=2h
