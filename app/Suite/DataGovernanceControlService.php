@@ -160,9 +160,7 @@ class DataGovernanceControlService
             return false;
         }
         $inventoryDigest = hash('sha256', $processors->map(fn (DataProcessor $processor): array => [
-            'id' => $processor->id, 'name' => $processor->name,
-            'agreement_evidence_sha256' => $processor->agreement_evidence_sha256,
-            'review_digest' => $processor->review_digest,
+            ...$processor->materialEvidence(), 'review_digest' => $processor->review_digest,
         ])->toJson(JSON_UNESCAPED_SLASHES));
 
         return ProcessorRegisterCertification::query()

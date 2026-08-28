@@ -117,5 +117,9 @@ class GovernanceControlReviewTest extends TestCase
         ])->assertCreated()->assertJsonPath('processor_count', 2);
 
         $this->assertTrue(app(DataGovernanceControlService::class)->hasCurrentProcessorRegister('tenant-1', 'finance', now()));
+
+        DataProcessor::where('tenant_id', 'tenant-1')->where('source', 'finance')->where('name', 'Hosting')
+            ->update(['purpose' => 'Changed without review']);
+        $this->assertFalse(app(DataGovernanceControlService::class)->hasCurrentProcessorRegister('tenant-1', 'finance', now()));
     }
 }

@@ -35,6 +35,7 @@ class GovernanceControlReviewService
                 'decision' => $attributes['decision'], 'reviewer_id' => $reviewer->getKey(),
                 'review_evidence_ref' => $attributes['review_evidence_ref'],
                 'review_evidence_sha256' => $attributes['review_evidence_sha256'],
+                'resource_evidence' => $resource instanceof DataProcessor ? $resource->materialEvidence() : null,
                 'notes' => $attributes['notes'] ?? null, 'decided_at' => $decidedAt->toISOString(),
             ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
             $digest = hash('sha256', $canonical);
@@ -68,9 +69,7 @@ class GovernanceControlReviewService
                 throw new InvalidArgumentException('Every processor must be approved and within its review period.');
             }
             $inventoryDigest = hash('sha256', $processors->map(fn (DataProcessor $processor): array => [
-                'id' => $processor->id, 'name' => $processor->name,
-                'agreement_evidence_sha256' => $processor->agreement_evidence_sha256,
-                'review_digest' => $processor->review_digest,
+                ...$processor->materialEvidence(), 'review_digest' => $processor->review_digest,
             ])->toJson(JSON_UNESCAPED_SLASHES));
             $decidedAt = now();
             $reviewDigest = hash('sha256', json_encode([
