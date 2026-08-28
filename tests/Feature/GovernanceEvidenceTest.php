@@ -90,6 +90,21 @@ class GovernanceEvidenceTest extends TestCase
         $this->assertDatabaseHas('governance_exceptions', ['source' => self::SOURCE, 'control_id' => 'DG-11', 'status' => 'open']);
     }
 
+    public function test_unapproved_not_applicable_claim_is_downgraded_and_opened_as_exception(): void
+    {
+        $statement = $this->statement();
+        $statement['payload']['controls'][2]['status'] = 'not_applicable';
+
+        $this->postSigned($statement)->assertCreated();
+
+        $result = GovernanceStatement::query()->firstOrFail()->controlResults()->where('control_id', 'DG-03')->sole();
+        $this->assertSame('partially_effective', $result->status);
+        $this->assertFalse($result->metrics['central_applicability_verified']);
+        $this->assertDatabaseHas('governance_exceptions', [
+            'source' => self::SOURCE, 'control_id' => 'DG-03', 'status' => 'open',
+        ]);
+    }
+
     public function test_reused_statement_id_with_a_new_delivery_is_rejected_as_a_conflict(): void
     {
         $statement = $this->statement();

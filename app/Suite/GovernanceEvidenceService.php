@@ -54,6 +54,14 @@ class GovernanceEvidenceService
      */
     private function evidenceBackedControl(array $control, string $tenantId, string $source, \DateTimeInterface $observedAt): array
     {
+        if ($control['status'] === 'not_applicable'
+            && config("data_governance.applicability.{$source}.{$control['control_id']}") !== false) {
+            $control['status'] = 'partially_effective';
+            $control['summary'] = 'CyberAudit has no approved applicability decision allowing this control to be excluded.';
+            $control['metrics']['central_applicability_verified'] = false;
+
+            return $control;
+        }
         $supported = match ($control['control_id']) {
             'DG-09' => $this->controls->hasCurrentRecoveryEvidence($tenantId, $source, $observedAt),
             'DG-11' => $this->controls->hasCurrentProcessorRegister($tenantId, $source, $observedAt),

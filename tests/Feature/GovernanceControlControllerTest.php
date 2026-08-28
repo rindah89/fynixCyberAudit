@@ -31,14 +31,15 @@ class GovernanceControlControllerTest extends TestCase
 
     public function test_signed_application_can_open_and_close_a_privacy_request(): void
     {
+        $subjectRef = (string) Str::uuid();
         $opened = $this->postSigned('privacy_request.open', [
-            'subject_ref' => 'person-42', 'right' => 'access',
+            'subject_ref' => $subjectRef, 'right' => 'access',
             'lawful_basis' => 'legal_obligation', 'requested_at' => '2026-08-28T10:00:00Z',
         ])->assertCreated()->json();
 
         $this->postSigned('privacy_request.close', [
             'privacy_request_id' => $opened['resource_id'],
-            'evidence_ref' => 'evidence://hr/person-42/export',
+            'evidence_ref' => 'evidence://hr/'.$subjectRef.'/export',
             'evidence_sha256' => str_repeat('a', 64),
         ])->assertOk()->assertJsonPath('outcome', 'recorded');
         $this->assertDatabaseHas('privacy_requests', ['id' => $opened['resource_id'], 'status' => 'closed']);
@@ -67,7 +68,7 @@ class GovernanceControlControllerTest extends TestCase
     {
         $response = $this->postSigned('privacy_request.open', [
             'tenant_id' => 'foreign', 'source' => 'finance', 'status' => 'closed',
-            'due_at' => now()->addYears(10), 'subject_ref' => 'person-42', 'right' => 'access',
+            'due_at' => now()->addYears(10), 'subject_ref' => (string) Str::uuid(), 'right' => 'access',
             'lawful_basis' => 'legal_obligation', 'requested_at' => '2026-08-28T10:00:00Z',
         ])->assertCreated();
         $this->assertDatabaseHas('privacy_requests', [
